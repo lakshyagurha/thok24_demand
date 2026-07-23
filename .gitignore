@@ -1,0 +1,55 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+*.temp
+
+# Logs and runtime output
+*.log
+error_log
+
+# Environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.p8
+
+# PHP / backend dependencies and caches
+vendor/
+composer.lock
+phpunit.xml
+
+# Flutter / Dart
+**/.dart_tool/
+**/.packages
+**/.pub-cache/
+**/build/
+**/android/.gradle/
+**/android/app/build/
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# Local databases / uploads
+*.sqlite
+*.db
+*.sql~
+
+# Backup / temp files
+*.bak
+*.orig
+
+# Generated assets or local runtime folders
+Backend/**/uploads/
+Backend/**/error_log
