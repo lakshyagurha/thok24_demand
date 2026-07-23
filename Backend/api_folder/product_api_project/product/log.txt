@@ -1,0 +1,71 @@
+ID: 8 | Type: normal,Best selling,Hot deals,Exclusive Offer,Newly Launch
+ID: 8 | Type: normal,Newly Launch
+ID: 8 | Type: normal,Newly Launch,Hot deals
+ID: 8 | Type: normal,Newly Launch,Hot deals,Best selling,Ready to eat
+ID: 8 | Type: normal,Best selling
+ID: 8 | Type: normal
+ID: 8 | Type: normal,Exclusive Offer
+ID: 8 | Type: normal,Exclusive Offer,Newly Launch
+ID: 12 | Type: normal,Newly Launch,Exclusive Offer
+ID: 12 | Type: normal,Newly Launch,Exclusive Offer,Ready to eat,Hot deals
+ID: 13 | Type: normal,Best selling,Hot deals
+ID: 14 | Type: normal,Newly Launch,Best selling
+ID: 15 | Type: normal,Hot deals,Newly Launch,Best selling
+ID: 16 | Type: normal,Exclusive Offer,Ready to eat,Newly Launch
+ID: 18 | Type: normal,Best selling,Ready to eat
+ID: 17 | Type: normal,Hot deals,Exclusive Offer,Best selling
+ID: 19 | Type: normal,Exclusive Offer,Newly Launch
+ID: 20 | Type: normal,Best selling,Hot deals,Exclusive Offer
+ID: 21 | Type: normal,Everyday Essentials
+ID: 20 | Type: normal,Best selling,Hot deals,Exclusive Offer
+ID: 19 | Type: normal,Exclusive Offer,Newly Launch
+ID: 18 | Type: normal,Best selling,Ready to eat,Everyday Essentials
+ID: 16 | Type: normal,Exclusive Offer,Ready to eat,Newly Launch,Everyday Essentials
+ID: 15 | Type: normal,Hot deals,Newly Launch,Best selling,Everyday Essentials
+ID: 21 | Type: normal,Everyday Essentials,Best selling
+ID: 13 | Type: normal,Best selling,Hot deals,Everyday Essentials
+ID: 21 | Type: normal,Everyday Essentials,Best selling,Hot deals
+ID: 21 | Type: normal,Best selling,Hot deals
+ID: 21 | Type: normal,Best selling,Hot deals,Everyday Essentials
+ID: 20 | Type: normal,Best selling,Hot deals,Exclusive Offer,Everyday Essentials
+ID: 20 | Type: normal,Best selling,Exclusive Offer
+ID: 21 | Type: normal,Best selling,Hot deals,Everyday Essentials,Newly Launch
+ID: 15 | Type: normal,Hot deals,Newly Launch,Best selling,Everyday Essentials
+ID: 21 | Type: normal,Best selling,Hot deals,Everyday Essentials,Newly Launch,Out of Stock
+ID: 21 | Type: normal,Best selling,Hot deals,Everyday Essentials,Newly Launch,Out of Stock
+ID: 21 | Type: normal,Best selling,Hot deals,Newly Launch,Out of Stock
+ID: 14 | Type: normal,Newly Launch,Best selling,Out of Stock
+ID: 14 | Type: normal,Newly Launch,Best selling
+ID: 21 | Type: normal,Best selling,Hot deals,Newly Launch,Out of Stock,Everyday Essentials
+ID: 27 | Type: normal,Everyday Essentials
+ID: 21 | Type: normal,Best selling,Hot deals,Newly Launch,Out of Stock,Everyday Essentials
+ID: 27 | Type: normal,Everyday Essentials,Best selling
+ID: 27 | Type: normal
+ID: 27 | Type: normal,Everyday Essentials
+ID: 33 | Type: normal,Everyday Essentials
+ID: 27 | Type: normal,Everyday Essentials,Best selling
+ID: 27 | Type: normal,Everyday Essentials,Best selling,Hot deals
+ID: 27 | Type: normal,Best selling,Hot deals
+ID: 27 | Type: normal,Best selling,Hot deals,Everyday Essentials
+ID: 27 | Type: Best selling
+ID: 13 | Type: Best selling
+ID: 27 | Type: Everyday Essentials
+ID: 34 | Type: Everyday Essentials
+ID: 1 | Type: normal,Everyday Essentials,Best selling,Hot deals
+ID: 9 | Type: normal
+ID: 10 | Type: normal,Best selling
+ID: 4 | Type: normal,Everyday Essentials
+ID: 12 | Type: normal,Everyday Essentials
+ID: 8 | Type: normal,Best selling
+ID: 11 | Type: normal,Everyday Essentials
+ID: 5 | Type: normal,Hot deals
+ID: 13 | Type: normal,Hot deals
+ID: 15 | Type: normal,Hot deals
+ID: 18 | Type: normal,Best selling
+ID: 20 | Type: normal,Everyday Essentials
+ID: 21 | Type: normal,Everyday Essentials
+ID: 23 | Type: normal,Everyday Essentials
+ID: 24 | Type: normal,Best selling
+ID: 27 | Type: normal,Everyday Essentials
+ID: 27 | Type: normal,Everyday Essentials
+ID: 36 | Type: normal,Hot deals
