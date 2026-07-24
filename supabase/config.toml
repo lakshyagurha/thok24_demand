@@ -1,0 +1,21 @@
+project_id = "asnjjkpjuqsmjqrjojzl"
+
+[functions.process-chat]
+verify_jwt = true
+
+[functions.place-order]
+verify_jwt = true
+
+[functions.admin-api]
+verify_jwt = true
+
+# Razorpay calls this directly and cannot present a Supabase JWT. The HMAC-SHA256
+# signature check inside the function IS the authentication, and it fails closed when
+# RAZORPAY_WEBHOOK_SECRET is unset.
+[functions.razorpay-webhook]
+verify_jwt = false
+
+# Invoked server-to-server by place-order using the service-role key, which the function
+# compares against the Authorization header itself.
+[functions.send-order-email]
+verify_jwt = true
