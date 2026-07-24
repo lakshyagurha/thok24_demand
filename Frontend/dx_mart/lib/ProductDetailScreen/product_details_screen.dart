@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:provider/provider.dart';
@@ -15,7 +14,9 @@ import '../CustomWidgets/cart_provider.dart';
 import '../CustomWidgets/product_card.dart';
 import '../SearchProduct/search_product.dart';
 import '../SimilarProducts/similar_product.dart';
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/cart_repository.dart';
+import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import '../utils/language_provider.dart';
 
@@ -32,7 +33,6 @@ class ProductDetailsScreen extends StatefulWidget {
 class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   String userEmail = "";
   String userName = "";
-  String userID = "";
   int selectedVariantIndex = 0;
   final _pageController = PageController();
   bool _showDetails = false;
@@ -51,7 +51,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   void initState() {
     super.initState();
     _localProduct = Map<String, dynamic>.from(widget.product);
-    fetchUserData();
+    fetchCartQuantities();
     CATEGORY_ID = widget.product['main_category_id'] ?? '';
     fetchDeliveryTime();
     _fetchCoupons();
@@ -68,79 +68,41 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     }
   }
 
-  /// Re-fetches product details with the active language from the server.
+  /// Re-reads the product. All three language variants come back on the row, so the
+  /// active language is applied in the widgets rather than sent to the server.
   Future<void> _fetchProductDetails(String lang) async {
-    final productId = widget.product['id']?.toString() ?? '';
-    if (productId.isEmpty) return;
+    final productId = int.tryParse('${widget.product['id'] ?? ''}') ?? 0;
+    if (productId == 0) return;
     try {
-      final url = Uri.parse(
-        '${ApiConstants.SINGLE_PRODUCT_DETAILS}?product_id=$productId&lang=$lang',
-      );
-      final res = await http.get(url);
-      if (res.statusCode == 200) {
-        final data = json.decode(res.body);
-        if (data['success'] == true && data['product'] != null) {
-          if (mounted) {
-            setState(() {
-              _localProduct = Map<String, dynamic>.from(data['product']);
-              CATEGORY_ID = _localProduct['main_category_id']?.toString() ?? CATEGORY_ID;
-              // Reset variant index if count changed
-              final variants = _localProduct['variants'] as List?;
-              if (variants != null && selectedVariantIndex >= variants.length) {
-                selectedVariantIndex = 0;
-              }
-            });
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Error re-fetching product for lang=$lang: $e');
-    }
-  }
-
-  Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      fetchUserDetails(email);
-    }
-  }
-
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(
-      "${ApiConstants.BASE_URL}auth/get_user.php?email=$email",
-    );
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-          setState(() {
-            userName = data["user"]["name"];
-            userID = data["user"]["id"];
-            fetchCartQuantities(userID);
-          });
-        }
-      }
-    } catch (e) {
-      print("Error fetching user details: $e");
-    }
-  }
-
-
-
-
-  Future<void> fetchCartQuantities(String userId) async {
-    if (userId.isEmpty) return;
-    try {
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.refreshCartData(userId);
+      final product = await const CatalogRepository().product(productId);
+      if (product == null || !mounted) return;
       setState(() {
-        cartList = cartProvider.getCartItemsAsList(userId);
+        _localProduct = product.toCardMap();
+        CATEGORY_ID = product.mainCategoryId.toString();
+        final variants = _localProduct['variants'] as List?;
+        if (variants != null && selectedVariantIndex >= variants.length) {
+          selectedVariantIndex = 0;
+        }
       });
     } catch (e) {
-      print('Error fetching cart quantities: $e');
+      debugPrint('Error re-fetching product: $e');
+    }
+  }
+
+
+
+
+
+  /// Cart sync. RLS scopes this to the signed-in user, so there is no id to pass.
+  Future<void> fetchCartQuantities() async {
+    if (!Db.isSignedIn) return;
+    try {
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      await cartProvider.refreshCartData();
+      if (!mounted) return;
+      setState(() => cartList = cartProvider.getCartItemsAsList());
+    } catch (e) {
+      debugPrint('Error fetching cart quantities: $e');
     }
   }
 
@@ -168,53 +130,25 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       final variantId = variant['id'].toString();
       final productId = _localProduct['id'].toString();
 
-      // ✅ Image URL handle karo
-      final imageUrl = (_localProduct['images'] != null &&
-          _localProduct['images'].isNotEmpty)
-          ? ApiConstants.BASE_URL + 'product_api_project/' + _localProduct['images'][0]
+      // The stored PATH, not a built URL: the host is applied at render time.
+      final imagePath = (_localProduct['images'] != null &&
+              (_localProduct['images'] as List).isNotEmpty)
+          ? '${_localProduct['images'][0]}'
           : '';
 
-      final url = Uri.parse(ApiConstants.ADD_TO_CART);
-
-      // ✅ API Call
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'user_id': userID.toString(),
-          'product_id': productId,
-          'variant_id': variantId,
-          'quantity': 1,
-          'image_url': imageUrl,
-        }),
+      await const CartRepository().add(
+        productId: int.tryParse(productId) ?? 0,
+        variantId: int.tryParse(variantId),
+        quantity: 1,
+        imagePath: imagePath,
       );
 
-      final data = json.decode(response.body);
+      if (!mounted) return;
+      // Re-read rather than guessing the new row id locally.
+      await Provider.of<CartProvider>(context, listen: false).refreshCartData();
 
-      if (response.statusCode == 200 && data['success'] == true) {
-        final cartProvider = Provider.of<CartProvider>(context, listen: false);
-
-        // ✅ CartProvider ko update karo
-        cartProvider.updateCartQuantities(
-          userID,
-          productId,
-          variantId,
-          1,
-          data['cart_id'] ?? 0,
-        );
-
-
-      } else {
-        Fluttertoast.showToast(
-          msg: data['message'] ?? "Failed to add to cart!",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-        );
-      }
     } catch (e) {
-      print("❌ Error adding to cart: $e");
+      debugPrint("Error adding to cart: $e");
       Fluttertoast.showToast(
         msg: "Something went wrong!",
         toastLength: Toast.LENGTH_SHORT,
@@ -253,11 +187,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       }
 
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      int cartId = cartProvider.getCartId(userID, productId, variantId);
+      int cartId = cartProvider.getCartId('', productId, variantId);
 
       // If cartId is 0, try to find it by making a direct API call
       if (cartId == 0) {
-        cartId = await _findCartIdDirectly(userID, productId, variantId);
+        cartId = await _findCartIdDirectly('', productId, variantId);
 
         if (cartId == 0) {
           print("⚠️ Cart item not found in server either");
@@ -272,35 +206,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         }
       }
 
-      // 🟢 API call to update quantity
-      final url = Uri.parse(ApiConstants.UPDATE_QUANTITY);
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id': cartId, 'quantity': newQuantity}),
-      );
+      // RLS makes another user's row invisible, so this can only affect the caller's.
+      await const CartRepository()
+          .setQuantity(cartItemId: cartId, quantity: newQuantity);
 
-      final data = json.decode(response.body);
-      if (data['success']) {
+      if (mounted) {
         cartProvider.updateCartQuantities(
-          userID,
+          '',
           productId,
           variantId,
           newQuantity,
           cartId,
         );
-      } else {
-        print("⚠️ Update quantity API failed: ${data['message']}");
-        Fluttertoast.showToast(
-          msg: "Failed to update quantity",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-        );
       }
     } catch (e) {
-      print('Error updating quantity: $e');
+      debugPrint('Error updating quantity: $e');
       Fluttertoast.showToast(
         msg: "Network error. Please try again.",
         toastLength: Toast.LENGTH_SHORT,
@@ -315,30 +235,18 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     }
   }
 
-  // Helper method to find cart ID directly from server
-  Future<int> _findCartIdDirectly(String userId, String productId, String variantId) async {
+  /// Re-syncs from the server and returns the row id, if any. The old version hit a
+  /// second endpoint with user_id in the query string to do this.
+  Future<int> _findCartIdDirectly(
+      String _, String productId, String variantId) async {
     try {
-      final url = Uri.parse('${ApiConstants.GET_CART_ITEMS}?user_id=$userId');
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        final cartItems = List<Map<String, dynamic>>.from(data['cart'] ?? []);
-
-        for (var item in cartItems) {
-          final itemProductId = item['product_id'].toString();
-          final itemVariantId = item['variant_id'].toString();
-
-          if (itemProductId == productId && itemVariantId == variantId) {
-            return item['id'] as int;
-          }
-        }
-      }
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      await cartProvider.refreshCartData();
+      return cartProvider.getCartId('', productId, variantId);
     } catch (e) {
-      print('Error finding cart ID directly: $e');
+      debugPrint('Error resolving cart id: $e');
+      return 0;
     }
-
-    return 0;
   }
 
 
@@ -354,17 +262,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      final cartId = cartProvider.getCartId(userID, productId, variantId);
+      final cartId = cartProvider.getCartId('', productId, variantId);
+      if (cartId == 0) return;
 
-      final url = Uri.parse('${ApiConstants.REMOVE_CART_ITEM}?id=$cartId');
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        cartProvider.removeCartItem(userID, productId, variantId);
-      }
+      await const CartRepository().remove(cartId);
+      if (mounted) cartProvider.removeCartItem('', productId, variantId);
     } catch (e) {
-      print('Error removing from cart: $e');
+      debugPrint('Error removing from cart: $e');
     } finally {
       setState(() {
         isLoading = false;
@@ -373,83 +277,54 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   }
 
   Future<void> fetchAllProductsFromCategory() async {
-    debugPrint('Fetching products for category: $CATEGORY_ID');
-
-    setState(() {
-      products = [];
-    });
-
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    final url = Uri.parse(
-      '${ApiConstants.VIEW_ALL_PRODUCTS_BY_CATEGORY}?category_id=$CATEGORY_ID&lang=$lang',
-    );
-
-    debugPrint('API URL: $url');
-
+    setState(() => products = []);
     try {
-      final res = await http.get(url);
-      debugPrint('Response status: ${res.statusCode}');
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-
-        setState(() {
-          if (data is List) {
-            products = data;
-          } else if (data['products'] != null) {
-            products = data['products'];
-          } else {
-            products = [];
-          }
-        });
-      } else {
-        setState(() => products = []);
-      }
+      final categoryId = int.tryParse(CATEGORY_ID) ?? 0;
+      final result =
+          await const CatalogRepository().productsByCategory(categoryId);
+      if (!mounted) return;
+      setState(() => products = result.map((p) => p.toCardMap()).toList());
     } catch (e) {
       debugPrint("Error fetching products: $e");
-      setState(() => products = []);
-    } finally {
-      debugPrint('Final products list: ${products.length} items');
+      if (mounted) setState(() => products = []);
     }
   }
 
+  /// Only status='Public' coupons are listable; RLS hides private codes so they cannot
+  /// be enumerated from a client.
   Future<void> _fetchCoupons() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_COUPON));
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['success'] == true && decoded['data'] is List) {
-          setState(
-                () =>
-            _couponList = List<Map<String, dynamic>>.from(decoded['data']),
-          );
-        }
-      }
+      final coupons = await const CatalogRepository().publicCoupons();
+      if (!mounted) return;
+      setState(() {
+        _couponList = coupons
+            .map((c) => {
+                  'id': c.id,
+                  'title': c.title,
+                  'description': c.description,
+                  'code_name': c.codeName,
+                  'discount': c.discount,
+                  'min_amount': c.minAmount,
+                  'expiry_date':
+                      c.expiryDate?.toIso8601String().split('T').first,
+                  'status': 'Public',
+                })
+            .toList();
+      });
     } catch (e) {
       debugPrint("Error fetching coupons: $e");
     }
   }
 
   Future<void> fetchDeliveryTime() async {
-    final url = Uri.parse(ApiConstants.DELIVERY_TIME);
-
     try {
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          deliveryTime = data['data']['time'];
-        });
-      } else {
-        setState(() {
-          deliveryTime = 'No time found';
-        });
-      }
+      // Was its own endpoint and single-row table; now one app_settings key.
+      final settings = await const CatalogRepository().settings();
+      final time = settings['delivery_time'];
+      if (!mounted) return;
+      if (time != null && time.isNotEmpty) setState(() => deliveryTime = time);
     } catch (e) {
-      setState(() {
-        deliveryTime = 'Error fetching time';
-      });
+      debugPrint('Error fetching delivery time: $e');
     }
   }
 
@@ -467,7 +342,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         ? variants[selectedVariantIndex]['id'].toString()
         : '';
     final currentQuantity = cartProvider.getQuantity(
-      userID,
+      '',
       productId,
       variantId,
     );
@@ -522,7 +397,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           itemCount: images.length,
                           itemBuilder: (context, index) {
                             return Image.network(
-                              '${ApiConstants.BASE_URL}product_api_project/${images[index]}',
+                              Db.imageUrl('${images[index]}'),
                               fit: BoxFit.contain,
                               loadingBuilder: (context, child, loadingProgress) {
                                 if (loadingProgress == null) return child;
@@ -595,7 +470,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                   ),
                                 );
                                 setState(() {
-                                  fetchCartQuantities(userID);
+                                  fetchCartQuantities();
                                 });
                               },
                               child: Container(
@@ -1157,7 +1032,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         ),
                       );
                       setState(() {
-                        fetchCartQuantities(userID);
+                        fetchCartQuantities();
                       });
                     },
                     child: Container(
@@ -1181,8 +1056,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               borderRadius: BorderRadius.circular(8.r),
                               child: Center(
                                 child: Image.network(
-                                  ApiConstants.BASE_URL +
-                                      'product_api_project/${_localProduct['images'][0]}',
+                                  Db.imageUrl(
+                                      '${_localProduct['images'][0]}'),
                                   width: 30.w,
                                   height: 30.h,
                                   fit: BoxFit.contain,
@@ -1456,7 +1331,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           ),
                         );
                         setState(() {
-                          fetchCartQuantities(userID);
+                          fetchCartQuantities();
                         });
                       },
                       child: Container(
@@ -1620,7 +1495,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         height: 38.h,
                         child: ElevatedButton(
                           onPressed: () {
-                            if (userID.isNotEmpty) {
+                            if (Db.isSignedIn) {
                               if (stock > 0) {
                                 addToCart();
                               } else {
@@ -1676,21 +1551,21 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           ),
 
           // Floating View Cart Banner (sitting just above checkout bar)
-          if (cartProvider.getUniqueItemsCount(userID) > 0)
+          if (cartProvider.getUniqueItemsCount() > 0)
             AnimatedPositioned(
               duration: const Duration(milliseconds: 300),
               curve: Curves.slowMiddle,
-              bottom: cartProvider.getUniqueItemsCount(userID) > 0 ? 80.h : -100.h,
+              bottom: cartProvider.getUniqueItemsCount() > 0 ? 80.h : -100.h,
               left: 80.w,
               right: 80.w,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 300),
-                opacity: cartProvider.getUniqueItemsCount(userID) > 0 ? 1.0 : 0.0,
+                opacity: cartProvider.getUniqueItemsCount() > 0 ? 1.0 : 0.0,
                 child: InkWell(
                   onTap: () async {
                     await Navigator.push(context, MaterialPageRoute(builder: (context) => CartScreen()));
                     setState(() {
-                      fetchCartQuantities(userID);
+                      fetchCartQuantities();
                     });
                   },
                   child: Container(
@@ -1719,7 +1594,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             ),
                             child: Center(
                               child: Text(
-                                cartProvider.getUniqueItemsCount(userID).toString(),
+                                cartProvider.getUniqueItemsCount().toString(),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12.sp,
@@ -1800,13 +1675,13 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                 final product = list[index];
                 return ProductCard(
                   product: product,
-                  userId: userID,
+                  userId: '',
                   onCartUpdated: () {
-                    fetchCartQuantities(userID);
+                    fetchCartQuantities();
                   },
                   onCategoryBack: () {
                     setState(() {
-                      fetchCartQuantities(userID);
+                      fetchCartQuantities();
                     });
                   },
                 );
