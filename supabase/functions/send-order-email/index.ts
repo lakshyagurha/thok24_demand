@@ -12,6 +12,14 @@ import { serviceClient } from "../_shared/auth.ts";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 
+/** Constant-time compare, so a timing side channel can't help guess the service-role key. */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 function rupees(n: number): string {
   return `₹${Number(n).toFixed(2)}`;
 }
@@ -30,7 +38,9 @@ Deno.serve(async (req) => {
   // Only the service-role key may invoke this.
   const auth = req.headers.get("Authorization") ?? "";
   const expected = `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`;
-  if (auth !== expected) return new Response("Unauthorized", { status: 401 });
+  if (!timingSafeEqual(auth, expected)) {
+    return new Response("Unauthorized", { status: 401 });
+  }
 
   const apiKey = Deno.env.get("RESEND_API_KEY");
   const fromAddress = Deno.env.get("ORDER_EMAIL_FROM");

@@ -219,36 +219,47 @@ Deno.serve(async (req) => {
     }
 
     // --- 5. Repeat-order memory + clear the cart ---------------------------
-    // regular_orders is read-only to clients precisely so this cannot be forged.
-    for (const l of lines) {
-      const { data: existing } = await admin
-        .from("regular_orders")
-        .select("id, frequency_score")
-        .eq("user_id", userId)
-        .eq("product_id", l.product_id)
-        .eq("variant_id", l.variant_id)
-        .maybeSingle();
-      if (existing) {
-        await admin
+    // The order and order_items rows above are already committed -- this function's
+    // contract with the client is "the order exists", not "housekeeping succeeded". A
+    // hiccup here must be logged, never turned into a false "Could not place order" that
+    // would make the caller think nothing happened and place a duplicate.
+    try {
+      // regular_orders is read-only to clients precisely so this cannot be forged.
+      for (const l of lines) {
+        const { data: existing } = await admin
           .from("regular_orders")
-          .update({
-            frequency_score: existing.frequency_score + 1,
+          .select("id, frequency_score")
+          .eq("user_id", userId)
+          .eq("product_id", l.product_id)
+          .eq("variant_id", l.variant_id)
+          .maybeSingle();
+        if (existing) {
+          await admin
+            .from("regular_orders")
+            .update({
+              frequency_score: existing.frequency_score + 1,
+              last_ordered: new Date().toISOString(),
+            })
+            .eq("id", existing.id);
+        } else {
+          await admin.from("regular_orders").insert({
+            user_id: userId,
+            product_id: l.product_id,
+            variant_id: l.variant_id,
+            frequency_score: 1,
             last_ordered: new Date().toISOString(),
-          })
-          .eq("id", existing.id);
-      } else {
-        await admin.from("regular_orders").insert({
-          user_id: userId,
-          product_id: l.product_id,
-          variant_id: l.variant_id,
-          frequency_score: 1,
-          last_ordered: new Date().toISOString(),
-        });
+          });
+        }
       }
-    }
 
-    // Through the caller's client, so it can only ever empty their own cart.
-    await db.from("cart_items").delete().neq("id", -1);
+      // Through the caller's client, so it can only ever empty their own cart.
+      await db.from("cart_items").delete().neq("id", -1);
+    } catch (e) {
+      console.error(
+        `post-order housekeeping failed for order ${order.id} (order still placed):`,
+        e instanceof Error ? e.message : e,
+      );
+    }
 
     // --- 6. Confirmation email, strictly best-effort ------------------------
     // The PHP fired this with a 1-second timeout and ignored failures. Same intent here:
