@@ -184,10 +184,28 @@ project; it was completely empty before this work.
   `place-order`, `process-chat`, `admin-api`, `send-order-email`, `razorpay-webhook`.
   Secrets still to set: `GEMINI_API_KEY`, `RESEND_API_KEY` + `ORDER_EMAIL_FROM`,
   `RAZORPAY_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`. Each degrades safely without them.
-- **Phase 4 — in progress.** Service layer built in `dx_mart/lib/core/` + `lib/data/`; screen
-  migration under way. Admin app not started.
-- **Phases 5 (data migration) and 6 (cutover) — not started.** No data has been migrated; the
-  Supabase database is structure-only.
+- **Phase 4 — done.** Corrected 2026-07-25: this line previously read "in progress ...
+  Admin app not started," which was stale by the time of the pre-Phase-6 audit. Both apps
+  are fully migrated off the PHP backend — zero `package:http` calls remain in either
+  `lib/` tree (verified by grep, not just by reading commit messages). Consumer app:
+  auth, catalog browse, cart, wishlist, search, product details, checkout, orders,
+  profile, addresses, help, location and voice ordering all migrated. Admin app: settings,
+  main category, product, coupon, banner, location, user, dashboard, order and stock
+  screens all migrated, all writes routed through the `admin-api` Edge Function (verified:
+  zero direct `.from(...).insert/update/delete` calls in `dxmart_admin/lib`).
+- **Phase 5 — done.** Catalog data (district, city, main_category, products,
+  product_variants, product_images, product_info, product_highlights, product_aliases,
+  banner, coupon, delivery_boy — 744 rows, 12 tables) migrated from the live `thok24`
+  MariaDB database. Row counts, FK integrity and Devanagari fidelity all verified exact.
+  User-owned data intentionally excluded — see §4.
+- **Pre-Phase-6 audit — done (2026-07-25).** RLS proved against the real live schema and
+  policies (not just the miniature replica in `rls_verification.sql`) via
+  `supabase/tests/rls_live_verification.sql`, all 21 checks passing. Every deployed Edge
+  Function's source reviewed. Fixed: a redundant storage listing policy, a false-failure
+  edge case in `place-order` after order commit, a non-constant-time auth check in
+  `send-order-email`, dead legacy `api_constants.dart` files in both apps, and 3
+  mojibake/scraped-noise data rows from Phase 5.
+- **Phase 6 (cutover) — not started.**
 
 **Key architectural rule now in force:** no client may write `orders`, and no repository method
 accepts a user id. Identity comes from the verified JWT; RLS enforces ownership in the database.
