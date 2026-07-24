@@ -205,7 +205,28 @@ project; it was completely empty before this work.
   edge case in `place-order` after order commit, a non-constant-time auth check in
   `send-order-email`, dead legacy `api_constants.dart` files in both apps, and 3
   mojibake/scraped-noise data rows from Phase 5.
-- **Phase 6 (cutover) — not started.**
+- **Phase 6 (cutover) — prepared and verified, BLOCKED on three items.** See
+  `supabase/CUTOVER_RUNBOOK.md` for the full ordered plan. Summary:
+  - *Verified:* 33/33 end-to-end checks passed against the live project over real HTTP
+    with two real signed-in users (`supabase/tools/cutover_e2e.py`). `place-order` was
+    sent a hostile body (`final_amount: 0.01`, `discount_amount: 9999`) and correctly
+    ignored all of it, computing ₹75 from the catalog — the "client names its own price"
+    bug is provably closed. Cross-user reads/writes all denied.
+  - *Blocker A:* **no SMS provider configured**, so no consumer can log in at all — the
+    app uses phone/OTP exclusively. Spend decision, needs DLT registration for India.
+  - *Blocker B:* `private.admin_users` is empty, so the admin app is unusable by anyone.
+    Free to fix; needs one staff auth user (admin app uses email/password, which works).
+  - *Blocker C:* `RAZORPAY_WEBHOOK_SECRET` unset, so payments can never confirm. The
+    webhook correctly fails closed. COD-only launch avoids this.
+  - ⚠️ **Irreversible risk, step 1 of the runbook:** the storage bucket is empty but the
+    catalog references 101 images, and the 154 files in `Backend/**/uploads/` are
+    gitignored — they exist only on this machine and the live server. Deleting `Backend/`
+    before running `supabase/tools/migrate_storage.py --apply` destroys every product
+    photo permanently. All 101 verified present on disk today.
+  - Also fixed in Phase 6: seeded the four `app_settings` keys Phase 5 missed
+    (`help_call`, `help_whatsapp`, `help_email`, `delivery_time`), copied verbatim from
+    the live MariaDB — the consumer Help screen and delivery-time display were blank
+    without them.
 
 **Key architectural rule now in force:** no client may write `orders`, and no repository method
 accepts a user id. Identity comes from the verified JWT; RLS enforces ownership in the database.
