@@ -19,11 +19,32 @@ every one of those fields and computed ₹60 subtotal → ₹75 final from the c
 and demonstrably so.** Likewise, user A asking PostgREST explicitly for user B's rows
 (`?user_id=eq.<B>`) — the exact attack the old PHP allowed — returns nothing.
 
-**But cutover cannot happen yet.** Three hard blockers below, in priority order.
+**Status after the 2026-07-25 working session: one blocker left.**
+
+| Blocker | State |
+|---|---|
+| Imagery not in Storage (irreversible risk) | ✅ resolved — 101/101 copied and verified |
+| Admin app unusable | ✅ resolved — account seeded, plus a latent `is_admin` bug fixed |
+| Razorpay cannot confirm payments | ✅ deferred by decision — COD-only launch, guarded in code |
+| **No SMS provider → no consumer can log in** | ❌ **open — MSG91 chosen, DLT registration is the long pole** |
+
+Cutover is gated on that last row and nothing else.
 
 ---
 
-## STEP 1 — Do this before touching anything (irreversible risk)
+## STEP 1 — Imagery copy ✅ DONE 2026-07-25
+
+**Completed. 101/101 objects uploaded, 0 failed.** Independently verified: zero broken
+references remain across `product_images`, `banner` and `main_category`; three sample
+public URLs return real image bytes (PNG/JPEG/WebP); anonymous bucket listing still
+returns nothing, so images are fetchable but not enumerable.
+
+`Backend/` is now safe to retire *from an imagery standpoint*. Keep it until the apps are
+confirmed working in production anyway — see step 8. The original warning is preserved
+below because it still governs any future change to those folders.
+
+<details>
+<summary>Original risk description (kept for context)</summary>
 
 **101 catalog images exist in the database as paths, but the storage bucket is empty.**
 The image bytes live only under `Backend/api_folder/`. Of them, the **154 files in
@@ -52,6 +73,8 @@ deliberately has no client INSERT policy, which is why this needs the service ro
 
 Verify afterwards: the script reports `uploaded: 101, failed: 0`, and a product image
 renders in the app. Only then is `Backend/` safe to retire.
+
+</details>
 
 ---
 
@@ -90,21 +113,31 @@ agnostic. This is purely configuration plus the DLT wait.
 retries and mistyped numbers, so watch the "resend" behaviour in `Auth/otpScreen.dart`
 during the pilot.
 
-### B. `private.admin_users` is empty — the admin app is unusable by anyone
+### B. Admin access ✅ RESOLVED 2026-07-25 — *and it uncovered a real bug*
 
-`admin-api` returns 403 to any caller not in that table (verified in the e2e run). It has
-**0 rows**, so every admin action fails for everybody.
+`thok24ops@gmail.com` now exists as a confirmed auth user and is registered in
+`private.admin_users`. Verified working: list orders, read catalog, read user profiles.
 
-Unlike blocker A this is free to fix, but it needs a real auth user to point at. The admin
-app signs in with **email/password** (`dxmart_admin/lib/Auth/login_screen.dart:81`), which
-already works today. Create the staff account through the dashboard
-(**Authentication → Users → Add user**, with "Auto Confirm" on), then:
+**Seeding the row was not sufficient, and this is the important part.** With the admin
+seeded, `admin-api` *still* returned 403. Root cause: `isAdmin()` read
+`private.admin_users` through PostgREST, which only serves schemas on its exposed list
+(`public, graphql_public`). The call failed with `PGRST106: Invalid schema: private` on
+every request, so `isAdmin()` returned false for **everyone, always** — the admin app has
+been non-functional since Phase 3. An empty `admin_users` table hid it perfectly, because
+"you are not staff" and "the check is broken" look identical from outside.
 
+Fixed without exposing the private schema: `public.is_admin(uuid)` is a SECURITY DEFINER
+function, `EXECUTE` granted to `service_role` only, that answers the membership question
+and nothing else (migration `20260725000002`, `admin-api` v3). Re-verified: seeded admin
+gets 200, **non-staff signed-in user still gets 403**, unauthenticated still 401, and the
+table allowlist still rejects `admin_users` itself.
+
+To add more staff later:
 ```sql
-insert into private.admin_users (id) values ('<that useruuid>');
+-- create the auth user first (dashboard -> Authentication -> Users -> Add user,
+-- with "Auto Confirm" on), then:
+insert into private.admin_users (id, email) values ('<user uuid>', '<their email>');
 ```
-
-Tell me the email you want and I'll do this end to end.
 
 ### C. Razorpay cannot confirm payments — *resolved for launch: COD only*
 
@@ -195,10 +228,12 @@ Do not start until blockers A–C are resolved and the regressions above are acc
 
 0. **Start MSG91 DLT registration now** (blocker A, step 2). It is the long pole — days to
    weeks of external approval — and nothing else waits on it. Kick it off, then continue.
-1. **Copy imagery to Storage** (STEP 1 above). Verify `failed: 0`. **Do not skip.**
-2. **Seed the admin account** (blocker B) and confirm login to the admin app works.
+   **← this is the only remaining blocker**
+1. ~~Copy imagery to Storage~~ ✅ done — 101/101, verified.
+2. ~~Seed the admin account~~ ✅ done — plus the `is_admin` bug it exposed, now fixed.
 3. **Set Edge Function secrets** (table above). `RAZORPAY_WEBHOOK_SECRET` is deliberately
-   skipped for a COD-only launch.
+   skipped for a COD-only launch. `GEMINI_API_KEY` and `RESEND_API_KEY` +
+   `ORDER_EMAIL_FROM` are worth setting — see the severity column.
 4. **Finish phone auth** once DLT clears, and confirm a real OTP round-trip on a real
    handset.
 5. **Move off the free tier before real users arrive.** Free projects auto-pause after 7

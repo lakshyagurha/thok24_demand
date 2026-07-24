@@ -52,11 +52,18 @@ export function serviceClient(): SupabaseClient {
  * app_metadata claims go stale until the token is refreshed.
  */
 export async function isAdmin(userId: string): Promise<boolean> {
-  const { data, error } = await serviceClient()
-    .schema("private")
-    .from("admin_users")
-    .select("id")
-    .eq("id", userId)
-    .maybeSingle();
-  return !error && !!data;
+  // Via an RPC, not a table read. PostgREST only serves schemas on its exposed list
+  // (public, graphql_public), so `.schema("private").from("admin_users")` fails with
+  // PGRST106 even for the service role -- which silently made this return false for
+  // everyone. public.is_admin() is SECURITY DEFINER, EXECUTE-granted to service_role
+  // only, and answers a yes/no question without exposing the table or allowing a client
+  // to enumerate staff.
+  const { data, error } = await serviceClient().rpc("is_admin", {
+    check_id: userId,
+  });
+  if (error) {
+    console.error("is_admin RPC failed:", error.message);
+    return false;
+  }
+  return data === true;
 }

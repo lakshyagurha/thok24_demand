@@ -212,17 +212,26 @@ project; it was completely empty before this work.
     sent a hostile body (`final_amount: 0.01`, `discount_amount: 9999`) and correctly
     ignored all of it, computing ₹75 from the catalog — the "client names its own price"
     bug is provably closed. Cross-user reads/writes all denied.
-  - *Blocker A:* **no SMS provider configured**, so no consumer can log in at all — the
-    app uses phone/OTP exclusively. Spend decision, needs DLT registration for India.
-  - *Blocker B:* `private.admin_users` is empty, so the admin app is unusable by anyone.
-    Free to fix; needs one staff auth user (admin app uses email/password, which works).
-  - *Blocker C:* `RAZORPAY_WEBHOOK_SECRET` unset, so payments can never confirm. The
-    webhook correctly fails closed. COD-only launch avoids this.
-  - ⚠️ **Irreversible risk, step 1 of the runbook:** the storage bucket is empty but the
-    catalog references 101 images, and the 154 files in `Backend/**/uploads/` are
-    gitignored — they exist only on this machine and the live server. Deleting `Backend/`
-    before running `supabase/tools/migrate_storage.py --apply` destroys every product
-    photo permanently. All 101 verified present on disk today.
+  - *Blocker A — **THE ONLY ONE STILL OPEN**:* no SMS provider configured, so no consumer
+    can log in at all; the app uses phone/OTP exclusively. **MSG91 chosen (2026-07-25).**
+    DLT template registration is the long pole (days to weeks) — start it first. No app
+    code change needed; `auth_repository.dart` is already provider-agnostic.
+  - *Blocker B — RESOLVED.* `thok24ops@gmail.com` seeded into `private.admin_users`.
+    Seeding alone was **not** enough: it exposed a latent bug where `isAdmin()` read
+    `private.admin_users` via PostgREST, which only serves exposed schemas, so it failed
+    with PGRST106 and returned false for *everyone* — the admin app had been dead since
+    Phase 3, masked by the empty table. Fixed via a `service_role`-only SECURITY DEFINER
+    `public.is_admin()` (migration `20260725000002`, admin-api v3) rather than exposing
+    the private schema. Non-staff still correctly get 403.
+  - *Blocker C — DEFERRED BY DECISION.* COD-only launch. `place-order` v3 now refuses
+    `RAZORPAY` while `RAZORPAY_WEBHOOK_SECRET` is unset, instead of creating a `pending`
+    order the webhook could never confirm. Setting the secret re-enables online payment
+    with no code change.
+  - *Storage — RESOLVED.* All 101 catalog images copied into the `product-images` bucket
+    and verified (zero broken refs; public URLs serve real bytes; anonymous listing still
+    blocked). ⚠️ The 154 files under `Backend/**/uploads/` remain gitignored and exist
+    only on this machine and the live server, so that folder still must not be deleted
+    casually — but the catalog no longer depends on it.
   - Also fixed in Phase 6: seeded the four `app_settings` keys Phase 5 missed
     (`help_call`, `help_whatsapp`, `help_email`, `delivery_time`), copied verbatim from
     the live MariaDB — the consumer Help screen and delivery-time display were blank
