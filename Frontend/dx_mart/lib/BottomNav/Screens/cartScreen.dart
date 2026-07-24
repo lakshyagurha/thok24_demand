@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,7 +10,9 @@ import '../../Checkout/checkout_screen.dart';
 import '../../CustomWidgets/cart_provider.dart';
 import '../../CustomWidgets/product_card.dart';
 import '../../SearchProduct/search_product.dart';
-import '../../utils/api_constants.dart';
+import '../../core/supabase.dart';
+import '../../data/cart_repository.dart';
+import '../../data/catalog_repository.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
 
@@ -27,9 +28,6 @@ class _CartScreenState extends State<CartScreen> {
   double totalSellingAmount = 0.0;
   double totalPriceAmount = 0.0;
 
-  String userName = "";
-  String userEmail = "";
-  String userId = "";
   String _lastFetchedLang = "";
 
 
@@ -97,11 +95,8 @@ class _CartScreenState extends State<CartScreen> {
   @override
   void initState() {
     super.initState();
-    fetchUserData();
-    fetchHandlingCharge();
-    fetchDeliveryCharge();
-    fetchMinOrderAmount();
-    fetchFreeDelivery();
+    fetchCartItems();
+    fetchChargeSettings();
     fetchProductsByType('Everyday Essentials');
     _fetchCoupons();
   }
@@ -112,8 +107,8 @@ class _CartScreenState extends State<CartScreen> {
     final activeLang = Provider.of<LanguageProvider>(context).currentLanguage;
     if (_lastFetchedLang != activeLang) {
       _lastFetchedLang = activeLang;
-      if (userId.isNotEmpty) {
-        fetchCartItems(userId);
+      if (Db.isSignedIn) {
+        fetchCartItems();
       }
       fetchProductsByType('Everyday Essentials');
     }
@@ -124,209 +119,80 @@ class _CartScreenState extends State<CartScreen> {
 
 
 
-  // Free Order value
-  Future<void> fetchFreeDelivery() async {
+  /// Delivery/handling/minimum rules. These were four separate endpoints backed by four
+  /// single-row tables; they are now four keys in app_settings, read in one round trip.
+  /// Fallbacks match the constants the PHP backend hardcoded.
+  Future<void> fetchChargeSettings() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_FREE_DELIVERY_AMOUNT));
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          freeDelivery = double.tryParse(data['data']['amount']?.toString() ?? '0') ?? 0.0;
-        });
-      } else {
-        setState(() {
-          freeDelivery = 0.0;
-        });
-      }
-    } catch (e) {
+      final settings = await const CatalogRepository().settings();
+      double read(String key, double fallback) =>
+          double.tryParse(settings[key] ?? '') ?? fallback;
+      if (!mounted) return;
       setState(() {
-        freeDelivery = 0.0;
+        freeDelivery = read('free_delivery_threshold', 500);
+        deliveryCharge = read('delivery_charge', 10);
+        minium_amount = read('minimum_order_amount', 0);
+        handling_charge = read('handling_charge', 5);
       });
-    }
-  }
-
-  Future<void> fetchDeliveryCharge() async {
-    try {
-      final response = await http.get(Uri.parse(ApiConstants.FETCH_DELIVERY_AMOUNT));
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          deliveryCharge = double.tryParse(data['data']['amount']?.toString() ?? '0') ?? 0.0;
-        });
-      } else {
-        setState(() {
-          deliveryCharge = 0.0;
-        });
-      }
     } catch (e) {
-      setState(() {
-        deliveryCharge = 0.0;
-      });
-    }
-  }
-
-  // Minimum order value for free delivery
-  Future<void> fetchMinOrderAmount() async {
-    try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_MINIMUM_ORDER_AMOUT));
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          minium_amount = double.tryParse(data['data']['amount']?.toString() ?? '0') ?? 0.0;
-        });
-      } else {
-        setState(() {
-          minium_amount = 0.0;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        minium_amount = 0.0;
-      });
-    }
-  }
-
-  // FETCH EMAIL ID
-  Future<void> fetchHandlingCharge() async {
-    try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_HANDLING_CHARGE));
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          handling_charge = double.tryParse(data['data']['amount']?.toString() ?? '0') ?? 0.0;
-        });
-      } else {
-        setState(() {
-          handling_charge = 0.0;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        handling_charge = 0.0;
-      });
+      debugPrint('Error fetching charge settings: $e');
     }
   }
 
   Future<void> fetchProductsByType(String type) async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    final url = Uri.parse(
-      "${ApiConstants.VIEW_PRODUCT_BY_TYPE}?type=$type&page=1&limit=10&lang=$lang",
-    );
-
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        if (body['success']) {
-          setState(() {
-            switch (type) {
-              case 'Everyday Essentials':
-                everydayEssentialsList = body['products'];
-                break;
-            }
-          });
+      final result = await const CatalogRepository().productsByType(type);
+      if (!mounted) return;
+      setState(() {
+        switch (type) {
+          case 'Everyday Essentials':
+            everydayEssentialsList =
+                result.map((p) => p.toCardMap()).toList();
+            break;
         }
-      }
+      });
     } catch (e) {
       debugPrint("Error fetching $type products: $e");
     }
   }
 
-  Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      await fetchUserDetails(email);
-    }
-  }
-
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(
-      ApiConstants.BASE_URL + "auth/get_user.php?email=$email",
-    );
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-          setState(() {
-            userName = data["user"]["name"];
-            userId = data["user"]["id"];
-            fetchCartItems(userId);
-            fetchCartQuantity(userId);
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint("Error fetching user details: $e");
-    }
-  }
-
-
-
-  /// ✅ Cart quantity fetch
-  Future<void> fetchCartQuantity(String id) async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    final url = Uri.parse('${ApiConstants.GET_CART_ITEMS}?user_id=$id&lang=$lang');
-    try {
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        final cartItems = List<Map<String, dynamic>>.from(data['cart'] ?? []);
-        setState(() {
-          fetchCartItems(id);
-        });
-      } else {
-        setState(() {
-          fetchCartItems(id);
-        });
-      }
-    } catch (e) {
+  /// Loads the cart for the signed-in user.
+  ///
+  /// Replaces the old chain: read an email from SharedPreferences, call get_user.php to
+  /// turn it into an integer id, then send that id to the cart endpoint -- which is what
+  /// let any client read any other user's cart by changing the number.
+  Future<void> fetchCartItems() async {
+    if (!Db.isSignedIn) {
       setState(() {
-        fetchCartItems(id);
-      });
-    }
-  }
-
-  Future<void> fetchCartItems(String id) async {
-    try {
-      final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-      final url = Uri.parse('${ApiConstants.GET_CART_ITEMS}?user_id=$id&lang=$lang');
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          cartItems = data['cart'] as List;
-          for (var item in cartItems) {
-            itemCheckStates[item['id']] = true;
-          }
-          calculateTotal();
-          calculateTotalPrice();
-        });
-
-        // Update the provider with cart data
-        _updateCartProvider(id);
-      }
-    } catch (e) {
-      print('Error fetching cart items: $e');
-    } finally {
-      setState(() {
+        cartItems = [];
         isLoading = false;
       });
+      return;
+    }
+
+    try {
+      final lines = await const CartRepository().items();
+      if (!mounted) return;
+      setState(() {
+        cartItems = lines.map((l) => l.toCartMap()).toList();
+        for (var item in cartItems) {
+          itemCheckStates[item['id']] = true;
+        }
+        calculateTotal();
+        calculateTotalPrice();
+      });
+      _updateCartProvider();
+    } catch (e) {
+      debugPrint('Error fetching cart items: $e');
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
 
-  void _updateCartProvider(String userId) {
+  void _updateCartProvider() {
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    cartProvider.clearCartData(userId);
+    cartProvider.clearCartData();
 
     for (var item in cartItems) {
       final productId = item['product_id']?.toString() ?? '';
@@ -335,7 +201,7 @@ class _CartScreenState extends State<CartScreen> {
       final cartId = item['id'];
 
       cartProvider.updateCartQuantities(
-        userId,
+        '',
         productId,
         variantId,
         quantity,
@@ -364,27 +230,28 @@ class _CartScreenState extends State<CartScreen> {
     });
 
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConstants.VALIDATE_COUPON}?code=${_couponController.text}'),
+      final typed = _couponController.text.trim();
+      final match = _couponList.where(
+        (c) => (c['code_name'] as String).toLowerCase() == typed.toLowerCase(),
       );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['success'] == true) {
-          final coupon = data['data'];
-          _applyCoupon(coupon);
-          _couponController.clear();
-        } else {
-          Fluttertoast.showToast(
-            msg: data['message'] ?? "Invalid coupon code",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.red,
-            textColor: Colors.white,
-            fontSize: 14.sp,
-          );
-        }
+      if (match.isNotEmpty) {
+        _applyCoupon(match.first);
+        _couponController.clear();
+      } else {
+        // Not in the public list. It may still be a valid private code -- those are
+        // hidden from clients by design -- so keep it and let the server decide when
+        // the order is placed.
+        setState(() => selectedCodeName = typed);
+        _couponController.clear();
+        Fluttertoast.showToast(
+          msg: "Code saved. It will be verified when you place the order.",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: AppColors.primaryColor,
+          textColor: Colors.white,
+          fontSize: 14.sp,
+        );
       }
     } catch (e) {
       Fluttertoast.showToast(
@@ -455,13 +322,23 @@ class _CartScreenState extends State<CartScreen> {
 
   Future<void> _fetchCoupons() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_COUPON));
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['success'] == true && decoded['data'] is List) {
-          setState(() => _couponList = List<Map<String, dynamic>>.from(decoded['data']));
-        }
-      }
+      final coupons = await const CatalogRepository().publicCoupons();
+      if (!mounted) return;
+      setState(() {
+        _couponList = coupons
+            .map((c) => {
+                  'id': c.id,
+                  'title': c.title,
+                  'description': c.description,
+                  'code_name': c.codeName,
+                  'discount': c.discount,
+                  'min_amount': c.minAmount,
+                  'expiry_date':
+                      c.expiryDate?.toIso8601String().split('T').first,
+                  'status': 'Public',
+                })
+            .toList();
+      });
     } catch (e) {
       debugPrint("Error fetching coupons: $e");
     }
@@ -495,43 +372,25 @@ class _CartScreenState extends State<CartScreen> {
         }
       }
 
-      // 🟢 Update API call
-      final url = Uri.parse(ApiConstants.UPDATE_QUANTITY);
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id': cartItemId, 'quantity': newQuantity}),
-      );
+      // RLS makes another user's cart row invisible, so this can only ever affect the
+      // caller's own row -- the old endpoint updated by raw id with no ownership check.
+      await const CartRepository()
+          .setQuantity(cartItemId: cartItemId, quantity: newQuantity);
 
-      final data = json.decode(response.body);
-      if (data['success']) {
-        await fetchCartItems(userId);
+      if (!mounted) return;
+      await fetchCartItems();
 
-        // Update provider after successful API
-        if (item != null) {
-          final productId = item['product_id']?.toString() ?? '';
-          final variantId = item['variant_id']?.toString() ?? '';
-
-          final cartProvider = Provider.of<CartProvider>(context, listen: false);
-          cartProvider.updateCartQuantities(
-            userId,
-            productId,
-            variantId,
-            newQuantity,
-            cartItemId,
-          );
-        }
-      } else {
-        Fluttertoast.showToast(
-          msg: "Failed to update quantity",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
+      if (item != null && mounted) {
+        Provider.of<CartProvider>(context, listen: false).updateCartQuantities(
+          '',
+          item['product_id']?.toString() ?? '',
+          item['variant_id']?.toString() ?? '',
+          newQuantity,
+          cartItemId,
         );
       }
     } catch (e) {
-      print('Error updating quantity: $e');
+      debugPrint('Error updating quantity: $e');
       Fluttertoast.showToast(
         msg: "Network error. Please try again.",
         toastLength: Toast.LENGTH_SHORT,
@@ -556,24 +415,17 @@ class _CartScreenState extends State<CartScreen> {
       final productId = item['product_id']?.toString() ?? '';
       final variantId = item['variant_id']?.toString() ?? '';
 
-      final url = Uri.parse('${ApiConstants.REMOVE_CART_ITEM}?id=$cartItemId');
-      final response = await http.get(url);
-      final data = json.decode(response.body);
+      // Deleting by raw id was safe only because the old endpoint never checked
+      // ownership; RLS now makes another user's row invisible to this delete.
+      await const CartRepository().remove(cartItemId);
 
-      if (data['success']) {
-        // 🟢 Pehle provider me se hatao
-        final cartProvider = Provider.of<CartProvider>(context, listen: false);
-        cartProvider.removeCartItem(
-          userId,
-          productId,
-          variantId,
-        );
+      if (!mounted) return;
+      Provider.of<CartProvider>(context, listen: false)
+          .removeCartItem('', productId, variantId);
 
-        // 🟢 Ab server se refresh karo (taaki sync bana rahe)
-        await fetchCartItems(userId);
-      }
+      await fetchCartItems();
     } catch (e) {
-      print('Error removing item: $e');
+      debugPrint('Error removing item: $e');
     }
   }
 
@@ -600,7 +452,7 @@ class _CartScreenState extends State<CartScreen> {
   // Apply coupon with validation
   void _applyCoupon(Map<String, dynamic> coupon) {
     // Check if coupon is expired
-    if (_isCouponExpired(coupon['expri_date'])) {
+    if (_isCouponExpired(coupon['expiry_date'])) {
       Fluttertoast.showToast(
         msg: "Coupon has expired",
         toastLength: Toast.LENGTH_SHORT,
@@ -629,7 +481,7 @@ class _CartScreenState extends State<CartScreen> {
     setState(() {
       selectedCodeName = coupon['code_name'];
       selectedDiscount = double.tryParse(coupon['discount']?.toString() ?? '0') ?? 0.0;
-      selectedExpiry = coupon['expri_date'];
+      selectedExpiry = coupon['expiry_date'];
       selectedMinAmount = minAmount;
     });
 
@@ -1370,7 +1222,7 @@ class _CartScreenState extends State<CartScreen> {
                                                           child: Padding(
                                                             padding: const EdgeInsets.all(4.0),
                                                             child: Image.network(
-                                                              ApiConstants.BASE_URL + 'product_api_project/${product['images'][0]}',
+                                                              Db.imageUrl('${product['images'][0]}'),
                                                               fit: BoxFit.contain,
                                                               errorBuilder: (_, __, ___) => Icon(
                                                                 Icons.image,
@@ -1564,16 +1416,10 @@ class _CartScreenState extends State<CartScreen> {
                   width: 110.w,
                   child: ProductCard(
                     product: product,
-                    userId: userId,
+                    userId: '',
                     height: 230.w,
-                    onCartUpdated: () {
-                      fetchCartQuantity(userId);
-                    },
-                    onCategoryBack: () {
-                      setState(() {
-                        fetchCartQuantity(userId);
-                      });
-                    },
+                    onCartUpdated: fetchCartItems,
+                    onCategoryBack: fetchCartItems,
                   ),
                 ),
               );
@@ -1745,7 +1591,7 @@ class _CartScreenState extends State<CartScreen> {
       return Container();
     }
 
-    final isExpired = _isCouponExpired(coupon['expri_date']);
+    final isExpired = _isCouponExpired(coupon['expiry_date']);
     final minAmount = double.tryParse(coupon['min_amount']?.toString() ?? '0') ?? 0.0;
     final canApply = totalSellingAmount >= minAmount && !isExpired;
 
@@ -1798,7 +1644,7 @@ class _CartScreenState extends State<CartScreen> {
                     child: Padding(
                       padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
                       child: Text(
-                        isExpired ? 'Expired' : 'Valid ${coupon['expri_date']}',
+                        isExpired ? 'Expired' : 'Valid ${coupon['expiry_date']}',
                         style: TextStyle(
                           fontSize: 9.sp,
                           fontWeight: FontWeight.w500,

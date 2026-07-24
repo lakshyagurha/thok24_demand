@@ -213,6 +213,7 @@ class CartLine {
     required this.sellingPrice,
     required this.quantity,
     required this.imagePath,
+    required this.stock,
   });
 
   final int id;
@@ -224,6 +225,10 @@ class CartLine {
   final double sellingPrice;
   final int quantity;
   final String imagePath;
+
+  /// Live variant stock, so the cart can cap the quantity stepper against what is
+  /// actually available rather than letting the user request more than exists.
+  final int stock;
 
   double get lineTotal => sellingPrice * quantity;
   String get imageUrl => Db.imageUrl(imagePath);
@@ -241,8 +246,24 @@ class CartLine {
       sellingPrice: _toDouble(variant?['selling_price']),
       quantity: (m['quantity'] ?? 0) as int,
       imagePath: (m['image_url'] ?? '') as String,
+      stock: ((variant?['stock']) ?? 0) as int,
     );
   }
+
+  /// Bridge to the map shape the cart UI still reads.
+  Map<String, dynamic> toCartMap() => {
+        'id': id,
+        'product_id': productId,
+        'variant_id': variantId,
+        'name': productName,
+        'variant_name': variantName,
+        'price': price,
+        'selling_price': sellingPrice,
+        'quantity': quantity,
+        'stock': stock,
+        // Stored path; resolved to a URL at render time via Db.imageUrl().
+        'image_url': imagePath,
+      };
 }
 
 class Address {

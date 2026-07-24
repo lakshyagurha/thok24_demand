@@ -21,7 +21,7 @@ class CartRepository {
     final rows = await Db.client.from('cart_items').select('''
           id, product_id, variant_id, quantity, image_url,
           products!inner(name),
-          product_variants!inner(name, price, selling_price)
+          product_variants!inner(name, price, selling_price, stock)
         ''').order('id');
     return rows.map((r) => CartLine.fromMap(r)).toList();
   }
