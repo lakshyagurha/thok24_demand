@@ -42,8 +42,15 @@ function sendOrderMail($to, $subject, $body, $from_email, $from_name = 'Digixcod
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';  
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'digixcde.pab@gmail.com'; // Your company email
-        $mail->Password   = 'iykqneuhvgukqud';  // Gmail App Password
+        // Credentials MUST come from the environment. Never commit them to source.
+        $smtpUser = getenv('SMTP_USERNAME') ?: '';
+        $smtpPass = getenv('SMTP_PASSWORD') ?: '';
+        if ($smtpUser === '' || $smtpPass === '') {
+            error_log("SMTP_USERNAME/SMTP_PASSWORD not set; skipping order email to: $to");
+            return false;
+        }
+        $mail->Username   = $smtpUser;
+        $mail->Password   = $smtpPass;
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
 

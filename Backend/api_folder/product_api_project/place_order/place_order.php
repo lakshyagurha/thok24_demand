@@ -155,9 +155,10 @@ function fire_and_forget_curl($url, $post_data) {
     curl_setopt($ch, CURLOPT_FORBID_REUSE, true);
     curl_setopt($ch, CURLOPT_HEADER, false);
     
-    // For HTTPS requests
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+    // For HTTPS requests — this call carries customer order and email data over the
+    // public internet, so certificate verification must stay on.
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
     
     $result = curl_exec($ch);
     

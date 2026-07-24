@@ -17,6 +17,9 @@ error_log
 # Environment and secrets
 .env
 .env.*
+# ...but the template documents variable NAMES only and must stay tracked.
+!.env.example
+!**/.env.example
 *.pem
 *.key
 *.p12

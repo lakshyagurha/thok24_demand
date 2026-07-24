@@ -176,8 +176,14 @@ $responseData = [];
 
 // GEMINI API CALL FOR INTENT EXTRACTION
 // We'll use a strict prompt to output JSON.
-// NOTE: Ideally, the API Key should be in environment variables.
-$geminiApiKey = getenv('GEMINI_API_KEY') ?: 'AIzaSyAN32U4XJlEyRp6ZIV688CK3wgXq-Zydjo'; 
+// The API key MUST come from the environment. Never commit a key to source.
+$geminiApiKey = getenv('GEMINI_API_KEY') ?: '';
+if ($geminiApiKey === '') {
+    // No key configured: fall back to deterministic regex extraction rather than
+    // failing the request outright. Voice ordering degrades, but still works.
+    $geminiApiKey = 'DUMMY_KEY_FOR_MOCKING';
+    error_log("GEMINI_API_KEY not set; falling back to regex-only intent extraction.");
+}
 
 // Basic Regex Mocking if API Key is dummy or fails
 $mockedExtraction = [];
@@ -217,7 +223,8 @@ if ($geminiApiKey === 'DUMMY_KEY_FOR_MOCKING') {
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); // Bypass local SSL verification issues
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
     $response = curl_exec($ch);
     
     $curl_err = '';
