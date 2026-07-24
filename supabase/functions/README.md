@@ -2,6 +2,13 @@
 
 Five functions replacing the PHP endpoints that needed a secret or server-side authority.
 
+**Status: all five DEPLOYED to `asnjjkpjuqsmjqrjojzl` (v1, ACTIVE) on 2026-07-24.**
+Base URL: `https://asnjjkpjuqsmjqrjojzl.supabase.co/functions/v1/<name>`
+
+Verified after deploy: unauthenticated POSTs to `process-chat`, `place-order`, `admin-api`
+and `send-order-email` all return **401**. `razorpay-webhook` returns **500** without a
+signature — that is the fail-closed path, because `RAZORPAY_WEBHOOK_SECRET` is not set yet.
+
 | Function | Replaces | Auth | Needs secrets |
 |---|---|---|---|
 | `place-order` | `place_order.php` | User JWT | none (uses auto-injected `SUPABASE_*`) |
