@@ -3,7 +3,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'core/supabase.dart';
 import 'SplashScreen/splashScreen.dart';
 
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 

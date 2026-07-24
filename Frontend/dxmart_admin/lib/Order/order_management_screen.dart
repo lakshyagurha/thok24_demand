@@ -45,7 +45,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
     'packed',
     'way',
     'delivered',
-    'cancelled'
+    'cancelled',
   ];
 
   @override
@@ -132,16 +132,29 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
   void applyFilter(String filter) {
     setState(() {
       selectedFilter = filter;
-      filteredOrders = _filterOrdersByCriteria(orders, filter, searchController.text, selectedStartDate, selectedEndDate);
+      filteredOrders = _filterOrdersByCriteria(
+        orders,
+        filter,
+        searchController.text,
+        selectedStartDate,
+        selectedEndDate,
+      );
     });
   }
 
-  List _filterOrdersByCriteria(List ordersList, String statusFilter, String searchText, DateTime? startDate, DateTime? endDate) {
+  List _filterOrdersByCriteria(
+    List ordersList,
+    String statusFilter,
+    String searchText,
+    DateTime? startDate,
+    DateTime? endDate,
+  ) {
     List filtered = ordersList.where((orderData) {
       final order = orderData["order"];
 
       // Status filter
-      if (statusFilter != 'all' && order["status"].toString().toLowerCase() != statusFilter) {
+      if (statusFilter != 'all' &&
+          order["status"].toString().toLowerCase() != statusFilter) {
         return false;
       }
 
@@ -168,7 +181,8 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
           if (startDate != null && orderDate.isBefore(startDate)) {
             return false;
           }
-          if (endDate != null && orderDate.isAfter(endDate.add(Duration(days: 1)))) {
+          if (endDate != null &&
+              orderDate.isAfter(endDate.add(Duration(days: 1)))) {
             return false;
           }
         } catch (e) {
@@ -209,7 +223,13 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
           }
 
           // Apply current filter to new data
-          filteredOrders = _filterOrdersByCriteria(orders, selectedFilter, searchController.text, selectedStartDate, selectedEndDate);
+          filteredOrders = _filterOrdersByCriteria(
+            orders,
+            selectedFilter,
+            searchController.text,
+            selectedStartDate,
+            selectedEndDate,
+          );
 
           hasMore = rows.length == limit;
           totalOrders = orders.length;
@@ -225,9 +245,9 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         isLoading = false;
         isLoadingMore = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
   }
 
@@ -315,7 +335,13 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
     });
   }
 
-  Widget _buildCompactSummaryCard(String title, int count, double amount, Color color, IconData icon) {
+  Widget _buildCompactSummaryCard(
+    String title,
+    int count,
+    double amount,
+    Color color,
+    IconData icon,
+  ) {
     return Container(
       width: 100.sp,
       margin: EdgeInsets.symmetric(horizontal: 2.sp),
@@ -376,400 +402,480 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         child: Container(
           color: AppColors.backgroundColor,
           child: isLoading
-              ? Center(child: CircularProgressIndicator(color: AppColors.primaryColor))
+              ? Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primaryColor,
+                  ),
+                )
               : Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(8.0),
-                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      "Order Management",
-                      style: GoogleFonts.jost(
-                        color: AppColors.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20.sp,
-                      ),
-                    ),
-                    Spacer(),
-                    IconButton(
-                      icon: Icon(Icons.refresh, size: 24.sp),
-                      onPressed: () {
-                        fetchOrders(isRefresh: true);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              // Search and Filter Section - Compact Version
-              Column(
-                children: [
-                  // Compact Search and Date Row
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Search Bar - Compact
-                      Expanded(
-                        flex: 4,
-                        child: Container(
-                          height: 40.sp,
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceColor,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 5),
-                              )
-                            ],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: TextField(
-                            controller: searchController,
-                            decoration: InputDecoration(
-                              hintText: "Search...",
-                              hintStyle: TextStyle(fontSize: 12.sp),
-                              prefixIcon: Icon(Icons.search, size: 18.sp, color: AppColors.primaryColor),
-                              suffixIcon: searchController.text.isNotEmpty
-                                  ? IconButton(
-                                icon: Icon(Icons.clear, size: 16.sp, color: AppColors.primaryColor),
-                                onPressed: _clearSearch,
-                                padding: EdgeInsets.zero,
-                              )
-                                  : null,
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Row(
+                        children: [
+                          Text(
+                            "Order Management",
+                            style: GoogleFonts.jost(
+                              color: AppColors.primaryColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20.sp,
                             ),
-                            onChanged: (value) {
-                              applyFilter(selectedFilter);
+                          ),
+                          Spacer(),
+                          IconButton(
+                            icon: Icon(Icons.refresh, size: 24.sp),
+                            onPressed: () {
+                              fetchOrders(isRefresh: true);
                             },
                           ),
-                        ),
+                        ],
                       ),
-                      SizedBox(width: 8.sp),
+                    ),
 
-                      // Start Date
-                      Expanded(
-                        flex: 1,
-                        child: GestureDetector(
-                          onTap: () => _selectStartDate(context),
-                          child: Container(
-                            height: 40.sp,
-                            padding: EdgeInsets.symmetric(horizontal: 8.sp),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceColor,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.borderColor),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.calendar_today, size: 14.sp, color: AppColors.primaryColor),
-                                SizedBox(width: 4.sp),
-                                Flexible(
-                                  child: Text(
-                                    selectedStartDate != null
-                                        ? DateFormat('dd/MM').format(selectedStartDate!)
-                                        : "From",
-                                    style: TextStyle(
-                                      fontSize: 10.sp,
-                                      color: selectedStartDate != null
-                                          ? AppColors.primaryTextColor
-                                          : AppColors.secondaryTextColor,
+                    // Search and Filter Section - Compact Version
+                    Column(
+                      children: [
+                        // Compact Search and Date Row
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Search Bar - Compact
+                            Expanded(
+                              flex: 4,
+                              child: Container(
+                                height: 40.sp,
+                                decoration: BoxDecoration(
+                                  color: AppColors.surfaceColor,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 5),
                                     ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                  ],
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 4.sp),
-
-                      // End Date
-                      Expanded(
-                        flex: 1,
-                        child: GestureDetector(
-                          onTap: () => _selectEndDate(context),
-                          child: Container(
-                            height: 40.sp,
-                            padding: EdgeInsets.symmetric(horizontal: 8.sp),
-                            decoration: BoxDecoration(
-                              color: AppColors.surfaceColor,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.borderColor),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.calendar_today, size: 14.sp, color: AppColors.primaryColor),
-                                SizedBox(width: 4.sp),
-                                Flexible(
-                                  child: Text(
-                                    selectedEndDate != null
-                                        ? DateFormat('dd/MM').format(selectedEndDate!)
-                                        : "To",
-                                    style: TextStyle(
-                                      fontSize: 10.sp,
-                                      color: selectedEndDate != null
-                                          ? AppColors.primaryTextColor
-                                          : AppColors.secondaryTextColor,
+                                child: TextField(
+                                  controller: searchController,
+                                  decoration: InputDecoration(
+                                    hintText: "Search...",
+                                    hintStyle: TextStyle(fontSize: 12.sp),
+                                    prefixIcon: Icon(
+                                      Icons.search,
+                                      size: 18.sp,
+                                      color: AppColors.primaryColor,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
+                                    suffixIcon: searchController.text.isNotEmpty
+                                        ? IconButton(
+                                            icon: Icon(
+                                              Icons.clear,
+                                              size: 16.sp,
+                                              color: AppColors.primaryColor,
+                                            ),
+                                            onPressed: _clearSearch,
+                                            padding: EdgeInsets.zero,
+                                          )
+                                        : null,
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
                                   ),
+                                  onChanged: (value) {
+                                    applyFilter(selectedFilter);
+                                  },
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 4.sp),
+                            SizedBox(width: 8.sp),
 
-                      // Filter Dropdown
-                      Expanded(
-                        flex: 2,
-                        child: Container(
-                          height: 40.sp,
-                          padding: EdgeInsets.symmetric(horizontal: 8.sp),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade400),
-                          ),
-                          child: DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: selectedFilter,
-                              isExpanded: true,
-                              items: filterOptions.map((filter) {
-                                final filterSummary =
-                                    summary[filter] ?? {'count': 0, 'amount': 0};
-                                return DropdownMenuItem<String>(
-                                  value: filter,
+                            // Start Date
+                            Expanded(
+                              flex: 1,
+                              child: GestureDetector(
+                                onTap: () => _selectStartDate(context),
+                                child: Container(
+                                  height: 40.sp,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 8.sp,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceColor,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppColors.borderColor,
+                                    ),
+                                  ),
                                   child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      Icon(Icons.circle, size: 12, color: _getStatusColor(filter)),
-                                      SizedBox(width: 6),
+                                      Icon(
+                                        Icons.calendar_today,
+                                        size: 14.sp,
+                                        color: AppColors.primaryColor,
+                                      ),
+                                      SizedBox(width: 4.sp),
                                       Flexible(
                                         child: Text(
-                                          '${filter.toUpperCase()} (${filterSummary['count']})',
+                                          selectedStartDate != null
+                                              ? DateFormat(
+                                                  'dd/MM',
+                                                ).format(selectedStartDate!)
+                                              : "From",
                                           style: TextStyle(
                                             fontSize: 10.sp,
-                                            fontWeight: FontWeight.w500,
+                                            color: selectedStartDate != null
+                                                ? AppColors.primaryTextColor
+                                                : AppColors.secondaryTextColor,
                                           ),
                                           overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
                                     ],
                                   ),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                if (value != null) {
-                                  applyFilter(value);
-                                }
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 4.sp),
-
-                      // Clear Date Filter - Compact
-                      if (selectedStartDate != null || selectedEndDate != null)
-                        GestureDetector(
-                          onTap: _clearDateFilters,
-                          child: Container(
-                            width: 40.sp,
-                            height: 40.sp,
-                            decoration: BoxDecoration(
-                              color: AppColors.errorColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.errorColor),
-                            ),
-                            child: Icon(Icons.clear, size: 16.sp, color: AppColors.errorColor),
-                          ),
-                        ),
-                    ],
-                  ),
-                  SizedBox(height: 8.sp),
-                ],
-              ),
-
-              // Summary Cards - Divide equally in screen width
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.symmetric(vertical: 8.sp, horizontal: 12.sp),
-                color: AppColors.surfaceColor,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: _buildCompactSummaryCard(
-                        'TOTAL',
-                        summary['total']['count'],
-                        summary['total']['amount'],
-                        AppColors.primaryColor,
-                        Icons.shopping_cart,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildCompactSummaryCard(
-                        'PENDING',
-                        summary['pending']['count'],
-                        summary['pending']['amount'],
-                        AppColors.warningColor,
-                        Icons.pending_actions,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildCompactSummaryCard(
-                        'PACKED',
-                        summary['packed']['count'],
-                        summary['packed']['amount'],
-                        AppColors.infoColor,
-                        Icons.inventory_2,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildCompactSummaryCard(
-                        'ON WAY',
-                        summary['way']['count'],
-                        summary['way']['amount'],
-                        AppColors.accentColor,
-                        Icons.local_shipping,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildCompactSummaryCard(
-                        'DELIVERED',
-                        summary['delivered']['count'],
-                        summary['delivered']['amount'],
-                        AppColors.successColor,
-                        Icons.check_circle,
-                      ),
-                    ),
-                    Expanded(
-                      child: _buildCompactSummaryCard(
-                        'CANCELLED',
-                        summary['cancelled']['count'],
-                        summary['cancelled']['amount'],
-                        AppColors.errorColor,
-                        Icons.cancel,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Results Info
-              Container(
-                padding: EdgeInsets.symmetric(vertical: 8.sp, horizontal: 16.sp),
-                color: AppColors.surfaceColor,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Showing: ${filteredOrders.length}",
-                      style: TextStyle(
-                        color: AppColors.primaryTextColor,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 12.sp,
-                      ),
-                    ),
-                    Text(
-                      "Total: $totalOrders",
-                      style: TextStyle(
-                        color: AppColors.primaryColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12.sp,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Orders List
-              Expanded(
-                child: RefreshIndicator(
-                  onRefresh: () => fetchOrders(isRefresh: true),
-                  child: filteredOrders.isEmpty
-                      ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.inbox, size: 64.sp, color: AppColors.secondaryTextColor),
-                        SizedBox(height: 16.sp),
-                        Text(
-                          "No Orders Found",
-                          style: TextStyle(
-                            color: AppColors.secondaryTextColor,
-                            fontSize: 18.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        SizedBox(height: 8.sp),
-                        Text(
-                          "Try adjusting your filters or search criteria",
-                          style: TextStyle(
-                            color: AppColors.secondaryTextColor,
-                            fontSize: 14.sp,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  )
-                      : ListView.builder(
-                    controller: _scrollController,
-                    itemCount: filteredOrders.length + (isLoadingMore ? 1 : 0) + (hasMore ? 0 : 1),
-                    itemBuilder: (context, index) {
-                      if (index == filteredOrders.length) {
-                        if (isLoadingMore) {
-                          return Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Center(
-                              child: CircularProgressIndicator(color: AppColors.primaryColor),
-                            ),
-                          );
-                        } else if (!hasMore) {
-                          return Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: Center(
-                              child: Text(
-                                "No more orders to load",
-                                style: TextStyle(
-                                  color: AppColors.secondaryTextColor,
-                                  fontStyle: FontStyle.italic,
                                 ),
                               ),
                             ),
-                          );
-                        }
-                      }
+                            SizedBox(width: 4.sp),
 
-                      if (index >= filteredOrders.length) return SizedBox();
+                            // End Date
+                            Expanded(
+                              flex: 1,
+                              child: GestureDetector(
+                                onTap: () => _selectEndDate(context),
+                                child: Container(
+                                  height: 40.sp,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 8.sp,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surfaceColor,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppColors.borderColor,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today,
+                                        size: 14.sp,
+                                        color: AppColors.primaryColor,
+                                      ),
+                                      SizedBox(width: 4.sp),
+                                      Flexible(
+                                        child: Text(
+                                          selectedEndDate != null
+                                              ? DateFormat(
+                                                  'dd/MM',
+                                                ).format(selectedEndDate!)
+                                              : "To",
+                                          style: TextStyle(
+                                            fontSize: 10.sp,
+                                            color: selectedEndDate != null
+                                                ? AppColors.primaryTextColor
+                                                : AppColors.secondaryTextColor,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 4.sp),
 
-                      final orderData = filteredOrders[index];
-                      final order = orderData["order"];
-                      final items = orderData["items"] as List;
-                      final status = order["status"].toString().toLowerCase();
+                            // Filter Dropdown
+                            Expanded(
+                              flex: 2,
+                              child: Container(
+                                height: 40.sp,
+                                padding: EdgeInsets.symmetric(horizontal: 8.sp),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.grey.shade400,
+                                  ),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: selectedFilter,
+                                    isExpanded: true,
+                                    items: filterOptions.map((filter) {
+                                      final filterSummary =
+                                          summary[filter] ??
+                                          {'count': 0, 'amount': 0};
+                                      return DropdownMenuItem<String>(
+                                        value: filter,
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.circle,
+                                              size: 12,
+                                              color: _getStatusColor(filter),
+                                            ),
+                                            SizedBox(width: 6),
+                                            Flexible(
+                                              child: Text(
+                                                '${filter.toUpperCase()} (${filterSummary['count']})',
+                                                style: TextStyle(
+                                                  fontSize: 10.sp,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }).toList(),
+                                    onChanged: (value) {
+                                      if (value != null) {
+                                        applyFilter(value);
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 4.sp),
 
-                      return _buildOrderCard(order, items, status, orderData);
-                    },
-                  ),
+                            // Clear Date Filter - Compact
+                            if (selectedStartDate != null ||
+                                selectedEndDate != null)
+                              GestureDetector(
+                                onTap: _clearDateFilters,
+                                child: Container(
+                                  width: 40.sp,
+                                  height: 40.sp,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.errorColor.withOpacity(
+                                      0.1,
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: AppColors.errorColor,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    Icons.clear,
+                                    size: 16.sp,
+                                    color: AppColors.errorColor,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        SizedBox(height: 8.sp),
+                      ],
+                    ),
+
+                    // Summary Cards - Divide equally in screen width
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(
+                        vertical: 8.sp,
+                        horizontal: 12.sp,
+                      ),
+                      color: AppColors.surfaceColor,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: _buildCompactSummaryCard(
+                              'TOTAL',
+                              summary['total']['count'],
+                              summary['total']['amount'],
+                              AppColors.primaryColor,
+                              Icons.shopping_cart,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildCompactSummaryCard(
+                              'PENDING',
+                              summary['pending']['count'],
+                              summary['pending']['amount'],
+                              AppColors.warningColor,
+                              Icons.pending_actions,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildCompactSummaryCard(
+                              'PACKED',
+                              summary['packed']['count'],
+                              summary['packed']['amount'],
+                              AppColors.infoColor,
+                              Icons.inventory_2,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildCompactSummaryCard(
+                              'ON WAY',
+                              summary['way']['count'],
+                              summary['way']['amount'],
+                              AppColors.accentColor,
+                              Icons.local_shipping,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildCompactSummaryCard(
+                              'DELIVERED',
+                              summary['delivered']['count'],
+                              summary['delivered']['amount'],
+                              AppColors.successColor,
+                              Icons.check_circle,
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildCompactSummaryCard(
+                              'CANCELLED',
+                              summary['cancelled']['count'],
+                              summary['cancelled']['amount'],
+                              AppColors.errorColor,
+                              Icons.cancel,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Results Info
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                        vertical: 8.sp,
+                        horizontal: 16.sp,
+                      ),
+                      color: AppColors.surfaceColor,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Showing: ${filteredOrders.length}",
+                            style: TextStyle(
+                              color: AppColors.primaryTextColor,
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12.sp,
+                            ),
+                          ),
+                          Text(
+                            "Total: $totalOrders",
+                            style: TextStyle(
+                              color: AppColors.primaryColor,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.sp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Orders List
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () => fetchOrders(isRefresh: true),
+                        child: filteredOrders.isEmpty
+                            ? Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.inbox,
+                                      size: 64.sp,
+                                      color: AppColors.secondaryTextColor,
+                                    ),
+                                    SizedBox(height: 16.sp),
+                                    Text(
+                                      "No Orders Found",
+                                      style: TextStyle(
+                                        color: AppColors.secondaryTextColor,
+                                        fontSize: 18.sp,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    SizedBox(height: 8.sp),
+                                    Text(
+                                      "Try adjusting your filters or search criteria",
+                                      style: TextStyle(
+                                        color: AppColors.secondaryTextColor,
+                                        fontSize: 14.sp,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : ListView.builder(
+                                controller: _scrollController,
+                                itemCount:
+                                    filteredOrders.length +
+                                    (isLoadingMore ? 1 : 0) +
+                                    (hasMore ? 0 : 1),
+                                itemBuilder: (context, index) {
+                                  if (index == filteredOrders.length) {
+                                    if (isLoadingMore) {
+                                      return Padding(
+                                        padding: EdgeInsets.all(16.0),
+                                        child: Center(
+                                          child: CircularProgressIndicator(
+                                            color: AppColors.primaryColor,
+                                          ),
+                                        ),
+                                      );
+                                    } else if (!hasMore) {
+                                      return Padding(
+                                        padding: EdgeInsets.all(16.0),
+                                        child: Center(
+                                          child: Text(
+                                            "No more orders to load",
+                                            style: TextStyle(
+                                              color:
+                                                  AppColors.secondaryTextColor,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  }
+
+                                  if (index >= filteredOrders.length)
+                                    return SizedBox();
+
+                                  final orderData = filteredOrders[index];
+                                  final order = orderData["order"];
+                                  final items = orderData["items"] as List;
+                                  final status = order["status"]
+                                      .toString()
+                                      .toLowerCase();
+
+                                  return _buildOrderCard(
+                                    order,
+                                    items,
+                                    status,
+                                    orderData,
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
     );
   }
 
-  Widget _buildOrderCard(Map<String, dynamic> order, List items, String status, dynamic orderData) {
+  Widget _buildOrderCard(
+    Map<String, dynamic> order,
+    List items,
+    String status,
+    dynamic orderData,
+  ) {
     return Padding(
       padding: EdgeInsets.only(top: 10, bottom: 10),
       child: Container(
@@ -781,7 +887,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
               color: Colors.black.withOpacity(0.05),
               blurRadius: 1,
               offset: const Offset(0, 5),
-            )
+            ),
           ],
         ),
         child: ExpansionTile(
@@ -891,11 +997,31 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                     ),
                   ),
                   SizedBox(height: 12.sp),
-                  _buildInfoRow(Icons.calendar_today, "Order Date", order["order_datetime"]),
-                  _buildInfoRow(Icons.local_shipping, "Delivery", "${formatDate(order["delivery_date"])} at ${order["delivery_time"]}"),
-                  _buildInfoRow(Icons.payment, "Payment Method", order["payment_method"]),
-                  _buildInfoRow(Icons.local_shipping, "Delivery Charge", "₹${order["delivery_charge"]}"),
-                  _buildInfoRow(Icons.inventory_2, "Handling Charge", "₹${order["handling_charge"]}"),
+                  _buildInfoRow(
+                    Icons.calendar_today,
+                    "Order Date",
+                    order["order_datetime"],
+                  ),
+                  _buildInfoRow(
+                    Icons.local_shipping,
+                    "Delivery",
+                    "${formatDate(order["delivery_date"])} at ${order["delivery_time"]}",
+                  ),
+                  _buildInfoRow(
+                    Icons.payment,
+                    "Payment Method",
+                    order["payment_method"],
+                  ),
+                  _buildInfoRow(
+                    Icons.local_shipping,
+                    "Delivery Charge",
+                    "₹${order["delivery_charge"]}",
+                  ),
+                  _buildInfoRow(
+                    Icons.inventory_2,
+                    "Handling Charge",
+                    "₹${order["handling_charge"]}",
+                  ),
 
                   SizedBox(height: 16.sp),
 
@@ -910,9 +1036,20 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                   ),
                   SizedBox(height: 12.sp),
                   _buildInfoRow(Icons.person, "Name", order["name"] ?? "N/A"),
-                  _buildInfoRowWithCopy(Icons.phone, "Phone", order["phone"] ?? "N/A", () => _copyPhone(order['phone'])),
-                  _buildInfoRowWithCopy(Icons.location_on, "Address", "${order["full_address"]}, ${order["pin_code"]}", () => _copyAddress(order['full_address'])),
-                  if (order["landmark"] != null && order["landmark"].toString().isNotEmpty)
+                  _buildInfoRowWithCopy(
+                    Icons.phone,
+                    "Phone",
+                    order["phone"] ?? "N/A",
+                    () => _copyPhone(order['phone']),
+                  ),
+                  _buildInfoRowWithCopy(
+                    Icons.location_on,
+                    "Address",
+                    "${order["full_address"]}, ${order["pin_code"]}",
+                    () => _copyAddress(order['full_address']),
+                  ),
+                  if (order["landmark"] != null &&
+                      order["landmark"].toString().isNotEmpty)
                     _buildInfoRow(Icons.place, "Landmark", order["landmark"]),
 
                   SizedBox(height: 16.sp),
@@ -939,13 +1076,16 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                         "Update Status",
                         Icons.update,
                         AppColors.primaryColor,
-                            () => _showStatusUpdateDialog(order["id"], order["status"]),
+                        () => _showStatusUpdateDialog(
+                          order["id"],
+                          order["status"],
+                        ),
                       ),
                       _buildActionButton(
                         "Print Bill",
                         Icons.print,
                         AppColors.successColor,
-                            () => printBill(orderData),
+                        () => printBill(orderData),
                       ),
                     ],
                   ),
@@ -985,7 +1125,12 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
     );
   }
 
-  Widget _buildInfoRowWithCopy(IconData icon, String label, String value, VoidCallback onCopy) {
+  Widget _buildInfoRowWithCopy(
+    IconData icon,
+    String label,
+    String value,
+    VoidCallback onCopy,
+  ) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 4.sp),
       child: Row(
@@ -1042,7 +1187,11 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                 width: 60.sp,
                 height: 60.sp,
                 color: AppColors.borderColor,
-                child: Icon(Icons.image, color: AppColors.secondaryTextColor, size: 24.sp),
+                child: Icon(
+                  Icons.image,
+                  color: AppColors.secondaryTextColor,
+                  size: 24.sp,
+                ),
               ),
             ),
           ),
@@ -1117,14 +1266,17 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
     );
   }
 
-  Widget _buildActionButton(String text, IconData icon, Color color, VoidCallback? onPressed) {
+  Widget _buildActionButton(
+    String text,
+    IconData icon,
+    Color color,
+    VoidCallback? onPressed,
+  ) {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
         backgroundColor: color,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         padding: EdgeInsets.symmetric(horizontal: 12.sp, vertical: 8.sp),
         minimumSize: Size(0, 40.sp),
       ),
@@ -1170,16 +1322,16 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
 
   void _copyPhone(String phone) {
     Clipboard.setData(ClipboardData(text: phone));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Phone copied: $phone')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Phone copied: $phone')));
   }
 
   void _copyAddress(String address) {
     Clipboard.setData(ClipboardData(text: address));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Address copied')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Address copied')));
   }
 
   void _showStatusUpdateDialog(int orderId, String currentStatus) {
@@ -1224,8 +1376,14 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                   DropdownMenuItem(value: "pending", child: Text("Pending")),
                   DropdownMenuItem(value: "packed", child: Text("Packed")),
                   DropdownMenuItem(value: "way", child: Text("On the Way")),
-                  DropdownMenuItem(value: "delivered", child: Text("Delivered")),
-                  DropdownMenuItem(value: "cancelled", child: Text("Cancelled")),
+                  DropdownMenuItem(
+                    value: "delivered",
+                    child: Text("Delivered"),
+                  ),
+                  DropdownMenuItem(
+                    value: "cancelled",
+                    child: Text("Cancelled"),
+                  ),
                 ],
                 onChanged: (value) {
                   selectedStatus = value;
@@ -1254,10 +1412,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              child: Text(
-                "Update",
-                style: TextStyle(color: Colors.white),
-              ),
+              child: Text("Update", style: TextStyle(color: Colors.white)),
             ),
           ],
         );
@@ -1301,10 +1456,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
               pw.Divider(),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text('Order ID:'),
-                  pw.Text('#${order["id"]}'),
-                ],
+                children: [pw.Text('Order ID:'), pw.Text('#${order["id"]}')],
               ),
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -1366,11 +1518,14 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                 children: [
                   pw.Text('Address:'),
                   pw.Expanded(
-                    child: pw.Text('${order["full_address"]}, ${order["pin_code"]}'),
+                    child: pw.Text(
+                      '${order["full_address"]}, ${order["pin_code"]}',
+                    ),
                   ),
                 ],
               ),
-              if (order["landmark"] != null && order["landmark"].toString().isNotEmpty)
+              if (order["landmark"] != null &&
+                  order["landmark"].toString().isNotEmpty)
                 pw.Row(
                   children: [
                     pw.Text('Landmark:'),
@@ -1388,51 +1543,57 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                 ),
               ),
               pw.Divider(),
-              ...items.map((item) => pw.Container(
-                margin: pw.EdgeInsets.only(bottom: 10),
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Expanded(
-                      flex: 3,
-                      child: pw.Column(
-                        crossAxisAlignment: pw.CrossAxisAlignment.start,
+              ...items
+                  .map(
+                    (item) => pw.Container(
+                      margin: pw.EdgeInsets.only(bottom: 10),
+                      child: pw.Row(
+                        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                         children: [
-                          pw.Text('${item["product_name"]}'),
-                          pw.Text('Variant: ${item["name"] ?? "Default"}', style: pw.TextStyle(fontSize: 10)),
+                          pw.Expanded(
+                            flex: 3,
+                            child: pw.Column(
+                              crossAxisAlignment: pw.CrossAxisAlignment.start,
+                              children: [
+                                pw.Text('${item["product_name"]}'),
+                                pw.Text(
+                                  'Variant: ${item["name"] ?? "Default"}',
+                                  style: pw.TextStyle(fontSize: 10),
+                                ),
+                              ],
+                            ),
+                          ),
+                          pw.Expanded(
+                            flex: 2,
+                            child: pw.Text('Qty: ${item["quantity"]}'),
+                          ),
+                          pw.Expanded(
+                            flex: 2,
+                            child: pw.Row(
+                              children: [
+                                pw.Row(
+                                  children: [
+                                    pw.Text('Rs.'),
+                                    pw.Text(
+                                      '${item["price"]}',
+                                      style: pw.TextStyle(
+                                        decoration:
+                                            pw.TextDecoration.lineThrough,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+
+                                pw.SizedBox(width: 10),
+                                pw.Text('Rs.${item["selling_price"]}'),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    pw.Expanded(
-                      flex: 2,
-                      child: pw.Text('Qty: ${item["quantity"]}'),
-                    ),
-                    pw.Expanded(
-                      flex: 2,
-                      child: pw.Row(
-                          children: [
-                            pw.Row(
-                                children: [
-                                  pw.Text(
-                                      'Rs.'
-                                  ),
-                                  pw.Text(
-                                    '${item["price"]}',
-                                    style: pw.TextStyle(
-                                      decoration: pw.TextDecoration.lineThrough,
-                                    ),
-                                  ),
-                                ]
-                            ),
-
-                            pw.SizedBox(width: 10),
-                            pw.Text('Rs.${item["selling_price"]}')
-                          ]
-                      ),
-                    ),
-                  ],
-                ),
-              )).toList(),
+                  )
+                  .toList(),
               pw.SizedBox(height: 20),
 
               // Order Summary
@@ -1481,15 +1642,11 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
                 children: [
                   pw.Text(
                     'Total Amount:',
-                    style: pw.TextStyle(
-                      fontWeight: pw.FontWeight.bold,
-                    ),
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                   ),
                   pw.Text(
                     'Rs.${order["final_amount"]}',
-                    style: pw.TextStyle(
-                      fontWeight: pw.FontWeight.bold,
-                    ),
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
                   ),
                 ],
               ),
@@ -1499,9 +1656,7 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
               pw.Center(
                 child: pw.Text(
                   'Thank you for your order!',
-                  style: pw.TextStyle(
-                    fontStyle: pw.FontStyle.italic,
-                  ),
+                  style: pw.TextStyle(fontStyle: pw.FontStyle.italic),
                 ),
               ),
             ],

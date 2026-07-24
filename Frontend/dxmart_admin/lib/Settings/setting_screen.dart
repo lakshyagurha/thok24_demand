@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
+import '../core/admin_api.dart';
 
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
 
 class SettingScreen extends StatefulWidget {
@@ -40,12 +38,11 @@ class _SettingScreenState extends State<SettingScreen> {
   // DELIVERY_TIME FETCH UPDATE
   Future<void> fetchDeliveryTime() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.FETCH_DELIVERY_TIME));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.deliveryTime);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          deliveryTime = data['data']['time'];
+          deliveryTime = value;
         });
       } else {
         setState(() {
@@ -58,8 +55,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditDialog() {
-    final TextEditingController controller = TextEditingController(text: deliveryTime);
+    final TextEditingController controller = TextEditingController(
+      text: deliveryTime,
+    );
     showDialog(
       context: context,
       builder: (context) {
@@ -77,49 +77,44 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateDeliveryTime(String newTime) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_DELIVERY_TIME),
-        body: {
-          'id': '1',
-          'time': newTime,
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.deliveryTime,
+        newTime.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           deliveryTime = newTime;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating time')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating time')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-
   // DELIVERY_CHARGE FETCH UPDATE
   Future<void> fetchDeliveryCharge() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.FETCH_DELIVERY_AMOUNT));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.deliveryCharge);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          deliveryCharge = data['data']['amount'];
+          deliveryCharge = value;
         });
       } else {
         setState(() {
@@ -132,8 +127,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditDialogDeliveryCharge() {
-    final TextEditingController controller = TextEditingController(text: deliveryCharge);
+    final TextEditingController controller = TextEditingController(
+      text: deliveryCharge,
+    );
 
     showDialog(
       context: context,
@@ -152,49 +150,44 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateDeliveryCharge(String newAmount) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_DELIVERY_AMOUNT),
-        body: {
-          'id': '1',
-          'amount': newAmount,
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.deliveryCharge,
+        newAmount.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           deliveryCharge = newAmount;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating time')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating time')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-
   // Minimum order value
   Future<void> fetchMinOrderAmount() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_MINIMUM_ORDER_AMOUT));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.minimumOrderAmount);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          minium_amount = data['data']['amount'];
+          minium_amount = value;
         });
       } else {
         setState(() {
@@ -207,8 +200,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditDialogMinOrderAmount() {
-    final TextEditingController controller = TextEditingController(text: minium_amount);
+    final TextEditingController controller = TextEditingController(
+      text: minium_amount,
+    );
 
     showDialog(
       context: context,
@@ -227,49 +223,44 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateMinOrderAmount(String minOrder) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_MINIMUM_ORDER_AMOUT),
-        body: {
-          'id': '1',
-          'amount': minOrder,
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.minimumOrderAmount,
+        minOrder.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           minium_amount = minOrder;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating time')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating time')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-
   // Free Order  value
   Future<void> fetchFreeDelivery() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_FREE_DELIVERY_AMOUNT));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.freeDeliveryThreshold);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          freeDelivery = data['data']['amount'];
+          freeDelivery = value;
         });
       } else {
         setState(() {
@@ -282,8 +273,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditFreeDeliveryAmount() {
-    final TextEditingController controller = TextEditingController(text: freeDelivery);
+    final TextEditingController controller = TextEditingController(
+      text: freeDelivery,
+    );
 
     showDialog(
       context: context,
@@ -302,49 +296,44 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateFreeDeliveryAmount(String freeDeliveryAmount) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_FREE_DELIVERY_AMOUNT),
-        body: {
-          'id': '1',
-          'amount': freeDeliveryAmount,
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.freeDeliveryThreshold,
+        freeDeliveryAmount.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           freeDelivery = freeDeliveryAmount;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating time')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating time')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-
   // FETCH CALLING NUMBER
   Future<void> fetchCallingNumber() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_CALLING_NUMBER));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.helpCall);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          callingNumber = data['data']['call_help'];
+          callingNumber = value;
         });
       } else {
         setState(() {
@@ -357,8 +346,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditDialogCallingNumber() {
-    final TextEditingController controller = TextEditingController(text: callingNumber);
+    final TextEditingController controller = TextEditingController(
+      text: callingNumber,
+    );
 
     showDialog(
       context: context,
@@ -377,50 +369,44 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateCallingNumber(String newNumber) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_CALLING_NUMBER),
-        body: {
-          'id': '1',
-          'call': newNumber.toString(),
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.helpCall,
+        newNumber.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           callingNumber = newNumber;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating calling number')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating calling number')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-
-
   // FETCH WHATSAPP NUMBER
   Future<void> fetchWhatsappNumber() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_WHATSAPP_NUMBER));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.helpWhatsapp);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          whatsapp_Number = data['data']['whatsapp_no'];
+          whatsapp_Number = value;
         });
       } else {
         setState(() {
@@ -433,8 +419,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditDialogWhatsappNumber() {
-    final TextEditingController controller = TextEditingController(text: whatsapp_Number);
+    final TextEditingController controller = TextEditingController(
+      text: whatsapp_Number,
+    );
 
     showDialog(
       context: context,
@@ -453,34 +442,31 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateWhatsappNumber(String whatsappNumber) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_WHATSAPP_NUMBER),
-        body: {
-          'id': '1',
-          'number': whatsappNumber.toString(),
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.helpWhatsapp,
+        whatsappNumber.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           whatsapp_Number = whatsappNumber;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating whatsapp number')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating whatsapp number')));
     } finally {
       setState(() => isLoading = false);
     }
@@ -489,12 +475,11 @@ class _SettingScreenState extends State<SettingScreen> {
   // FETCH EMAIL ID
   Future<void> fetchEmail() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_EMAIL));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.helpEmail);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          support_email = data['data']['email'];
+          support_email = value;
         });
       } else {
         setState(() {
@@ -507,8 +492,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditDialogEmail() {
-    final TextEditingController controller = TextEditingController(text: support_email);
+    final TextEditingController controller = TextEditingController(
+      text: support_email,
+    );
 
     showDialog(
       context: context,
@@ -527,49 +515,44 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateEmail(String newEmail) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_EMAIL),
-        body: {
-          'id': '1',
-          'email': newEmail.toString(),
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.helpEmail,
+        newEmail.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           support_email = newEmail;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating email')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating email')));
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-
   // FETCH EMAIL ID
   Future<void> fetchHandlingCharge() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_HANDLING_CHARGE));
-      final data = json.decode(response.body);
+      final value = await AdminSettings.get(SettingKeys.handlingCharge);
 
-      if (data['success']) {
+      if (value != null && value.isNotEmpty) {
         setState(() {
-          handling_charge = data['data']['amount'];
+          handling_charge = value;
         });
       } else {
         setState(() {
@@ -582,8 +565,11 @@ class _SettingScreenState extends State<SettingScreen> {
       });
     }
   }
+
   void showEditHandlingCharge() {
-    final TextEditingController controller = TextEditingController(text: handling_charge);
+    final TextEditingController controller = TextEditingController(
+      text: handling_charge,
+    );
 
     showDialog(
       context: context,
@@ -602,41 +588,35 @@ class _SettingScreenState extends State<SettingScreen> {
       },
     );
   }
+
   Future<void> updateHandlingCharge(String newHandling) async {
     setState(() => isLoading = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_HANDLING_CHARGE),
-        body: {
-          'id': '1',
-          'amount': newHandling.toString(),
-        },
+      final ok = await AdminSettings.trySet(
+        SettingKeys.handlingCharge,
+        newHandling.toString(),
       );
-      final data = json.decode(response.body);
 
-      if (data['success']) {
+      if (ok) {
         setState(() {
           handling_charge = newHandling;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'])),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Updated successfully')));
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to update')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to update')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error updating email')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating email')));
     } finally {
       setState(() => isLoading = false);
     }
   }
-
-
-
 
   // Helper method to build edit dialogs
   Widget _buildEditDialog({
@@ -682,12 +662,11 @@ class _SettingScreenState extends State<SettingScreen> {
           onPressed: onSave,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.primaryColor,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
-          child: Text(
-            'Save',
-            style: TextStyle(color: Colors.white),
-          ),
+          child: Text('Save', style: TextStyle(color: Colors.white)),
         ),
       ],
     );
@@ -789,71 +768,68 @@ class _SettingScreenState extends State<SettingScreen> {
             Expanded(
               child: isLoading
                   ? Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryColor),
-                ),
-              )
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          AppColors.primaryColor,
+                        ),
+                      ),
+                    )
                   : ListView(
-                children: [
-                  _buildSettingItem(
-                    title: 'Delivery Time',
-                    value: deliveryTime,
-                    onEdit: showEditDialog,
-                    icon: Icons.access_time,
-                  ),
-                  _buildSettingItem(
-                    title: 'Delivery Charge',
-                    value: "₹$deliveryCharge",
-                    onEdit: showEditDialogDeliveryCharge,
-                    icon: Icons.local_shipping,
-                  ),
+                      children: [
+                        _buildSettingItem(
+                          title: 'Delivery Time',
+                          value: deliveryTime,
+                          onEdit: showEditDialog,
+                          icon: Icons.access_time,
+                        ),
+                        _buildSettingItem(
+                          title: 'Delivery Charge',
+                          value: "₹$deliveryCharge",
+                          onEdit: showEditDialogDeliveryCharge,
+                          icon: Icons.local_shipping,
+                        ),
 
-                  _buildSettingItem(
-                    title: 'Minimum order value',
-                    value: "₹$minium_amount",
-                    onEdit: showEditDialogMinOrderAmount,
-                    icon: Icons.shopping_cart, // पहला icon
-                  ),
+                        _buildSettingItem(
+                          title: 'Minimum order value',
+                          value: "₹$minium_amount",
+                          onEdit: showEditDialogMinOrderAmount,
+                          icon: Icons.shopping_cart, // पहला icon
+                        ),
 
-                  _buildSettingItem(
-                    title: 'Free Delivery Amount value',
-                    value: "₹$freeDelivery",
-                    onEdit: showEditFreeDeliveryAmount,
-                    icon: Icons.local_shipping_outlined, // दूसरा icon
-                  ),
+                        _buildSettingItem(
+                          title: 'Free Delivery Amount value',
+                          value: "₹$freeDelivery",
+                          onEdit: showEditFreeDeliveryAmount,
+                          icon: Icons.local_shipping_outlined, // दूसरा icon
+                        ),
 
+                        _buildSettingItem(
+                          title: 'Handling Charge',
+                          value: "₹$handling_charge",
+                          onEdit: showEditHandlingCharge,
+                          icon: Icons.shopping_bag,
+                        ),
 
-
-                  _buildSettingItem(
-                    title: 'Handling Charge',
-                    value: "₹$handling_charge",
-                    onEdit: showEditHandlingCharge,
-                    icon: Icons.shopping_bag,
-                  ),
-
-
-                  _buildSettingItem(
-                    title: 'Calling Number',
-                    value: callingNumber,
-                    onEdit: showEditDialogCallingNumber,
-                    icon: Icons.phone,
-                  ),
-                  _buildSettingItem(
-                    title: 'WhatsApp Number',
-                    value: whatsapp_Number,
-                    onEdit: showEditDialogWhatsappNumber,
-                    icon: Icons.chat,
-                  ),
-                  _buildSettingItem(
-                    title: 'Support Email',
-                    value: support_email,
-                    onEdit: showEditDialogEmail,
-                    icon: Icons.email,
-                  ),
-
-
-                ],
-              ),
+                        _buildSettingItem(
+                          title: 'Calling Number',
+                          value: callingNumber,
+                          onEdit: showEditDialogCallingNumber,
+                          icon: Icons.phone,
+                        ),
+                        _buildSettingItem(
+                          title: 'WhatsApp Number',
+                          value: whatsapp_Number,
+                          onEdit: showEditDialogWhatsappNumber,
+                          icon: Icons.chat,
+                        ),
+                        _buildSettingItem(
+                          title: 'Support Email',
+                          value: support_email,
+                          onEdit: showEditDialogEmail,
+                          icon: Icons.email,
+                        ),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -861,4 +837,3 @@ class _SettingScreenState extends State<SettingScreen> {
     );
   }
 }
-

@@ -21,24 +21,56 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-
-
   int _selectedIndex = 0;
   bool isSidebarExpanded = true;
 
   final List<Map<String, dynamic>> menuItems = [
-
-    {'icon': Icons.dashboard, 'label': 'Dashboard', 'screen': const DashboardScreen()},
-    {'icon': Icons.category_rounded, 'label': 'Category', 'screen': const MainCategory()},
-    {'icon': Icons.shopping_bag, 'label': 'Product', 'screen': const ProductManagementScreen()},
-    {'icon': Icons.local_offer, 'label': 'Coupon Code', 'screen': const CouponCodeScreen()},
-    {'icon': Icons.image, 'label': 'Banners', 'screen': const BannerManagementScreen()},
-    {'icon': Icons.shopping_cart_checkout, 'label': 'Order', 'screen': const OrderManagementScreen()},
-    {'icon': Icons.person, 'label': 'User', 'screen': const UserManagementScreen()},
-    {'icon': Icons.location_city, 'label': 'Location', 'screen': LocationManagementScreen()},
-    {'icon': Icons.inventory_2, 'label': 'Stock', 'screen': StockManagementScreen()},
+    {
+      'icon': Icons.dashboard,
+      'label': 'Dashboard',
+      'screen': const DashboardScreen(),
+    },
+    {
+      'icon': Icons.category_rounded,
+      'label': 'Category',
+      'screen': const MainCategory(),
+    },
+    {
+      'icon': Icons.shopping_bag,
+      'label': 'Product',
+      'screen': const ProductManagementScreen(),
+    },
+    {
+      'icon': Icons.local_offer,
+      'label': 'Coupon Code',
+      'screen': const CouponCodeScreen(),
+    },
+    {
+      'icon': Icons.image,
+      'label': 'Banners',
+      'screen': const BannerManagementScreen(),
+    },
+    {
+      'icon': Icons.shopping_cart_checkout,
+      'label': 'Order',
+      'screen': const OrderManagementScreen(),
+    },
+    {
+      'icon': Icons.person,
+      'label': 'User',
+      'screen': const UserManagementScreen(),
+    },
+    {
+      'icon': Icons.location_city,
+      'label': 'Location',
+      'screen': LocationManagementScreen(),
+    },
+    {
+      'icon': Icons.inventory_2,
+      'label': 'Stock',
+      'screen': StockManagementScreen(),
+    },
     {'icon': Icons.settings, 'label': 'Setting', 'screen': SettingScreen()},
-
   ];
 
   late List<Widget> _screens;
@@ -54,7 +86,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
   Widget _buildNavigationRail() {
     return Container(
       color: Colors.white,
@@ -104,7 +136,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               destinations: menuItems
-                  .map((item) => _buildRailDestination(item['icon'], item['label']))
+                  .map(
+                    (item) =>
+                        _buildRailDestination(item['icon'], item['label']),
+                  )
                   .toList(),
               selectedIndex: _selectedIndex,
               onDestinationSelected: (index) {

@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
+import '../core/supabase.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker_web/image_picker_web.dart';
 
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
-
 
 class MainCategory extends StatefulWidget {
   const MainCategory({super.key});
@@ -18,8 +18,10 @@ class MainCategory extends StatefulWidget {
 
 class _MainCategoryState extends State<MainCategory> {
   final TextEditingController _categoryTextController = TextEditingController();
-  final TextEditingController _categoryTextControllerHi = TextEditingController();
-  final TextEditingController _categoryTextControllerHn = TextEditingController();
+  final TextEditingController _categoryTextControllerHi =
+      TextEditingController();
+  final TextEditingController _categoryTextControllerHn =
+      TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   Uint8List? _imageDataBytes;
   String? _imageFileName;
@@ -51,31 +53,21 @@ class _MainCategoryState extends State<MainCategory> {
   Future<void> _autoTranslateCategory() async {
     final engText = _categoryTextController.text.trim();
     if (engText.isEmpty) {
-      _showSnackBar("Please enter category name in English first!", AppColors.warningColor);
+      _showSnackBar(
+        "Please enter category name in English first!",
+        AppColors.warningColor,
+      );
       return;
     }
-    
-    _showSnackBar("Translating...", AppColors.infoColor);
-    
-    try {
-      final res = await http.get(Uri.parse("${ApiConstants.TRANSLATE_API}?text=${Uri.encodeComponent(engText)}"));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data['success']) {
-          setState(() {
-            _categoryTextControllerHi.text = data['hi'] ?? '';
-            _categoryTextControllerHn.text = data['hn'] ?? '';
-          });
-          _showSnackBar("Translated successfully! ✅", AppColors.successColor);
-        } else {
-          _showSnackBar("Translation failed: ${data['message']}", AppColors.errorColor);
-        }
-      } else {
-        _showSnackBar("Server error: ${res.statusCode}", AppColors.errorColor);
-      }
-    } catch (e) {
-      _showSnackBar("Connection error: $e", AppColors.errorColor);
-    }
+
+    // The PHP backend proxied an external translation service (translate_api.php),
+    // which no longer exists. Rather than silently do nothing, tell the operator to
+    // type the Hindi and Hinglish names -- an auto-translated product name that nobody
+    // checked is worse than a blank one.
+    _showSnackBar(
+      "Auto-translate is unavailable. Please enter the Hindi and Hinglish names.",
+      AppColors.warningColor,
+    );
   }
 
   void _filterCategories() {
@@ -95,17 +87,13 @@ class _MainCategoryState extends State<MainCategory> {
   Future<void> _fetchCategories() async {
     setState(() => _isLoadingList = true);
     try {
-      final response = await http.get(Uri.parse(ApiConstants.MAIN_VIEW_CATEGORY));
-      if (response.statusCode == 200) {
-        setState(() {
-          _categoryList = jsonDecode(response.body);
-          _filteredCategoryList = List.from(_categoryList);
-          _isLoadingList = false;
-        });
-      } else {
-        _showSnackBar("Error fetching categories: ${response.statusCode}", AppColors.errorColor);
-        setState(() => _isLoadingList = false);
-      }
+      final rows = await AdminApi.list(AdminTables.mainCategory, limit: 200);
+      if (!mounted) return;
+      setState(() {
+        _categoryList = rows;
+        _filteredCategoryList = List.from(_categoryList);
+        _isLoadingList = false;
+      });
     } catch (e) {
       _showSnackBar("Connection error: $e", AppColors.errorColor);
       setState(() => _isLoadingList = false);
@@ -121,51 +109,57 @@ class _MainCategoryState extends State<MainCategory> {
     setState(() => _isLoadingForm = true);
 
     try {
-      final apiUrl = _selectedCategoryIdForEdit == null
-          ? ApiConstants.MAIN_ADD_CATEGORY
-          : ApiConstants.MAIN_EDIT_CATEGORY;
+      // Upload first (if a new image was picked) and store the returned PATH.
+      String? imagePath;
+      if (_imageDataBytes != null) {
+        imagePath = await AdminApi.uploadImage(_imageDataBytes!);
+      }
 
-      final body = {
-        "category_name": _categoryTextController.text,
+      final values = {
+        "name": _categoryTextController.text,
         "name_hi": _categoryTextControllerHi.text,
         "name_hn": _categoryTextControllerHn.text,
-        if (_selectedCategoryIdForEdit != null) "category_id": _selectedCategoryIdForEdit,
-        if (_imageDataBytes != null) "data": base64Encode(_imageDataBytes!),
-        if (_imageDataBytes != null) "name": _imageFileName ?? "category_image.jpg",
+        if (imagePath != null) "image": imagePath,
       };
 
-      final res = await http.post(Uri.parse(apiUrl), body: body);
-      final response = jsonDecode(res.body);
+      if (_selectedCategoryIdForEdit == null) {
+        await AdminApi.insert(AdminTables.mainCategory, values);
+      } else {
+        await AdminApi.update(
+          AdminTables.mainCategory,
+          _selectedCategoryIdForEdit!,
+          values,
+        );
+      }
 
+      if (!mounted) return;
       setState(() => _isLoadingForm = false);
 
-      if (response["success"] == "true") {
-        _showSnackBar("Category ${_selectedCategoryIdForEdit == null ? 'Added' : 'Updated'} Successfully! ✅", AppColors.successColor);
+      {
+        _showSnackBar(
+          "Category ${_selectedCategoryIdForEdit == null ? 'Added' : 'Updated'} Successfully! ✅",
+          AppColors.successColor,
+        );
         _resetForm();
         _fetchCategories();
-      } else {
-        _showSnackBar("Error: ${response["message"] ?? "Unknown error"}", AppColors.errorColor);
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoadingForm = false);
-      _showSnackBar("Network error: $e", AppColors.errorColor);
+      _showSnackBar(
+        e is AdminApiException ? e.message : "Network error: $e",
+        AppColors.errorColor,
+      );
     }
   }
 
   Future<void> _deleteCategory(String id) async {
     setState(() => _isLoadingList = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.MAIN_DELETE_CATEGORY),
-        body: {"id": id},
-      );
-      final responseData = jsonDecode(response.body);
-      if (response.statusCode == 200 && responseData["success"] == "true") {
-        _showSnackBar("Category deleted successfully", AppColors.successColor);
-        await _fetchCategories();
-      } else {
-        _showSnackBar("Failed to delete: ${responseData["message"]}", AppColors.errorColor);
-      }
+      await AdminApi.delete(AdminTables.mainCategory, id);
+      if (!mounted) return;
+      _showSnackBar("Category deleted successfully", AppColors.successColor);
+      await _fetchCategories();
     } catch (e) {
       _showSnackBar("Deletion error: $e", AppColors.errorColor);
     } finally {
@@ -181,7 +175,8 @@ class _MainCategoryState extends State<MainCategory> {
       if (bytesFromPicker.lengthInBytes <= 102400) {
         setState(() {
           _imageDataBytes = bytesFromPicker;
-          _imageFileName = "category_image_${DateTime.now().millisecondsSinceEpoch}.png";
+          _imageFileName =
+              "category_image_${DateTime.now().millisecondsSinceEpoch}.png";
         });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -233,15 +228,26 @@ class _MainCategoryState extends State<MainCategory> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text("Confirm Delete", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: const Text("This category will be permanently deleted. This action cannot be undone."),
+        title: Text(
+          "Confirm Delete",
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          "This category will be permanently deleted. This action cannot be undone.",
+        ),
         actions: [
           TextButton(
-            child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.secondaryTextColor)),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.poppins(color: AppColors.secondaryTextColor),
+            ),
             onPressed: () => Navigator.pop(context),
           ),
           TextButton(
-            child: Text("Delete", style: GoogleFonts.poppins(color: AppColors.errorColor)),
+            child: Text(
+              "Delete",
+              style: GoogleFonts.poppins(color: AppColors.errorColor),
+            ),
             onPressed: () {
               Navigator.pop(context);
               _deleteCategory(categoryId);
@@ -263,14 +269,16 @@ class _MainCategoryState extends State<MainCategory> {
             color: Colors.black.withOpacity(0.05),
             blurRadius: 20,
             offset: const Offset(0, 10),
-          )
+          ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _selectedCategoryIdForEdit == null ? "Add New Category" : "Edit Category",
+            _selectedCategoryIdForEdit == null
+                ? "Add New Category"
+                : "Edit Category",
             style: GoogleFonts.poppins(
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -282,16 +290,24 @@ class _MainCategoryState extends State<MainCategory> {
             controller: _categoryTextController,
             decoration: InputDecoration(
               labelText: "Category Name (English)",
-              labelStyle: GoogleFonts.poppins(color: AppColors.secondaryTextColor),
+              labelStyle: GoogleFonts.poppins(
+                color: AppColors.secondaryTextColor,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: AppColors.borderColor),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+                borderSide: const BorderSide(
+                  color: AppColors.primaryColor,
+                  width: 2,
+                ),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -300,7 +316,11 @@ class _MainCategoryState extends State<MainCategory> {
             children: [
               TextButton.icon(
                 onPressed: _autoTranslateCategory,
-                icon: const Icon(Icons.translate, size: 16, color: AppColors.primaryColor),
+                icon: const Icon(
+                  Icons.translate,
+                  size: 16,
+                  color: AppColors.primaryColor,
+                ),
                 label: Text(
                   "Auto-Translate",
                   style: GoogleFonts.poppins(
@@ -316,16 +336,24 @@ class _MainCategoryState extends State<MainCategory> {
             controller: _categoryTextControllerHi,
             decoration: InputDecoration(
               labelText: "Category Name (Hindi)",
-              labelStyle: GoogleFonts.poppins(color: AppColors.secondaryTextColor),
+              labelStyle: GoogleFonts.poppins(
+                color: AppColors.secondaryTextColor,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: AppColors.borderColor),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+                borderSide: const BorderSide(
+                  color: AppColors.primaryColor,
+                  width: 2,
+                ),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -333,20 +361,31 @@ class _MainCategoryState extends State<MainCategory> {
             controller: _categoryTextControllerHn,
             decoration: InputDecoration(
               labelText: "Category Name (Hinglish)",
-              labelStyle: GoogleFonts.poppins(color: AppColors.secondaryTextColor),
+              labelStyle: GoogleFonts.poppins(
+                color: AppColors.secondaryTextColor,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: AppColors.borderColor),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+                borderSide: const BorderSide(
+                  color: AppColors.primaryColor,
+                  width: 2,
+                ),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
             ),
           ),
           const SizedBox(height: 24),
-          Text("Category Image", style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+          Text(
+            "Category Image",
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+          ),
           const SizedBox(height: 8),
           GestureDetector(
             onTap: _getImage,
@@ -359,22 +398,21 @@ class _MainCategoryState extends State<MainCategory> {
               ),
               child: _imageDataBytes != null
                   ? ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.memory(
-                  _imageDataBytes!,
-                  fit: BoxFit.cover,
-                ),
-              )
-                  : (_selectedCategoryIdForEdit != null && _initialCategoryImage != null
-                  ? ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  ApiConstants.BASE_URL + "main_category/${_initialCategoryImage!}",
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
-                ),
-              )
-                  : _buildPlaceholder()),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(_imageDataBytes!, fit: BoxFit.cover),
+                    )
+                  : (_selectedCategoryIdForEdit != null &&
+                            _initialCategoryImage != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              Db.imageUrl(_initialCategoryImage),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _buildPlaceholder(),
+                            ),
+                          )
+                        : _buildPlaceholder()),
             ),
           ),
           const SizedBox(height: 24),
@@ -384,38 +422,48 @@ class _MainCategoryState extends State<MainCategory> {
                 child: _isLoadingForm
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton(
-                  onPressed: _uploadCategory,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryColor,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    _selectedCategoryIdForEdit == null ? "Add Category" : "Update Category",
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.surfaceColor,
-                    ),
-                  ),
-                ),
+                        onPressed: _uploadCategory,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          _selectedCategoryIdForEdit == null
+                              ? "Add Category"
+                              : "Update Category",
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.surfaceColor,
+                          ),
+                        ),
+                      ),
               ),
               if (_selectedCategoryIdForEdit != null) ...[
                 const SizedBox(width: 12),
                 OutlinedButton(
                   onPressed: _resetForm,
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 16,
+                      horizontal: 24,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
                     side: const BorderSide(color: AppColors.secondaryTextColor),
                   ),
-                  child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.secondaryTextColor)),
+                  child: Text(
+                    "Cancel",
+                    style: GoogleFonts.poppins(
+                      color: AppColors.secondaryTextColor,
+                    ),
+                  ),
                 ),
-              ]
+              ],
             ],
           ),
         ],
@@ -455,7 +503,7 @@ class _MainCategoryState extends State<MainCategory> {
             color: Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
-          )
+          ),
         ],
       ),
       child: TextField(
@@ -488,7 +536,7 @@ class _MainCategoryState extends State<MainCategory> {
             color: Colors.black.withOpacity(0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
-          )
+          ),
         ],
       ),
       child: Row(
@@ -502,9 +550,9 @@ class _MainCategoryState extends State<MainCategory> {
             ),
             child: category['image'] != null
                 ? Image.network(
-              ApiConstants.BASE_URL + "main_category/${category['image']}",
-              fit: BoxFit.cover,
-            )
+                    Db.imageUrl(category['image'] as String?),
+                    fit: BoxFit.cover,
+                  )
                 : Icon(Icons.category, color: AppColors.primaryColor),
           ),
           const SizedBox(width: 16),
@@ -514,11 +562,13 @@ class _MainCategoryState extends State<MainCategory> {
               children: [
                 Text(
                   category['name'] ?? "Unnamed",
-                  style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-
               ],
             ),
           ),
@@ -539,7 +589,9 @@ class _MainCategoryState extends State<MainCategory> {
 
   Widget _buildCategoryList() {
     if (_isLoadingList) {
-      return Center(child: CircularProgressIndicator(color: AppColors.primaryColor));
+      return Center(
+        child: CircularProgressIndicator(color: AppColors.primaryColor),
+      );
     }
 
     if (_filteredCategoryList.isEmpty) {
@@ -547,16 +599,26 @@ class _MainCategoryState extends State<MainCategory> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_off, size: 64, color: AppColors.secondaryTextColor),
+            Icon(
+              Icons.search_off,
+              size: 64,
+              color: AppColors.secondaryTextColor,
+            ),
             const SizedBox(height: 16),
             Text(
               "No Categories Found",
-              style: GoogleFonts.poppins(fontSize: 18, color: AppColors.secondaryTextColor),
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                color: AppColors.secondaryTextColor,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               "Try a different search term",
-              style: GoogleFonts.poppins(fontSize: 14, color: AppColors.secondaryTextColor),
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: AppColors.secondaryTextColor,
+              ),
             ),
           ],
         ),
@@ -620,9 +682,7 @@ class _MainCategoryState extends State<MainCategory> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Expanded(
-                    child: _buildCategoryList(),
-                  ),
+                  Expanded(child: _buildCategoryList()),
                 ],
               ),
             ),

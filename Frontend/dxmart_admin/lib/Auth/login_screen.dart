@@ -218,8 +218,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               if (value == null || value.isEmpty) {
                                 return 'Please enter your email';
                               }
-                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                                  .hasMatch(value)) {
+                              if (!RegExp(
+                                r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
+                              ).hasMatch(value)) {
                                 return 'Please enter a valid email';
                               }
                               return null;
@@ -301,7 +302,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               Theme(
                                 data: ThemeData(
-                                  unselectedWidgetColor: AppColors.hintTextColor,
+                                  unselectedWidgetColor:
+                                      AppColors.hintTextColor,
                                 ),
                                 child: Checkbox(
                                   value: _rememberMe,
@@ -335,7 +337,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               width: double.infinity,
                               padding: EdgeInsets.all(12.w),
                               decoration: BoxDecoration(
-                                color: AppColors.errorColor.withValues(alpha: 0.1),
+                                color: AppColors.errorColor.withValues(
+                                  alpha: 0.1,
+                                ),
                                 borderRadius: BorderRadius.circular(8.r),
                               ),
                               child: Row(
@@ -378,20 +382,20 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               child: _isLoading
                                   ? SizedBox(
-                                width: 24.w,
-                                height: 24.w,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.w,
-                                ),
-                              )
+                                      width: 24.w,
+                                      height: 24.w,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.w,
+                                      ),
+                                    )
                                   : Text(
-                                'LOGIN',
-                                style: GoogleFonts.jost(
-                                  fontSize: 16.sp,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
+                                      'LOGIN',
+                                      style: GoogleFonts.jost(
+                                        fontSize: 16.sp,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
                             ),
                           ),
                         ],

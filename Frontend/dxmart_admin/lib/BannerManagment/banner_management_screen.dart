@@ -58,8 +58,9 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
     } catch (e) {
       if (!mounted) return;
       _showSnackBar(
-          e is AdminApiException ? e.message : "Connection error: $e",
-          AppColors.errorColor);
+        e is AdminApiException ? e.message : "Connection error: $e",
+        AppColors.errorColor,
+      );
       setState(() => _isLoadingList = false);
     }
   }
@@ -95,8 +96,9 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
       if (!mounted) return;
       setState(() => _isLoadingForm = false);
       _showSnackBar(
-          e is AdminApiException ? e.message : "Network error: $e",
-          AppColors.errorColor);
+        e is AdminApiException ? e.message : "Network error: $e",
+        AppColors.errorColor,
+      );
     }
   }
 
@@ -106,15 +108,26 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text("Confirm Delete", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: const Text("This banner will be permanently deleted. This action cannot be undone."),
+        title: Text(
+          "Confirm Delete",
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          "This banner will be permanently deleted. This action cannot be undone.",
+        ),
         actions: [
           TextButton(
-            child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.secondaryTextColor)),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.poppins(color: AppColors.secondaryTextColor),
+            ),
             onPressed: () => Navigator.pop(context),
           ),
           TextButton(
-            child: Text("Delete", style: GoogleFonts.poppins(color: AppColors.errorColor)),
+            child: Text(
+              "Delete",
+              style: GoogleFonts.poppins(color: AppColors.errorColor),
+            ),
             onPressed: () {
               Navigator.pop(context);
               _deleteBanner(id);
@@ -146,10 +159,14 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
       if (bytesFromPicker.lengthInBytes <= 204800) {
         setState(() {
           _imageDataBytes = bytesFromPicker;
-          _imageFileName = "banner_image_${DateTime.now().millisecondsSinceEpoch}.png";
+          _imageFileName =
+              "banner_image_${DateTime.now().millisecondsSinceEpoch}.png";
         });
       } else {
-        _showSnackBar("Please select an image smaller than 200 KB", AppColors.warningColor);
+        _showSnackBar(
+          "Please select an image smaller than 200 KB",
+          AppColors.warningColor,
+        );
       }
     }
   }
@@ -188,7 +205,13 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("Add New Banner", style: GoogleFonts.poppins(fontSize: 22, fontWeight: FontWeight.bold)),
+          Text(
+            "Add New Banner",
+            style: GoogleFonts.poppins(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 24),
 
           // Category Dropdown
@@ -197,12 +220,18 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
             items: [
               DropdownMenuItem<String>(
                 value: null,
-                child: Text('Select Category', style: GoogleFonts.poppins(color: AppColors.hintTextColor)),
+                child: Text(
+                  'Select Category',
+                  style: GoogleFonts.poppins(color: AppColors.hintTextColor),
+                ),
               ),
               ...categories.map((c) {
                 return DropdownMenuItem(
                   value: c['id'].toString(),
-                  child: Text(c['name'] ?? 'Unknown', style: GoogleFonts.poppins()),
+                  child: Text(
+                    c['name'] ?? 'Unknown',
+                    style: GoogleFonts.poppins(),
+                  ),
                 );
               }),
             ],
@@ -214,7 +243,9 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
             style: GoogleFonts.poppins(),
             decoration: InputDecoration(
               labelText: 'Category',
-              labelStyle: GoogleFonts.poppins(color: AppColors.secondaryTextColor),
+              labelStyle: GoogleFonts.poppins(
+                color: AppColors.secondaryTextColor,
+              ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: AppColors.borderColor),
@@ -223,7 +254,10 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
                 borderRadius: BorderRadius.circular(8),
                 borderSide: const BorderSide(color: AppColors.borderColor),
               ),
-              prefixIcon: const Icon(Icons.category, color: AppColors.hintTextColor),
+              prefixIcon: const Icon(
+                Icons.category,
+                color: AppColors.hintTextColor,
+              ),
               filled: true,
               fillColor: AppColors.backgroundColor,
             ),
@@ -231,7 +265,10 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
           ),
           const SizedBox(height: 16),
 
-          Text("Banner Image", style: GoogleFonts.poppins(fontWeight: FontWeight.w500)),
+          Text(
+            "Banner Image",
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+          ),
           GestureDetector(
             onTap: _getImage,
             child: Container(
@@ -243,9 +280,9 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
               ),
               child: _imageDataBytes != null
                   ? ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.memory(_imageDataBytes!, fit: BoxFit.cover),
-              )
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.memory(_imageDataBytes!, fit: BoxFit.cover),
+                    )
                   : _buildPlaceholder(),
             ),
           ),
@@ -256,24 +293,43 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
                 child: _isLoadingForm
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton(
-                  onPressed: _uploadBanner,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryColor,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: Text("Add Banner", style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white)),
-                ),
+                        onPressed: _uploadBanner,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          "Add Banner",
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
               ),
               const SizedBox(width: 12),
               OutlinedButton(
                 onPressed: _resetForm,
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 24,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   side: const BorderSide(color: AppColors.secondaryTextColor),
                 ),
-                child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.secondaryTextColor)),
+                child: Text(
+                  "Cancel",
+                  style: GoogleFonts.poppins(
+                    color: AppColors.secondaryTextColor,
+                  ),
+                ),
               ),
             ],
           ),
@@ -289,9 +345,15 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
         children: [
           Icon(Icons.image_outlined, size: 48, color: Colors.grey[400]),
           const SizedBox(height: 8),
-          Text("Tap to select image 300 / 150", style: GoogleFonts.poppins(color: Colors.grey[500], fontSize: 14)),
+          Text(
+            "Tap to select image 300 / 150",
+            style: GoogleFonts.poppins(color: Colors.grey[500], fontSize: 14),
+          ),
           const SizedBox(height: 4),
-          Text("JPG, PNG (Max 200KB)", style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 12)),
+          Text(
+            "JPG, PNG (Max 200KB)",
+            style: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 12),
+          ),
         ],
       ),
     );
@@ -313,7 +375,7 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
             color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
-          )
+          ),
         ],
       ),
       child: Column(
@@ -322,23 +384,31 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
             borderRadius: BorderRadius.circular(8),
             child: bannerImage.isNotEmpty
                 ? Image.network(
-              Db.imageUrl(bannerImage),
-              width: 300,
-              height: 150,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                width: 300,
-                height: 150,
-                color: Colors.grey[200],
-                child: const Icon(Icons.broken_image, size: 50, color: Colors.grey),
-              ),
-            )
+                    Db.imageUrl(bannerImage),
+                    width: 300,
+                    height: 150,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: 300,
+                      height: 150,
+                      color: Colors.grey[200],
+                      child: const Icon(
+                        Icons.broken_image,
+                        size: 50,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  )
                 : Container(
-              width: 300,
-              height: 150,
-              color: Colors.grey[200],
-              child: const Icon(Icons.image, size: 50, color: Colors.grey),
-            ),
+                    width: 300,
+                    height: 150,
+                    color: Colors.grey[200],
+                    child: const Icon(
+                      Icons.image,
+                      size: 50,
+                      color: Colors.grey,
+                    ),
+                  ),
           ),
           const SizedBox(height: 16),
           Row(
@@ -432,62 +502,58 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
       backgroundColor: AppColors.backgroundColor,
       body: isLargeScreen
           ? Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              flex: 3,
-              child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: _buildBannerList(),
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: _buildBannerList(),
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    flex: 2,
+                    child: Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: SingleChildScrollView(child: _buildBannerForm()),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(width: 20),
-            Expanded(
-              flex: 2,
-              child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: SingleChildScrollView(
-                  child: _buildBannerForm(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      )
+            )
           : Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: _isFormVisible
-            ? Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: SingleChildScrollView(
-            child: _buildBannerForm(),
-          ),
-        )
-            : Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: _buildBannerList(),
-        ),
-      ),
+              padding: const EdgeInsets.all(16.0),
+              child: _isFormVisible
+                  ? Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: SingleChildScrollView(child: _buildBannerForm()),
+                    )
+                  : Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: _buildBannerList(),
+                    ),
+            ),
       floatingActionButton: !isLargeScreen && !_isFormVisible
           ? FloatingActionButton(
-        backgroundColor: AppColors.primaryColor,
-        onPressed: () => setState(() => _isFormVisible = true),
-        child: const Icon(Icons.add, color: Colors.white),
-      )
+              backgroundColor: AppColors.primaryColor,
+              onPressed: () => setState(() => _isFormVisible = true),
+              child: const Icon(Icons.add, color: Colors.white),
+            )
           : null,
     );
   }

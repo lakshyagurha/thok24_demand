@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../utils/colors.dart';
 
-
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({super.key});
 
@@ -52,10 +51,12 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       final filtered = q.isEmpty
           ? rows
           : rows
-              .where((r) =>
-                  '${r['name'] ?? ''}'.toLowerCase().contains(q) ||
-                  '${r['phone'] ?? ''}'.toLowerCase().contains(q))
-              .toList();
+                .where(
+                  (r) =>
+                      '${r['name'] ?? ''}'.toLowerCase().contains(q) ||
+                      '${r['phone'] ?? ''}'.toLowerCase().contains(q),
+                )
+                .toList();
 
       if (!mounted) return;
       setState(() {
@@ -63,15 +64,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
         // in auth.users and phone/OTP accounts may not have one at all, so the contact
         // column shows the phone instead.
         users = filtered
-            .map((r) => {
-                  'id': r['id'],
-                  'name': r['name'] ?? '',
-                  'email': r['phone'] ?? '',
-                  'status': r['status'] ?? 'active',
-                  'date_time': r['created_at'] ?? '',
-                })
+            .map(
+              (r) => {
+                'id': r['id'],
+                'name': r['name'] ?? '',
+                'email': r['phone'] ?? '',
+                'status': r['status'] ?? 'active',
+                'date_time': r['created_at'] ?? '',
+              },
+            )
             .toList();
-        totalUsers = filtered.length < limit ? offset + filtered.length : offset + limit + 1;
+        totalUsers = filtered.length < limit
+            ? offset + filtered.length
+            : offset + limit + 1;
       });
     } catch (e) {
       debugPrint("Error fetching users: $e");
@@ -87,8 +92,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
       await fetchUsers();
     } on AdminApiException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     } catch (e) {
       debugPrint("Error toggling status: $e");
@@ -139,12 +145,21 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('$action User?', style: GoogleFonts.poppins(fontSize: 16.sp)),
-        content: Text('Are you sure you want to $action $name?', style: GoogleFonts.poppins(fontSize: 14.sp)),
+        title: Text(
+          '$action User?',
+          style: GoogleFonts.poppins(fontSize: 16.sp),
+        ),
+        content: Text(
+          'Are you sure you want to $action $name?',
+          style: GoogleFonts.poppins(fontSize: 14.sp),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('Cancel', style: GoogleFonts.poppins(color: Colors.grey, fontSize: 14.sp)),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: Colors.grey, fontSize: 14.sp),
+            ),
           ),
           TextButton(
             onPressed: () {
@@ -202,15 +217,19 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   hintText: "Search by name or email...",
                   hintStyle: GoogleFonts.poppins(fontSize: 14.sp),
                   border: InputBorder.none,
-                  prefixIcon: Icon(Icons.search, color: Colors.grey, size: 20.sp),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    color: Colors.grey,
+                    size: 20.sp,
+                  ),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
-                    icon: Icon(Icons.clear, size: 20.sp),
-                    onPressed: () {
-                      _searchController.clear();
-                      performSearch("");
-                    },
-                  )
+                          icon: Icon(Icons.clear, size: 20.sp),
+                          onPressed: () {
+                            _searchController.clear();
+                            performSearch("");
+                          },
+                        )
                       : null,
                   contentPadding: EdgeInsets.symmetric(vertical: 16.h),
                 ),
@@ -232,84 +251,124 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                   ? Center(child: CircularProgressIndicator())
                   : users.isEmpty
                   ? Center(
-                child: Text("No users found", style: GoogleFonts.poppins(fontSize: 16.sp)),
-              )
+                      child: Text(
+                        "No users found",
+                        style: GoogleFonts.poppins(fontSize: 16.sp),
+                      ),
+                    )
                   : ListView.separated(
-                itemCount: users.length,
-                separatorBuilder: (context, index) => SizedBox(height: 12.h),
-                itemBuilder: (context, index) {
-                  final user = users[index];
-                  final userId = int.tryParse(user['id'].toString()) ?? 0;
-                  final status = user['status'].toString();
-                  final isActive = status == 'active';
+                      itemCount: users.length,
+                      separatorBuilder: (context, index) =>
+                          SizedBox(height: 12.h),
+                      itemBuilder: (context, index) {
+                        final user = users[index];
+                        final userId = int.tryParse(user['id'].toString()) ?? 0;
+                        final status = user['status'].toString();
+                        final isActive = status == 'active';
 
-                  return Container(
-                    padding: EdgeInsets.all(16.w),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12.r),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 6.r,
-                          offset: Offset(0, 3.h),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text("ID: ${user['id']}", style: GoogleFonts.poppins(fontSize: 13.sp, fontWeight: FontWeight.bold)),
-                              SizedBox(height: 4.h),
-                              Text("Name: ${user['name']}", style: GoogleFonts.poppins(fontSize: 13.sp)),
-                              SizedBox(height: 2.h),
-                              Text("Email: ${user['email']}", style: GoogleFonts.poppins(fontSize: 13.sp, color: Colors.grey[700])),
-                              SizedBox(height: 4.h),
-                              Row(
-                                children: [
-                                  Text(
-                                    "Status: ${status[0].toUpperCase()}${status.substring(1)}",
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13.sp,
-                                      color: isActive ? Colors.green : Colors.red,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  SizedBox(width: 10.w),
-                                  Text(
-                                    "Join Date: ${user['date_time']}",
-                                    style: GoogleFonts.poppins(fontSize: 13.sp, color: Colors.grey[700]),
-                                  ),
-                                ],
+                        return Container(
+                          padding: EdgeInsets.all(16.w),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12.r),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.05),
+                                blurRadius: 6.r,
+                                offset: Offset(0, 3.h),
                               ),
                             ],
                           ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () => _showConfirmationDialog(userId, user['name'], status),
-                          icon: Icon(
-                            isActive ? Icons.block : Icons.check_circle,
-                            size: 18.sp,
-                            color: Colors.white,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "ID: ${user['id']}",
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13.sp,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(height: 4.h),
+                                    Text(
+                                      "Name: ${user['name']}",
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13.sp,
+                                      ),
+                                    ),
+                                    SizedBox(height: 2.h),
+                                    Text(
+                                      "Email: ${user['email']}",
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13.sp,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                    SizedBox(height: 4.h),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          "Status: ${status[0].toUpperCase()}${status.substring(1)}",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 13.sp,
+                                            color: isActive
+                                                ? Colors.green
+                                                : Colors.red,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        SizedBox(width: 10.w),
+                                        Text(
+                                          "Join Date: ${user['date_time']}",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 13.sp,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: () => _showConfirmationDialog(
+                                  userId,
+                                  user['name'],
+                                  status,
+                                ),
+                                icon: Icon(
+                                  isActive ? Icons.block : Icons.check_circle,
+                                  size: 18.sp,
+                                  color: Colors.white,
+                                ),
+                                label: Text(
+                                  isActive ? 'Block' : 'Unblock',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13.sp,
+                                    color: AppColors.surfaceColor,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: isActive
+                                      ? Colors.red
+                                      : Colors.green,
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 12.w,
+                                    vertical: 8.h,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8.r),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          label: Text(
-                            isActive ? 'Block' : 'Unblock',
-                            style: GoogleFonts.poppins(fontSize: 13.sp, color: AppColors.surfaceColor),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isActive ? Colors.red : Colors.green,
-                            padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
-                          ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
             SizedBox(height: 24.h),
             if (totalUsers > 0) ...[
@@ -318,14 +377,20 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                 children: [
                   Row(
                     children: [
-                      Text('Rows per page:', style: GoogleFonts.poppins(fontSize: 14.sp)),
+                      Text(
+                        'Rows per page:',
+                        style: GoogleFonts.poppins(fontSize: 14.sp),
+                      ),
                       SizedBox(width: 8.w),
                       DropdownButton<int>(
                         value: limit,
                         items: [5, 10, 20, 50].map((int value) {
                           return DropdownMenuItem<int>(
                             value: value,
-                            child: Text('$value', style: GoogleFonts.poppins(fontSize: 14.sp)),
+                            child: Text(
+                              '$value',
+                              style: GoogleFonts.poppins(fontSize: 14.sp),
+                            ),
                           );
                         }).toList(),
                         onChanged: (value) {
@@ -359,13 +424,21 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                       ),
                       IconButton(
                         icon: Icon(Icons.chevron_right, size: 20.sp),
-                        onPressed: offset + limit >= totalUsers ? null : nextPage,
-                        color: offset + limit >= totalUsers ? Colors.grey : Colors.blue,
+                        onPressed: offset + limit >= totalUsers
+                            ? null
+                            : nextPage,
+                        color: offset + limit >= totalUsers
+                            ? Colors.grey
+                            : Colors.blue,
                       ),
                       IconButton(
                         icon: Icon(Icons.last_page, size: 20.sp),
-                        onPressed: offset + limit >= totalUsers ? null : goToLastPage,
-                        color: offset + limit >= totalUsers ? Colors.grey : Colors.blue,
+                        onPressed: offset + limit >= totalUsers
+                            ? null
+                            : goToLastPage,
+                        color: offset + limit >= totalUsers
+                            ? Colors.grey
+                            : Colors.blue,
                       ),
                     ],
                   ),

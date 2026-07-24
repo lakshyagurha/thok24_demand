@@ -165,8 +165,10 @@ class AdminApi {
       // anything else with 401, and a signed-in non-staff user with 403.
       res = await _client.functions.invoke(_function, body: body);
     } on FunctionException catch (e) {
-      throw AdminApiException(_messageFrom(e.details) ?? _statusText(e.status),
-          status: e.status);
+      throw AdminApiException(
+        _messageFrom(e.details) ?? _statusText(e.status),
+        status: e.status,
+      );
     } catch (e) {
       throw AdminApiException('Network error: $e');
     }
@@ -276,7 +278,10 @@ class AdminCatalog {
     if (products.isEmpty) return const [];
 
     // Two extra reads rather than N: fetch the full child sets once and group in memory.
-    final variants = await AdminApi.list(AdminTables.productVariants, limit: 500);
+    final variants = await AdminApi.list(
+      AdminTables.productVariants,
+      limit: 500,
+    );
     final images = await AdminApi.list(AdminTables.productImages, limit: 500);
 
     final variantsByProduct = <String, List<Map<String, dynamic>>>{};
@@ -285,8 +290,9 @@ class AdminCatalog {
     }
     final imagesByProduct = <String, List<String>>{};
     for (final i in images) {
-      (imagesByProduct[i['product_id'].toString()] ??= [])
-          .add((i['image_url'] ?? '').toString());
+      (imagesByProduct[i['product_id'].toString()] ??= []).add(
+        (i['image_url'] ?? '').toString(),
+      );
     }
 
     return products.map((p) {
@@ -329,7 +335,8 @@ class AdminSettings {
     final rows = await AdminApi.list(AdminTables.appSettings, limit: 100);
     return {
       for (final r in rows)
-        if (r['key'] != null) r['key'].toString(): (r['value'] ?? '').toString(),
+        if (r['key'] != null)
+          r['key'].toString(): (r['value'] ?? '').toString(),
     };
   }
 
@@ -343,5 +350,16 @@ class AdminSettings {
 
   static Future<void> set(String key, String value) async {
     await AdminApi.setSetting(key, value);
+  }
+
+  /// Like [set] but reports failure instead of throwing, for call sites that already
+  /// branch on success and show their own message.
+  static Future<bool> trySet(String key, String value) async {
+    try {
+      await set(key, value);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 }

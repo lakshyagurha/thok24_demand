@@ -40,7 +40,6 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       fetchProducts();
-
     });
   }
 
@@ -67,8 +66,8 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
       final rowsFiltered = q.isEmpty
           ? rows
           : rows
-              .where((r) => '${r['name'] ?? ''}'.toLowerCase().contains(q))
-              .toList();
+                .where((r) => '${r['name'] ?? ''}'.toLowerCase().contains(q))
+                .toList();
 
       if (mounted) {
         {
@@ -87,7 +86,9 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
               for (var variant in product['variants']) {
                 final variantId = int.tryParse(variant['id'].toString()) ?? 0;
                 if (!_stockControllers.containsKey(variantId)) {
-                  _stockControllers[variantId] = TextEditingController(text: '0');
+                  _stockControllers[variantId] = TextEditingController(
+                    text: '0',
+                  );
                 }
               }
             }
@@ -101,14 +102,14 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
     }
   }
 
-
   void applyFilters() {
     setState(() {
       if (showLowStockOnly) {
         filteredProducts = products.where((product) {
           if (product['variants'] != null && product['variants'].isNotEmpty) {
             return product['variants'].any((variant) {
-              final currentStock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
+              final currentStock =
+                  int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
               return currentStock <= lowStockThreshold;
             });
           }
@@ -120,9 +121,11 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
     });
   }
 
-
-
-  Future<void> updateVariantStock(int variantId, int stockChange, int currentStock) async {
+  Future<void> updateVariantStock(
+    int variantId,
+    int stockChange,
+    int currentStock,
+  ) async {
     setState(() => _isUpdating[variantId] = true);
 
     try {
@@ -134,23 +137,26 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
         return;
       }
 
-      await AdminApi.update(
-        AdminTables.productVariants,
-        variantId,
-        {'stock': newTotalStock},
-      );
+      await AdminApi.update(AdminTables.productVariants, variantId, {
+        'stock': newTotalStock,
+      });
 
       if (mounted) {
         {
-          _showSnackBar('Stock updated successfully. New total: $newTotalStock', AppColors.successColor);
+          _showSnackBar(
+            'Stock updated successfully. New total: $newTotalStock',
+            AppColors.successColor,
+          );
 
           // Update the UI immediately without waiting for API refresh
           setState(() {
             // Find and update the variant in our local data
             for (var product in products) {
-              if (product['variants'] != null && product['variants'].isNotEmpty) {
+              if (product['variants'] != null &&
+                  product['variants'].isNotEmpty) {
                 for (var variant in product['variants']) {
-                  if (int.tryParse(variant['id']?.toString() ?? '0') == variantId) {
+                  if (int.tryParse(variant['id']?.toString() ?? '0') ==
+                      variantId) {
                     variant['stock'] = newTotalStock.toString();
                     break;
                   }
@@ -180,9 +186,9 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
           icon: const Icon(Icons.chevron_left),
           onPressed: currentPage > 1
               ? () {
-            setState(() => currentPage--);
-            fetchProducts();
-          }
+                  setState(() => currentPage--);
+                  fetchProducts();
+                }
               : null,
           color: currentPage > 1 ? AppColors.primaryColor : Colors.grey,
         ),
@@ -205,19 +211,22 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
           icon: const Icon(Icons.chevron_right),
           onPressed: currentPage < totalPages
               ? () {
-            setState(() => currentPage++);
-            fetchProducts();
-          }
+                  setState(() => currentPage++);
+                  fetchProducts();
+                }
               : null,
-          color: currentPage < totalPages ? AppColors.primaryColor : Colors.grey,
+          color: currentPage < totalPages
+              ? AppColors.primaryColor
+              : Colors.grey,
         ),
       ],
     );
   }
 
   Widget _buildStockProgress(int currentStock, int maxStock) {
-    int effectiveMaxStock =
-    maxStock > 0 ? maxStock : (currentStock * 2).clamp(100, 1000);
+    int effectiveMaxStock = maxStock > 0
+        ? maxStock
+        : (currentStock * 2).clamp(100, 1000);
     double progress = currentStock / effectiveMaxStock;
 
     Color progressColor;
@@ -333,7 +342,9 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                   ),
                 ),
               ),
@@ -341,37 +352,47 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
               _isUpdating[variantId] == true
                   ? const CircularProgressIndicator()
                   : Row(
-                children: [
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.successColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    onPressed: () {
-                      final stockChange = int.tryParse(
-                          _stockControllers[variantId]?.text ?? '') ?? 0;
+                      children: [
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.successColor,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () {
+                            final stockChange =
+                                int.tryParse(
+                                  _stockControllers[variantId]?.text ?? '',
+                                ) ??
+                                0;
 
-                      if (stockChange != 0) {
-                        updateVariantStock(variantId, stockChange, currentStock);
-                      } else {
-                        _showSnackBar("Please enter a valid number", AppColors.errorColor);
-                      }
-                    },
-                    child: const Text("Update"),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.refresh),
-                    onPressed: () {
-                      _stockControllers[variantId]?.text = '0';
-                    },
-                    tooltip: 'Reset',
-                  ),
-                ],
-              ),
+                            if (stockChange != 0) {
+                              updateVariantStock(
+                                variantId,
+                                stockChange,
+                                currentStock,
+                              );
+                            } else {
+                              _showSnackBar(
+                                "Please enter a valid number",
+                                AppColors.errorColor,
+                              );
+                            }
+                          },
+                          child: const Text("Update"),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          onPressed: () {
+                            _stockControllers[variantId]?.text = '0';
+                          },
+                          tooltip: 'Reset',
+                        ),
+                      ],
+                    ),
             ],
           ),
         ],
@@ -392,18 +413,21 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
     final isExpanded = _expandedProducts[productId] ?? false;
 
     // Check if any variant has low stock
-    final hasLowStockVariant = hasVariants && product['variants'].any((variant) {
-      final currentStock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
-      return currentStock <= lowStockThreshold;
-    });
+    final hasLowStockVariant =
+        hasVariants &&
+        product['variants'].any((variant) {
+          final currentStock =
+              int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
+          return currentStock <= lowStockThreshold;
+        });
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      color: hasLowStockVariant ? AppColors.errorColor.withValues(alpha: 0.05) : null,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: hasLowStockVariant
+          ? AppColors.errorColor.withValues(alpha: 0.05)
+          : null,
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -421,14 +445,17 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
               color: AppColors.backgroundColor,
               image: imageUrl != null
                   ? DecorationImage(
-                image: NetworkImage(imageUrl),
-                fit: BoxFit.cover,
-              )
+                      image: NetworkImage(imageUrl),
+                      fit: BoxFit.cover,
+                    )
                   : null,
             ),
             child: imageUrl == null
-                ? const Icon(Icons.image,
-                color: AppColors.hintTextColor, size: 30)
+                ? const Icon(
+                    Icons.image,
+                    color: AppColors.hintTextColor,
+                    size: 30,
+                  )
                 : null,
           ),
           title: Row(
@@ -448,8 +475,10 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
               if (hasLowStockVariant) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.errorColor,
                     borderRadius: BorderRadius.circular(4),
@@ -463,7 +492,7 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
                     ),
                   ),
                 ),
-              ]
+              ],
             ],
           ),
           subtitle: Text(
@@ -475,15 +504,16 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
           ),
           children: hasVariants
               ? product['variants']
-              .map<Widget>(
-                  (variant) => _buildVariantItem(variant, productName))
-              .toList()
+                    .map<Widget>(
+                      (variant) => _buildVariantItem(variant, productName),
+                    )
+                    .toList()
               : const [
-            Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Text('No variants available'),
-            )
-          ],
+                  Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: Text('No variants available'),
+                  ),
+                ],
         ),
       ),
     );
@@ -552,9 +582,7 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
         content: Text(msg, style: GoogleFonts.poppins()),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
@@ -578,9 +606,7 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
               children: [
                 Text(
                   'Low Stock Only',
-                  style: GoogleFonts.poppins(
-                    color: AppColors.primaryTextColor,
-                  ),
+                  style: GoogleFonts.poppins(color: AppColors.primaryTextColor),
                 ),
                 const SizedBox(width: 8),
                 Switch(
@@ -633,18 +659,23 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
                             decoration: InputDecoration(
                               labelText: 'Search Products',
                               labelStyle: GoogleFonts.poppins(
-                                  color: AppColors.secondaryTextColor),
-                              prefixIcon: const Icon(Icons.search,
-                                  color: AppColors.hintTextColor),
+                                color: AppColors.secondaryTextColor,
+                              ),
+                              prefixIcon: const Icon(
+                                Icons.search,
+                                color: AppColors.hintTextColor,
+                              ),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
-                                borderSide:
-                                const BorderSide(color: AppColors.borderColor),
+                                borderSide: const BorderSide(
+                                  color: AppColors.borderColor,
+                                ),
                               ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8),
-                                borderSide:
-                                const BorderSide(color: AppColors.borderColor),
+                                borderSide: const BorderSide(
+                                  color: AppColors.borderColor,
+                                ),
                               ),
                               filled: true,
                               fillColor: AppColors.backgroundColor,
@@ -675,7 +706,10 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: IconButton(
-                            icon: const Icon(Icons.refresh, color: Colors.white),
+                            icon: const Icon(
+                              Icons.refresh,
+                              color: Colors.white,
+                            ),
                             onPressed: () {
                               setState(() {
                                 searchQuery = '';
@@ -754,46 +788,46 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
                   ? _buildShimmerLoader()
                   : filteredProducts.isEmpty
                   ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.inventory_2,
-                      size: 64,
-                      color: AppColors.hintTextColor,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      showLowStockOnly
-                          ? 'No products with low stock found'
-                          : 'No products found',
-                      style: GoogleFonts.poppins(
-                        color: AppColors.secondaryTextColor,
-                        fontSize: 16,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.inventory_2,
+                            size: 64,
+                            color: AppColors.hintTextColor,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            showLowStockOnly
+                                ? 'No products with low stock found'
+                                : 'No products found',
+                            style: GoogleFonts.poppins(
+                              color: AppColors.secondaryTextColor,
+                              fontSize: 16,
+                            ),
+                          ),
+                          if (isLoading) const CircularProgressIndicator(),
+                        ],
                       ),
-                    ),
-                    if (isLoading) const CircularProgressIndicator(),
-                  ],
-                ),
-              )
+                    )
                   : Stack(
-                children: [
-                  ListView.builder(
-                    itemCount: filteredProducts.length,
-                    itemBuilder: (context, index) {
-                      final product = filteredProducts[index];
-                      return _buildProductListItem(product);
-                    },
-                  ),
-                  if (isLoading)
-                    Container(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      child: const Center(
-                        child: CircularProgressIndicator(),
-                      ),
+                      children: [
+                        ListView.builder(
+                          itemCount: filteredProducts.length,
+                          itemBuilder: (context, index) {
+                            final product = filteredProducts[index];
+                            return _buildProductListItem(product);
+                          },
+                        ),
+                        if (isLoading)
+                          Container(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            child: const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          ),
+                      ],
                     ),
-                ],
-              ),
             ),
 
             if (totalProducts > itemsPerPage)
