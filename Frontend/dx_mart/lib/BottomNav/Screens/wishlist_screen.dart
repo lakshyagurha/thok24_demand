@@ -1,11 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../CustomWidgets/product_card.dart';
-import '../../utils/api_constants.dart';
+import '../../core/supabase.dart';
+import '../../data/cart_repository.dart';
 import '../../utils/colors.dart';
 import '../bottomNavScreen.dart';
 import 'cartScreen.dart';
@@ -26,9 +25,6 @@ class _WishlistScreenState extends State<WishlistScreen> {
   List<dynamic> wishlistProducts = [];
   bool isLoading = true;
   bool isRefreshing = false;
-  String userEmail = "";
-  String userName = "";
-  String userID = "";
   String _lastFetchedLang = '';
 
   List<Map<String, dynamic>> cartList = [];
@@ -36,124 +32,65 @@ class _WishlistScreenState extends State<WishlistScreen> {
   @override
   void initState() {
     super.initState();
-    fetchUserData();
+    _load();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (userID.isNotEmpty) {
+    if (Db.isSignedIn) {
       final activeLang = Provider.of<LanguageProvider>(context).currentLanguage;
       if (_lastFetchedLang != activeLang) {
         _lastFetchedLang = activeLang;
-        fetchWishlist(userID);
+        fetchWishlist();
       }
     }
   }
 
-  Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      fetchUserDetails(email);
-    }
+  /// Loads the screen for the signed-in user. There is no id to look up: the old
+  /// version read an email from SharedPreferences, called get_user.php to turn it into
+  /// an integer id, and then sent that id back to every other endpoint.
+  Future<void> _load() async {
+    if (!Db.isSignedIn) return;
+    await _refreshCart();
+    await fetchWishlist();
   }
 
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(ApiConstants.BASE_URL+"auth/get_user.php?email=$email");
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-
-          setState(() {
-            userName = data["user"]["name"];
-            userID = data["user"]["id"];
-            fetchCartQuantity(userID);
-            fetchWishlist(userID);
-          });
-        }
-      }
-    } catch (e) {
-      print("Error fetching user details: $e");
-    }
-  }
-
-  /// ✅ Cart quantity fetch
-  Future<void> fetchCartQuantity(String id) async {
-    if (id.isEmpty) return;
+  /// Cart sync. RLS scopes this to the signed-in user, so there is no id to pass.
+  Future<void> _refreshCart() async {
+    if (!Db.isSignedIn) return;
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.refreshCartData(id);
-      setState(() {
-        cartList = cartProvider.getCartItemsAsList(id);
-      });
+      await cartProvider.refreshCartData();
+      if (!mounted) return;
+      setState(() => cartList = cartProvider.getCartItemsAsList());
     } catch (e) {
-      setState(() {
-        cartList = [];
-      });
+      if (mounted) setState(() => cartList = []);
     }
   }
 
-  Future<void> fetchWishlist(String userID) async {
-    if (userID.isEmpty) return;
+  Future<void> fetchWishlist() async {
+    if (!Db.isSignedIn) return;
 
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    _lastFetchedLang = lang;
-
-    setState(() {
-      isLoading = true;
-    });
+    _lastFetchedLang =
+        Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
+    setState(() => isLoading = true);
 
     try {
-      final url = Uri.parse('${ApiConstants.GET_WISHLIST}?user_id=$userID&lang=$lang');
-      final response = await http.get(url);
-
-      print("Wishlist API Response: ${response.body}"); // Debugging
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        print("Parsed data keys: ${data.keys.toList()}"); // Debugging: keys देखें
-        print("Products key exists: ${data.containsKey('products')}"); // Debugging
-        print("Data type of 'products': ${data['products']?.runtimeType}"); // Debugging
-
-        if (data['success'] == true) {
-
-          if (data['products'] != null && data['products'].isNotEmpty) {
-            setState(() {
-              wishlistProducts = List<Map<String, dynamic>>.from(data['products']);
-            });
-            print("Loaded ${wishlistProducts.length} products"); // Debugging
-          } else {
-            setState(() {
-              wishlistProducts = [];
-            });
-            print("No products found in response"); // Debugging
-          }
-        } else {
-          setState(() {
-            wishlistProducts = [];
-          });
-          print("API returned success: false"); // Debugging
-        }
-      } else {
-        print("API error status code: ${response.statusCode}"); // Debugging
-        setState(() {
-          wishlistProducts = [];
-        });
-      }
+      // No user_id and no lang in the request. RLS scopes the rows to the caller, and
+      // localisation happens in the widgets via the model's localizedName().
+      final products = await const WishlistRepository().items();
+      if (!mounted) return;
+      setState(() {
+        wishlistProducts = products
+            .map((p) => {...p.toCardMap(), 'product_id': p.id})
+            .toList();
+      });
     } catch (e) {
-      print('Error fetching wishlist: $e');
-      setState(() {
-        wishlistProducts = [];
-      });
+      debugPrint('Error fetching wishlist: $e');
+      if (mounted) setState(() => wishlistProducts = []);
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -161,25 +98,14 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
   Future<void> removeFromWishlist(String productId) async {
     try {
-      final url = Uri.parse(ApiConstants.REMOVE_FROM_WISHLIST);
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'user_id': userID,
-          'product_id': productId,
-        }),
-      );
-
-      final data = json.decode(response.body);
-      if (data['success'] == true) {
-        // ✅ सिर्फ local list update करो, दोबारा full fetch की ज़रूरत नहीं
-        setState(() {
-          wishlistProducts.removeWhere((item) => item['product_id'].toString() == productId);
-        });
-      }
+      await const WishlistRepository().remove(int.tryParse(productId) ?? 0);
+      if (!mounted) return;
+      setState(() {
+        wishlistProducts
+            .removeWhere((item) => item['product_id'].toString() == productId);
+      });
     } catch (e) {
-      print('Error removing from wishlist: $e');
+      debugPrint('Error removing from wishlist: $e');
     }
   }
 
@@ -187,7 +113,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
     setState(() {
       isRefreshing = true;
     });
-    await fetchWishlist(userID);
+    await fetchWishlist();
     setState(() {
       isRefreshing = false;
     });
@@ -201,7 +127,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
       body: Stack(
         children: [
-          userID.isEmpty
+          !Db.isSignedIn
               ? Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -319,19 +245,10 @@ class _WishlistScreenState extends State<WishlistScreen> {
                       final product = wishlistProducts[index];
                       return ProductCard(
                         product: product,
-                        userId: userID,
-                        onCartUpdated: () {
-                          fetchCartQuantity(userID); // ✅ Real-time update
-                        },
-                        onWishlistUpdated: (){
-                          fetchWishlist(userID);
-                        },
-
-                        onCategoryBack: (){
-                          setState(() {
-                            fetchCartQuantity(userID);
-                          });
-                        },
+                        userId: '',
+                        onCartUpdated: _refreshCart,
+                        onWishlistUpdated: fetchWishlist,
+                        onCategoryBack: _refreshCart,
                       );
                     },
                   ),
@@ -345,7 +262,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
           // ✅ Floating Cart Button (Only show if cartList is not empty)
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount(userID);
+              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
               final hasItems = uniqueItemsCount > 0;
 
               return AnimatedPositioned(

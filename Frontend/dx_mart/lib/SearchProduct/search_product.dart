@@ -1,14 +1,13 @@
-import 'dart:convert';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../BottomNav/Screens/cartScreen.dart';
 import '../CustomWidgets/product_card.dart';
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import 'package:provider/provider.dart';
 import '../CustomWidgets/cart_provider.dart';
@@ -32,9 +31,6 @@ class _SearchProductState extends State<SearchProduct> {
   bool _isLoadingProducts = false;
   List<Map<String, dynamic>> cartList = [];
 
-  String userEmail = "";
-  String userName = "";
-  String userID = "";
 
   // Voice recognition variables
   stt.SpeechToText _speech = stt.SpeechToText();
@@ -45,7 +41,7 @@ class _SearchProductState extends State<SearchProduct> {
   void initState() {
     super.initState();
     fetchProducts(); // First load all products
-    fetchUserData();
+    _refreshCart();
     _initializeSpeech();
   }
 
@@ -122,72 +118,37 @@ class _SearchProductState extends State<SearchProduct> {
       hasSearched = true;
     });
 
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    final url = Uri.parse(
-      "${ApiConstants.VIEW_ALL_PRODUCTS}?search=$search&page=1&limit=20&lang=$lang",
-    );
-
-    final response = await http.get(url);
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          products = data['products'];
-        });
-      }
-    }
-
-    setState(() {
-      isLoading = false;
-    });
-  }
-
-  Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      fetchUserDetails(email);
-    }
-  }
-
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(ApiConstants.BASE_URL+"auth/get_user.php?email=$email");
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-
-          setState(() {
-            userName = data["user"]["name"];
-            userID = data["user"]["id"];
-            fetchCartQuantity(userID);
-          });
-        }
-      }
+      final repo = const CatalogRepository();
+      // An empty query means "show the catalog", not "search for nothing".
+      final result = search.trim().isEmpty
+          ? await repo.products(limit: 20)
+          : await repo.search(search);
+      if (!mounted) return;
+      setState(() => products = result.map((p) => p.toCardMap()).toList());
     } catch (e) {
-      print("Error fetching user details: $e");
+      debugPrint('Search failed: $e');
+      if (mounted) setState(() => products = []);
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  /// Cart sync. RLS scopes this to the signed-in user, so there is no id to pass and
+  /// no email-to-id lookup to perform.
+  Future<void> _refreshCart() async {
+    if (!Db.isSignedIn) return;
+    try {
+      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      await cartProvider.refreshCartData();
+      if (!mounted) return;
+      setState(() => cartList = cartProvider.getCartItemsAsList());
+    } catch (e) {
+      if (mounted) setState(() => cartList = []);
     }
   }
 
   /// ✅ Cart quantity fetch
-  Future<void> fetchCartQuantity(String id) async {
-    if (id.isEmpty) return;
-    try {
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.refreshCartData(id);
-      setState(() {
-        cartList = cartProvider.getCartItemsAsList(id);
-      });
-    } catch (e) {
-      setState(() {
-        cartList = [];
-      });
-    }
-  }
 
   @override
   void dispose() {
@@ -325,7 +286,7 @@ class _SearchProductState extends State<SearchProduct> {
           // ✅ Floating Cart Button (Only show if cartList is not empty)
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount(userID);
+              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
               final hasItems = uniqueItemsCount > 0;
 
               return AnimatedPositioned(
@@ -580,10 +541,8 @@ class _SearchProductState extends State<SearchProduct> {
           final product = list[index];
           return ProductCard(
             product: product,
-            userId: userID,
-            onCartUpdated: () {
-              fetchCartQuantity(userID); // ✅ Real-time update
-            },
+            userId: '',
+            onCartUpdated: _refreshCart,
           );
         },
       ),
