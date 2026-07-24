@@ -4,8 +4,11 @@ Source of truth: the **live local `thok24` database** (31 tables), not `Backend/
 (28 tables, missing `chat_messages` / `product_aliases` / `regular_orders`).
 
 Migration: `supabase/migrations/20260724000001_initial_schema.sql` — 21 tables in `public`,
-1 in `private`. **Not applied anywhere.** Validated against the real Supabase project inside a
-transaction that was rolled back; the project remains empty.
+1 in `private`.
+
+**Status: APPLIED** to project `asnjjkpjuqsmjqrjojzl` on 2026-07-24, after user review, together
+with `20260724000002_rls_policies.sql`. Structure only — no data has been migrated yet (Phase 5).
+Verified afterwards with `supabase/tests/rls_verification.sql`: 20/20 pass against the live schema.
 
 ---
 
