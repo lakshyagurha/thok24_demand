@@ -34,9 +34,21 @@ proves that's necessary.
 
 **Stack:** Backend is raw PHP (procedural, mysqli, no framework) against MariaDB, currently
 hosted locally via XAMPP. Frontend is two separate Flutter apps: `Frontend/dx_mart` (consumer
-app) and `Frontend/dxmart_admin` (internal admin/ops app). There is **no git repository** in this
-project yet — this needs to be fixed before any large-scale automated changes are made, so every
-change is diffable and revertible.
+app) and `Frontend/dxmart_admin` (internal admin/ops app).
+
+> **Corrected 2026-07-24.** This section was written before a full re-audit. Fixes inline below,
+> marked ✅ where the original claim was verified and ❌ where it was wrong.
+
+❌ *"There is no git repository yet"* — **git exists** and has since before the migration started.
+`.gitignore` is sound (`build/`, `.env`, `*.key`, `error_log`, `uploads/` all excluded and
+untracked). Migration work lives on the `supabase-migration` branch.
+
+❌ *"hosted locally via XAMPP"* is incomplete — there is also a **live public deployment** at
+`dxmart.digixcode.com` and `digimart.digixcode.com`. Both are demo/test only, with no real
+customer data (confirmed by Lakshya, 2026-07-24). The local dev database is named **`thok24`**,
+not `dxmart`; `Backend/digixcod_dxmart.sql` is a *production-side* export from Jan 2026 and is
+**incomplete** (28 tables vs the live 31 — it lacks `chat_messages`, `product_aliases` and
+`regular_orders`). Treat the live `thok24` database as the schema source of truth, not the dump.
 
 **Feature surface (already built, don't discard):** category/product/variant catalog with
 images, cart, wishlist, coupons, delivery charge/time-window rules, multiple delivery addresses,
@@ -54,11 +66,12 @@ via a `regular_orders` table. This cheap-deterministic-first, LLM-fallback-secon
 the right shape — harden it, don't replace it.
 
 **Confirmed problems (found by direct code read, not guesswork):**
-- SQL injection: 19 of 96 PHP files build queries via raw string interpolation instead of
-  prepared statements — concentrated almost entirely in `Backend/api_folder/auth/` (8 of 9 files:
-  login, signup, forgot/reset password, OTP verify, edit profile, user status). The other 34
-  files correctly use `->prepare()`, so the pattern is known but wasn't applied consistently on
-  the most sensitive surface.
+- ❌ SQL injection — **understated in the original brief.** It is **30 non-vendor files**, not 19,
+  and it is *not* concentrated in `auth/`. All **10** of the `auth/` files are injectable (not 8
+  of 9), plus 20 more outside it: `location/*`, `main_category/{delete,edit}`, seven files under
+  `product/`, `wishlist/get_wishlist`, `delivery_address/*`, `banner_api/delete_banner` and
+  `place_order/order_assignment`. 34 files do use `->prepare()`. This is an app-wide problem, not
+  an auth-folder one.
 - `Backend/api_folder/admin_login.php` compares the admin password in **plaintext**, not hashed.
 - No real auth/session/token layer anywhere. Every endpoint trusts a `user_id` sent by the client
   in the request body/query string with no verification — meaning any client can currently read
@@ -67,7 +80,13 @@ the right shape — harden it, don't replace it.
 - `Backend/api_folder/bot/process_chat.php` has a live Gemini API key hardcoded directly in the
   source, called over curl with `CURLOPT_SSL_VERIFYPEER` disabled. **This key must be rotated —
   treat it as already compromised** since it's sat in a plain-text file.
-- CORS is wide open (`Access-Control-Allow-Origin: *`) on every endpoint, including admin login.
+- ✅ CORS is wide open on every endpoint — though the mechanism is one line in
+  `Backend/api_folder/connection.php`, which every endpoint includes. One file, not 96.
+- ❗ **Not in the original brief:** a second live secret, a **Gmail App Password**, was hardcoded
+  at `place_order/send_email_background.php:46`. `auth/login.php` also returned the full user row
+  — including the bcrypt password hash — to the client. `place_order.php` computed the cart
+  subtotal server-side but took `discount_amount`, `delivery_charge` and **`final_amount` from the
+  request body**, so a client could submit an order at any price it chose.
 - No environment separation: `Frontend/dx_mart/lib/.../api_constants.dart` hardcodes a local LAN
   IP (`192.168.31.10`) as the API base URL — this only works on the office WiFi today.
 - No rate limiting, no centralized input validation, inconsistent per-folder `error_log` files
@@ -80,18 +99,34 @@ the right shape — harden it, don't replace it.
   translating regardless (auto-increment → identity columns, `ON DUPLICATE KEY UPDATE` →
   `ON CONFLICT`, backtick identifiers, etc.), and mysqli can't talk to Postgres at all. Since a
   real rewrite of the data-access layer is unavoidable, use it to fix the auth/session gap
-  properly: Supabase Auth (with phone/OTP — there's already an `otp_table`, so this maps
-  naturally) for real sessions, Row Level Security to structurally replace "every endpoint
-  manually checks user_id" with a database-enforced rule, Supabase Storage to replace the local
-  `/uploads` folder, and Edge Functions (TypeScript/Deno) for anything needing a secret (the
-  Gemini call, Razorpay webhook verification, email sending).
-- **Keep both Flutter apps and the BolKeOrder feature.** Rewrite their data layer (swap `http`
-  calls in `api_constants.dart`-style service classes for the `supabase_flutter` SDK plus calls to
-  the new Edge Functions), but the UI/UX and the voice-ordering logic shape stay.
-- **B2C/B2B reuse:** don't fork into two Flutter apps yet. Add a role/account-type field to the
-  user model (household vs. kirana retailer), and use RLS policies to gate `selling_price` vs.
-  the already-existing `wholesale_price`, catalog visibility, and minimum-order rules by role.
-  Revisit forking only once B2B volume actually justifies maintaining two codebases.
+  properly: Supabase Auth for real sessions, Row Level Security to structurally replace "every
+  endpoint manually checks user_id" with a database-enforced rule, Supabase Storage to replace
+  the local `/uploads` folder, and Edge Functions (TypeScript/Deno) for anything needing a secret
+  (the Gemini call, Razorpay webhook verification, email sending).
+
+  ❌ **The original rationale for phone/OTP was wrong.** It claimed "there's already an
+  `otp_table`, so this maps naturally". `otp_table` is `(id, email, otp, expiry)` — **email**-based
+  — and the `users` table has **no phone column at all**. Phone/OTP is a *new* feature needing an
+  SMS provider with real per-message cost, not a natural mapping. Lakshya chose it anyway
+  (2026-07-24), which is clean here only because all existing data is test/seed, so there are no
+  real bcrypt passwords or accounts to preserve.
+- **Keep both Flutter apps and the BolKeOrder feature.** Rewrite their data layer for the
+  `supabase_flutter` SDK plus calls to the new Edge Functions, but the UI/UX and the
+  voice-ordering logic shape stay.
+
+  ❌ *"swap `http` calls in `api_constants.dart`-style service classes"* assumed a service layer
+  that **does not exist**. Only `dx_mart/lib/BolKeOrder/services` was ever a service; **39 of 68
+  Dart files call `package:http` inline from inside widgets** (28 consumer, 11 admin). The layer
+  had to be *built*, not swapped — it now lives in `dx_mart/lib/core/` and `dx_mart/lib/data/`.
+- ❌ **B2C/B2B reuse — REVERSED on 2026-07-24. DxMart is consumer-only.**
+  There are no kirana/retailer accounts, no B2B ordering and no role-based pricing. **Do not add
+  a `role` or `account_type` field.** Do not build any RLS policy, view or UI logic that
+  distinguishes user types or exposes `wholesale_price`; that column stays in the schema
+  untouched and unreferenced. If B2B is ever wanted, it will be planned as a separate effort —
+  do not design for it now.
+
+  *(The superseded instruction read: add a role/account-type field and gate `selling_price` vs.
+  `wholesale_price` by role. Ignore it.)*
 - **Local-first workflow:** use the Supabase CLI (`supabase init` / `supabase start`, which runs a
   full local Postgres+Auth+Storage stack via Docker) to develop and test exactly as XAMPP is used
   today, and only push to a hosted Supabase project once things work locally.
@@ -133,13 +168,62 @@ the right shape — harden it, don't replace it.
    safe to do read/write against a project we've confirmed is a dev/staging project. Confirm
    which Supabase project (new vs. existing) before connecting anything to it.
 
-## 4. Open questions to raise with me before or during Phase 1
+## 3a. Migration status (updated 2026-07-24)
 
-- Do I already have a Supabase account/project, or does one need creating?
-- What's the actual role model for kirana retailers vs. households — pricing tiers, minimum
-  order quantities, credit terms, anything beyond wholesale_price vs. selling_price?
-- Timeline: is there a specific pilot date in Sagar/Khurai/Bina this needs to be ready for?
-- Have the exposed secrets (Gemini API key, admin credentials) been rotated yet, or should that
-  be step zero?
-- Any data in the current XAMPP database that's real/live vs. test/seed data — i.e., how careful
-  do we need to be with the data migration step specifically?
+Branch `supabase-migration`. Supabase project ref **`asnjjkpjuqsmjqrjojzl`** — confirmed a dev
+project; it was completely empty before this work.
+
+- **Phase 0 — done.** Both hardcoded secrets removed from source, TLS verification restored,
+  `connection.php` fixed (it pointed at a non-existent `dxmart` database) and made env-driven.
+  ⚠️ **Rotation of the Gemini key and Gmail App Password at the providers is still outstanding
+  and is Lakshya's action.** They remain in git history regardless.
+- **Phase 1 — done and APPLIED.** 21 tables in `public` + 1 in `private`, 24 FKs, 50 indexes.
+- **Phase 2 — done and APPLIED.** 30 RLS policies, pure ownership, no role logic.
+  Regression test: `supabase/tests/rls_verification.sql` (self-cleaning, rolls back).
+- **Phase 3 — done and DEPLOYED.** Five Edge Functions, all ACTIVE:
+  `place-order`, `process-chat`, `admin-api`, `send-order-email`, `razorpay-webhook`.
+  Secrets still to set: `GEMINI_API_KEY`, `RESEND_API_KEY` + `ORDER_EMAIL_FROM`,
+  `RAZORPAY_WEBHOOK_SECRET`, `ALLOWED_ORIGINS`. Each degrades safely without them.
+- **Phase 4 — in progress.** Service layer built in `dx_mart/lib/core/` + `lib/data/`; screen
+  migration under way. Admin app not started.
+- **Phases 5 (data migration) and 6 (cutover) — not started.** No data has been migrated; the
+  Supabase database is structure-only.
+
+**Key architectural rule now in force:** no client may write `orders`, and no repository method
+accepts a user id. Identity comes from the verified JWT; RLS enforces ownership in the database.
+If something appears to need a client-supplied `user_id`, that is a bug, not a requirement.
+
+Verification tooling:
+- `supabase/tests/rls_verification.sql` — 20 RLS checks against the live schema.
+- `Frontend/dx_mart/tool/verify_rls.dart` — 15 checks as a real anonymous client.
+  Run with `dart run tool/verify_rls.dart` (NOT `flutter test`: the test binding stubs all HTTP
+  to status 400, so network assertions there are meaningless).
+- `deno test supabase/functions/_shared/intent_test.ts` — 16 voice-extraction tests.
+
+## 4. Open questions — ANSWERED 2026-07-24
+
+- ~~Do I already have a Supabase project?~~ **Yes**, ref `asnjjkpjuqsmjqrjojzl`, connected via
+  MCP (`.mcp.json`). It was empty; migrations 1 and 2 are now applied to it.
+- ~~Role model for kirana vs. households?~~ **Not applicable — consumer-only.** See §2.
+- ~~Pilot date?~~ **None fixed.** Optimize for correctness and low risk over speed.
+- ~~Secrets rotated?~~ **No — still outstanding, and it is step zero.** Both the Gemini key and
+  the Gmail App Password were live in source. Removed from the working tree, but they are in git
+  history and must be rotated at the providers.
+- ~~Real vs. test data?~~ **All test/seed**, both locally and on the digixcode.com demo
+  deployment. The Phase 5 dry run can therefore be aggressive and repeatable. ⚠️ Re-confirm this
+  before any destructive step if real pilot users have onboarded since.
+
+### Still open / decide before the relevant phase
+- **SMS provider for phone OTP** (MSG91, Twilio, …) — not chosen, and phone login does not work
+  until one is configured in Supabase Auth. Real per-message cost; gate it like any other spend.
+- **User migration is blocked and probably unnecessary.** Only 8 of 25 test users have a
+  derivable phone (via `delivery_address`), some are invalid 11-digit numbers, and some are
+  *shared between different users*. `auth.users.phone` is unique, so they cannot be migrated
+  faithfully. Recommendation: migrate catalog + the 295 `product_aliases` only, and let test
+  accounts re-register. Decide at the Phase 5 checkpoint.
+- **`send-order-email` uses Resend, not Gmail.** Edge Functions cannot open raw SMTP sockets.
+  Keeping Gmail would require an SMTP relay in front. Needs a call.
+- **`order_items.unit_price`** was added (nullable) so order history survives price changes; the
+  source recorded no line price at all. Say if you would rather port exactly and drop it.
+- **`products.types`** is still a comma-separated tag string. `text[]` + GIN is the idiomatic
+  Postgres shape; deferred because it changes query semantics in the Flutter layer.
