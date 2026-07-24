@@ -1,12 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
+import '../core/supabase.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/colors.dart';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:http/http.dart' as http;
 import 'package:image_picker_web/image_picker_web.dart';
-import '../utils/api_constants.dart';
 
 class BannerManagementScreen extends StatefulWidget {
   const BannerManagementScreen({super.key});
@@ -35,16 +36,9 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
 
   Future<void> fetchCategories() async {
     try {
-      final res = await http.get(Uri.parse(ApiConstants.MAIN_VIEW_CATEGORY));
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        print('Categories fetched: ${data.length} items');
-        print('Sample category: ${data.isNotEmpty ? data[0] : 'No data'}');
-
-        setState(() => categories = data);
-      } else {
-        _showSnackBar('Failed to load categories: ${res.statusCode}', AppColors.errorColor);
-      }
+      final data = await AdminApi.list(AdminTables.mainCategory, limit: 200);
+      if (!mounted) return;
+      setState(() => categories = data);
     } catch (e) {
       _showSnackBar('Error fetching categories: $e', AppColors.errorColor);
     }
@@ -53,31 +47,19 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
   Future<void> _fetchBanners() async {
     setState(() => _isLoadingList = true);
     try {
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_BANNER));
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        print('Banner API Response: ${jsonResponse.keys}');
-
-        if (jsonResponse['success'] == true) {
-          // ✅ Debug: Print first banner data to see keys
-          if (jsonResponse['data']['offer_banners'].isNotEmpty) {
-            print('First banner keys: ${jsonResponse['data']['offer_banners'][0].keys}');
-          }
-
-          setState(() {
-            _bannerList = jsonResponse['data']['offer_banners'];
-            _isLoadingList = false;
-          });
-        } else {
-          _showSnackBar("Failed to load data", AppColors.errorColor);
-          setState(() => _isLoadingList = false);
-        }
-      } else {
-        _showSnackBar("Error fetching banners: ${response.statusCode}", AppColors.errorColor);
-        setState(() => _isLoadingList = false);
-      }
+      // The old endpoint wrapped banners in an offer/occasion/discount envelope backed
+      // by tables that never existed. There is one `banner` table.
+      final rows = await AdminApi.list(AdminTables.banner, limit: 200);
+      if (!mounted) return;
+      setState(() {
+        _bannerList = rows;
+        _isLoadingList = false;
+      });
     } catch (e) {
-      _showSnackBar("Connection error: $e", AppColors.errorColor);
+      if (!mounted) return;
+      _showSnackBar(
+          e is AdminApiException ? e.message : "Connection error: $e",
+          AppColors.errorColor);
       setState(() => _isLoadingList = false);
     }
   }
@@ -95,33 +77,26 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
     setState(() => _isLoadingForm = true);
 
     try {
-      final apiUrl = ApiConstants.ADD_BANNER;
+      // Upload first, then store the returned PATH on the row. The bucket has no
+      // client write policy, so this goes through the Edge Function's service role.
+      final path = await AdminApi.uploadImage(_imageDataBytes!);
 
-      final body = {
-        "category_id": selectedCategoryId.toString(),
-        "data": base64Encode(_imageDataBytes!),
-        "name": _imageFileName ?? "banner_image_${DateTime.now().millisecondsSinceEpoch}.jpg",
-      };
+      await AdminApi.insert(AdminTables.banner, {
+        "category_id": selectedCategoryId,
+        "banner_image": path,
+      });
 
-      print('Uploading banner with category_id: $selectedCategoryId');
-
-      final res = await http.post(Uri.parse(apiUrl), body: body);
-      final response = jsonDecode(res.body);
-
-      print('Upload response: $response');
-
+      if (!mounted) return;
       setState(() => _isLoadingForm = false);
-
-      if (response["success"] == "true" || response["success"] == true) {
-        _showSnackBar("Banner Added Successfully! ✅", AppColors.successColor);
-        _resetForm();
-        _fetchBanners();
-      } else {
-        _showSnackBar("Error: ${response['message'] ?? 'Unknown error'}", AppColors.errorColor);
-      }
+      _showSnackBar("Banner Added Successfully! ✅", AppColors.successColor);
+      _resetForm();
+      _fetchBanners();
     } catch (e) {
+      if (!mounted) return;
       setState(() => _isLoadingForm = false);
-      _showSnackBar("Network error: $e", AppColors.errorColor);
+      _showSnackBar(
+          e is AdminApiException ? e.message : "Network error: $e",
+          AppColors.errorColor);
     }
   }
 
@@ -153,17 +128,10 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
   Future<void> _deleteBanner(String id) async {
     setState(() => _isLoadingList = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.DELETE_BANNER),
-        body: {"id": id},
-      );
-      final responseData = jsonDecode(response.body);
-      if (response.statusCode == 200 && (responseData["success"] == "true" || responseData["success"] == true)) {
-        _showSnackBar("Banner deleted successfully", AppColors.successColor);
-        await _fetchBanners();
-      } else {
-        _showSnackBar("Error: ${responseData['message'] ?? 'Unknown error'}", AppColors.errorColor);
-      }
+      await AdminApi.delete(AdminTables.banner, id);
+      if (!mounted) return;
+      _showSnackBar("Banner deleted successfully", AppColors.successColor);
+      await _fetchBanners();
     } catch (e) {
       _showSnackBar("Deletion error: $e", AppColors.errorColor);
     } finally {
@@ -354,7 +322,7 @@ class _BannerManagementScreenState extends State<BannerManagementScreen> {
             borderRadius: BorderRadius.circular(8),
             child: bannerImage.isNotEmpty
                 ? Image.network(
-              "${ApiConstants.BASE_URL}banner_api/$bannerImage",
+              Db.imageUrl(bannerImage),
               width: 300,
               height: 150,
               fit: BoxFit.cover,

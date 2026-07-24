@@ -1,13 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
-
-
 
 // --- District Model ---
 class District {
@@ -26,13 +24,11 @@ class District {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-          other is District && runtimeType == other.runtimeType && id == other.id;
+      other is District && runtimeType == other.runtimeType && id == other.id;
 
   @override
   int get hashCode => id.hashCode;
 }
-
-
 
 // --- City Model ---
 class City {
@@ -40,11 +36,7 @@ class City {
   final String name;
   final String districtId;
 
-  City({
-    required this.id,
-    required this.name,
-    required this.districtId,
-  });
+  City({required this.id, required this.name, required this.districtId});
 
   factory City.fromJson(Map<String, dynamic> json) {
     return City(
@@ -55,19 +47,19 @@ class City {
   }
 }
 
-
-
 class LocationManagementScreen extends StatefulWidget {
   const LocationManagementScreen({super.key});
 
   @override
-  State<LocationManagementScreen> createState() => _LocationManagementScreenState();
+  State<LocationManagementScreen> createState() =>
+      _LocationManagementScreenState();
 }
 
 class _LocationManagementScreenState extends State<LocationManagementScreen> {
   // State variables for District Management
   final _addDistrictFormKey = GlobalKey<FormState>();
-  final TextEditingController _addDistrictNameController = TextEditingController();
+  final TextEditingController _addDistrictNameController =
+      TextEditingController();
   List<District> districts = [];
   bool isLoadingDistricts = true;
   bool isAddingDistrict = false;
@@ -80,7 +72,8 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
   bool isLoadingCities = true;
   bool isAddingCity = false;
   String? citiesErrorMessage;
-  District? _selectedDistrictForCity; // For dropdown to select district for city
+  District?
+  _selectedDistrictForCity; // For dropdown to select district for city
 
   @override
   void initState() {
@@ -105,40 +98,30 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
     });
 
     try {
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_DISTRICT));
+      final rows = await AdminApi.list(AdminTables.district, limit: 500);
+      if (!mounted) return;
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        if (data['success'] == true && data['districts'] != null) {
-          setState(() {
-            districts = (data['districts'] as List)
-                .map((json) => District.fromJson(json))
-                .toList();
-            // After fetching districts, if there are any,
-            // set the first district as selected and fetch its cities.
-            if (districts.isNotEmpty && _selectedDistrictForCity == null) {
-              _selectedDistrictForCity = districts.first;
-              _fetchCitiesByDistrict(_selectedDistrictForCity!.id);
-            } else if (districts.isEmpty) {
-              cities = []; // No districts, so no cities to display
-            }
-          });
-        } else {
-          setState(() {
-            districtsErrorMessage = data['message'] ?? 'Failed to load districts.';
-          });
-        }
-      } else {
-        setState(() {
-          districtsErrorMessage = 'Server error: ${response.statusCode}';
-        });
-      }
-    } catch (e) {
       setState(() {
-        districtsErrorMessage = 'Network error: $e';
+        districts = rows.map((json) => District.fromJson(json)).toList();
+        // After fetching districts, if there are any,
+        // set the first district as selected and fetch its cities.
+        if (districts.isNotEmpty && _selectedDistrictForCity == null) {
+          _selectedDistrictForCity = districts.first;
+          _fetchCitiesByDistrict(_selectedDistrictForCity!.id);
+        } else if (districts.isEmpty) {
+          cities = []; // No districts, so no cities to display
+        }
       });
-      print('Error fetching districts: $e'); // Log the error for debugging
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        districtsErrorMessage = e is AdminApiException
+            ? e.message
+            : 'Network error: $e';
+      });
+      debugPrint('Error fetching districts: $e');
     } finally {
+      if (!mounted) return;
       setState(() {
         isLoadingDistricts = false;
       });
@@ -155,34 +138,25 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
       _showLoadingDialog(); // Show loading indicator
 
       try {
-        final response = await http.post(
-          Uri.parse(ApiConstants.ADD_DISTRICT),
-          body: {
-            "district_name": _addDistrictNameController.text.trim(),
-          },
-        );
+        await AdminApi.insert(AdminTables.district, {
+          "district_name": _addDistrictNameController.text.trim(),
+        });
 
+        if (!mounted) return;
         Navigator.of(context).pop(); // Close loading dialog
         setState(() {
           isAddingDistrict = false;
         });
-
-        final Map<String, dynamic> data = json.decode(response.body);
-
-        if (response.statusCode == 200 && data["success"] == true) {
-          _showMessage("District added successfully", AppColors.successColor);
-          _addDistrictNameController.clear(); // Clear input field
-          _fetchDistricts(); // Refresh the district list
-        } else {
-          _showMessage(data['message'] ?? "Failed to add district", AppColors.errorColor);
-        }
+        _showMessage("District added successfully", AppColors.successColor);
+        _addDistrictNameController.clear(); // Clear input field
+        _fetchDistricts(); // Refresh the district list
       } catch (e) {
         Navigator.of(context).pop(); // Close loading dialog
         setState(() {
           isAddingDistrict = false;
         });
         _showMessage("Something went wrong: $e", AppColors.errorColor);
-        print('Error adding district: $e');
+        debugPrint('Error adding district: $e');
       }
     }
   }
@@ -192,28 +166,18 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
     _showLoadingDialog(); // Show loading indicator
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_DISTRICT),
-        body: {
-          "district_id": districtId,
-          "district_name": newName.trim(),
-        },
-      );
+      await AdminApi.update(AdminTables.district, districtId, {
+        "district_name": newName.trim(),
+      });
 
+      if (!mounted) return;
       Navigator.of(context).pop(); // Close loading dialog
-
-      final Map<String, dynamic> data = json.decode(response.body);
-
-      if (response.statusCode == 200 && data["success"] == true) {
-        _showMessage("District updated successfully", AppColors.successColor);
-        _fetchDistricts(); // Refresh the district list
-      } else {
-        _showMessage(data['message'] ?? "Failed to update district", AppColors.errorColor);
-      }
+      _showMessage("District updated successfully", AppColors.successColor);
+      _fetchDistricts(); // Refresh the district list
     } catch (e) {
       Navigator.of(context).pop(); // Close loading dialog
       _showMessage("Something went wrong: $e", AppColors.errorColor);
-      print('Error updating district: $e');
+      debugPrint('Error updating district: $e');
     }
   }
 
@@ -224,21 +188,37 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r)),
-          title: Text("Confirm Deletion", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          content: Text("Are you sure you want to delete this district? This will also delete all cities under it.", style: GoogleFonts.poppins()),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15.r),
+          ),
+          title: Text(
+            "Confirm Deletion",
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          ),
+          content: Text(
+            "Are you sure you want to delete this district? This will also delete all cities under it.",
+            style: GoogleFonts.poppins(),
+          ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.primaryColor)),
+              child: Text(
+                "Cancel",
+                style: GoogleFonts.poppins(color: AppColors.primaryColor),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.errorColor,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
               ),
-              child: Text("Delete", style: GoogleFonts.poppins(color: Colors.white)),
+              child: Text(
+                "Delete",
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -250,36 +230,30 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
     _showLoadingDialog(); // Show loading indicator
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.DELETE_DISTRICT),
-        body: {"district_id": districtId},
-      );
+      await AdminApi.delete(AdminTables.district, districtId);
 
+      if (!mounted) return;
       Navigator.of(context).pop(); // Close loading dialog
+      _showMessage("District deleted successfully", AppColors.successColor);
 
-      final Map<String, dynamic> data = json.decode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        _showMessage("District deleted successfully", AppColors.successColor);
+      // Update local state immediately
+      setState(() {
+        districts.removeWhere((district) => district.id == districtId);
+        // If deleted district was the selected one, clear selection
+        if (_selectedDistrictForCity?.id == districtId) {
+          _selectedDistrictForCity = districts.isNotEmpty
+              ? districts.first
+              : null;
+          cities = [];
+        }
+      });
 
-        // Update local state immediately
-        setState(() {
-          districts.removeWhere((district) => district.id == districtId);
-          // If deleted district was the selected one, clear selection
-          if (_selectedDistrictForCity?.id == districtId) {
-            _selectedDistrictForCity = districts.isNotEmpty ? districts.first : null;
-            cities = [];
-          }
-        });
-
-        // Also refresh from server
-        _fetchDistricts();
-      } else {
-        _showMessage(data['message'] ?? "Failed to delete district", AppColors.errorColor);
-      }
+      // Also refresh from server
+      _fetchDistricts();
     } catch (e) {
       Navigator.of(context).pop(); // Close loading dialog
       _showMessage("Network error: $e", AppColors.errorColor);
-      print('Error deleting district: $e');
+      debugPrint('Error deleting district: $e');
     }
   }
 
@@ -303,47 +277,38 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
     });
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.VIEW_CITY),
-        body: {"district_id": districtId},
+      final rows = await AdminApi.list(
+        AdminTables.city,
+        filters: {'district_id': districtId},
+        limit: 500,
       );
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        if (data['success'] == true && data['cities'] != null) {
-          setState(() {
-            cities = (data['cities'] as List)
-                .map((json) => City.fromJson(json))
-                .toList();
-          });
-        } else {
-          setState(() {
-            citiesErrorMessage = data['message'] ?? 'Failed to load cities.';
-            cities = []; // Clear cities on error
-          });
-        }
-      } else {
-        setState(() {
-          citiesErrorMessage = 'Server error: ${response.statusCode}';
-          cities = []; // Clear cities on error
-        });
-      }
-    } catch (e) {
+      if (!mounted) return;
       setState(() {
-        citiesErrorMessage = 'Network error: $e';
+        cities = rows.map((json) => City.fromJson(json)).toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        citiesErrorMessage = e is AdminApiException
+            ? e.message
+            : 'Network error: $e';
         cities = []; // Clear cities on error
       });
-      print('Error fetching cities: $e');
+      debugPrint('Error fetching cities: $e');
     } finally {
-      setState(() {
-        isLoadingCities = false;
-      });
+      if (mounted) {
+        setState(() {
+          isLoadingCities = false;
+        });
+      }
     }
   }
 
   /// Adds a new city to the backend, associated with the selected district.
   Future<void> _addCity() async {
-    if (_addCityFormKey.currentState!.validate() && _selectedDistrictForCity != null) {
+    if (_addCityFormKey.currentState!.validate() &&
+        _selectedDistrictForCity != null) {
       setState(() {
         isAddingCity = true;
       });
@@ -351,35 +316,28 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
       _showLoadingDialog(); // Show loading indicator
 
       try {
-        final response = await http.post(
-          Uri.parse(ApiConstants.ADD_CITY),
-          body: {
-            "district_id": _selectedDistrictForCity!.id,
-            "city_name": _addCityNameController.text.trim(),
-          },
-        );
+        await AdminApi.insert(AdminTables.city, {
+          "district_id": _selectedDistrictForCity!.id,
+          "city_name": _addCityNameController.text.trim(),
+        });
 
+        if (!mounted) return;
         Navigator.of(context).pop(); // Close loading dialog
         setState(() {
           isAddingCity = false;
         });
-
-        final Map<String, dynamic> data = json.decode(response.body);
-
-        if (response.statusCode == 200 && data["success"] == true) {
-          _showMessage("City added successfully", AppColors.successColor);
-          _addCityNameController.clear(); // Clear input field
-          _fetchCitiesByDistrict(_selectedDistrictForCity!.id); // Refresh cities for selected district
-        } else {
-          _showMessage(data['message'] ?? "Failed to add city", AppColors.errorColor);
-        }
+        _showMessage("City added successfully", AppColors.successColor);
+        _addCityNameController.clear(); // Clear input field
+        _fetchCitiesByDistrict(
+          _selectedDistrictForCity!.id,
+        ); // Refresh cities for selected district
       } catch (e) {
         Navigator.of(context).pop(); // Close loading dialog
         setState(() {
           isAddingCity = false;
         });
         _showMessage("Something went wrong: $e", AppColors.errorColor);
-        print('Error adding city: $e');
+        debugPrint('Error adding city: $e');
       }
     } else if (_selectedDistrictForCity == null) {
       _showMessage("Please select a district first.", AppColors.errorColor);
@@ -391,30 +349,20 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
     _showLoadingDialog(); // Show loading indicator
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.UPDATE_CITY),
-        body: {
-          "city_id": cityId,
-          "city_name": newName.trim(),
-        },
-      );
+      await AdminApi.update(AdminTables.city, cityId, {
+        "city_name": newName.trim(),
+      });
 
+      if (!mounted) return;
       Navigator.of(context).pop(); // Close loading dialog
-
-      final Map<String, dynamic> data = json.decode(response.body);
-
-      if (response.statusCode == 200 && data["success"] == true) {
-        _showMessage("City updated successfully", AppColors.successColor);
-        if (_selectedDistrictForCity != null) {
-          _fetchCitiesByDistrict(_selectedDistrictForCity!.id); // Refresh cities
-        }
-      } else {
-        _showMessage(data['message'] ?? "Failed to update city", AppColors.errorColor);
+      _showMessage("City updated successfully", AppColors.successColor);
+      if (_selectedDistrictForCity != null) {
+        _fetchCitiesByDistrict(_selectedDistrictForCity!.id); // Refresh cities
       }
     } catch (e) {
       Navigator.of(context).pop(); // Close loading dialog
       _showMessage("Something went wrong: $e", AppColors.errorColor);
-      print('Error updating city: $e');
+      debugPrint('Error updating city: $e');
     }
   }
 
@@ -424,21 +372,37 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r)),
-          title: Text("Confirm Deletion", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-          content: Text("Are you sure you want to delete this city?", style: GoogleFonts.poppins()),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15.r),
+          ),
+          title: Text(
+            "Confirm Deletion",
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          ),
+          content: Text(
+            "Are you sure you want to delete this city?",
+            style: GoogleFonts.poppins(),
+          ),
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.primaryColor)),
+              child: Text(
+                "Cancel",
+                style: GoogleFonts.poppins(color: AppColors.primaryColor),
+              ),
             ),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.errorColor,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
               ),
-              child: Text("Delete", style: GoogleFonts.poppins(color: Colors.white)),
+              child: Text(
+                "Delete",
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -450,26 +414,18 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
     _showLoadingDialog(); // Show loading indicator
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.DELETE_CITY),
-        body: {"city_id": cityId},
-      );
+      await AdminApi.delete(AdminTables.city, cityId);
 
+      if (!mounted) return;
       Navigator.of(context).pop(); // Close loading dialog
-
-      final Map<String, dynamic> data = json.decode(response.body);
-      if (response.statusCode == 200 && data['success'] == true) {
-        _showMessage("City deleted successfully", AppColors.successColor);
-        if (_selectedDistrictForCity != null) {
-          _fetchCitiesByDistrict(_selectedDistrictForCity!.id); // Refresh cities
-        }
-      } else {
-        _showMessage(data['message'] ?? "Failed to delete city", AppColors.errorColor);
+      _showMessage("City deleted successfully", AppColors.successColor);
+      if (_selectedDistrictForCity != null) {
+        _fetchCitiesByDistrict(_selectedDistrictForCity!.id); // Refresh cities
       }
     } catch (e) {
       Navigator.of(context).pop(); // Close loading dialog
       _showMessage("Network error: $e", AppColors.errorColor);
-      print('Error deleting city: $e');
+      debugPrint('Error deleting city: $e');
     }
   }
 
@@ -521,7 +477,10 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
             indicatorColor: AppColors.primaryColor,
             labelColor: AppColors.primaryColor,
             unselectedLabelColor: AppColors.hintTextColor,
-            labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 16.sp),
+            labelStyle: GoogleFonts.poppins(
+              fontWeight: FontWeight.bold,
+              fontSize: 16.sp,
+            ),
             unselectedLabelStyle: GoogleFonts.poppins(fontSize: 15.sp),
             tabs: const [
               Tab(text: 'City'),
@@ -563,7 +522,7 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                   spreadRadius: 1,
                   blurRadius: 8,
                   offset: const Offset(0, 0),
-                )
+                ),
               ],
             ),
             child: Form(
@@ -590,7 +549,7 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                           spreadRadius: 1,
                           blurRadius: 8,
                           offset: const Offset(0, 0),
-                        )
+                        ),
                       ],
                     ),
                     child: TextFormField(
@@ -600,13 +559,22 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                         filled: true,
                         fillColor: Colors.white,
                         hintText: 'Enter City Name',
-                        hintStyle: GoogleFonts.poppins(color: AppColors.hintTextColor),
+                        hintStyle: GoogleFonts.poppins(
+                          color: AppColors.hintTextColor,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8.r),
                           borderSide: BorderSide.none,
                         ),
-                        prefixIcon: Icon(Icons.location_city, color: AppColors.primaryColor, size: 24.sp),
-                        contentPadding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 10.w),
+                        prefixIcon: Icon(
+                          Icons.location_city,
+                          color: AppColors.primaryColor,
+                          size: 24.sp,
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: 12.h,
+                          horizontal: 10.w,
+                        ),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -632,14 +600,21 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                         ),
                         child: isAddingDistrict
                             ? SizedBox(
-                          width: 20.w,
-                          height: 20.h,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.w),
-                        )
+                                width: 20.w,
+                                height: 20.h,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.w,
+                                ),
+                              )
                             : Text(
-                          'Add City',
-                          style: GoogleFonts.poppins(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold),
-                        ),
+                                'Add City',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
                   ),
@@ -659,97 +634,136 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
           ),
           SizedBox(height: 15.h),
           isLoadingDistricts
-              ? Center(child: CircularProgressIndicator(color: AppColors.primaryColor))
+              ? Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primaryColor,
+                  ),
+                )
               : districtsErrorMessage != null
               ? Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, color: AppColors.errorColor, size: 50.sp),
-                SizedBox(height: 10.h),
-                Text(
-                  districtsErrorMessage!,
-                  style: GoogleFonts.poppins(color: AppColors.errorColor, fontSize: 16.sp),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 20.h),
-                ElevatedButton.icon(
-                  onPressed: _fetchDistricts,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryColor,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
-                    padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
-                  ),
-                  icon: Icon(Icons.refresh, color: Colors.white),
-                  label: Text('Retry', style: GoogleFonts.poppins(color: Colors.white, fontSize: 16.sp)),
-                ),
-              ],
-            ),
-          )
-              : districts.isEmpty
-              ? Center(
-            child: Text(
-              'No City added yet.',
-              style: GoogleFonts.poppins(fontSize: 16.sp, color: AppColors.hintTextColor),
-              textAlign: TextAlign.center,
-            ),
-          )
-              : ListView.builder(
-            shrinkWrap: true, // Important for nested ListView in SingleChildScrollView
-            physics: const NeverScrollableScrollPhysics(), // Disable scrolling for inner list
-            itemCount: districts.length,
-            itemBuilder: (context, index) {
-              final district = districts[index];
-              return Padding(
-                padding:  EdgeInsets.only(bottom: 8.h),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      )
-                    ],
-                  ),
-                  child: Padding(
-                    padding:  EdgeInsets.symmetric(vertical: 10.h, horizontal: 20.w),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            district.name,
-                            style: GoogleFonts.poppins(
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primaryColor,
-                            ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: AppColors.errorColor,
+                        size: 50.sp,
+                      ),
+                      SizedBox(height: 10.h),
+                      Text(
+                        districtsErrorMessage!,
+                        style: GoogleFonts.poppins(
+                          color: AppColors.errorColor,
+                          fontSize: 16.sp,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 20.h),
+                      ElevatedButton.icon(
+                        onPressed: _fetchDistricts,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                          ),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 20.w,
+                            vertical: 10.h,
                           ),
                         ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.edit, color: Colors.blueAccent, size: 24.sp),
-                              onPressed: () {
-                                _showEditDistrictDialog(district);
-                              },
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.delete, color: AppColors.errorColor, size: 24.sp),
-                              onPressed: () => _deleteDistrict(district.id),
+                        icon: Icon(Icons.refresh, color: Colors.white),
+                        label: Text(
+                          'Retry',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 16.sp,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : districts.isEmpty
+              ? Center(
+                  child: Text(
+                    'No City added yet.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16.sp,
+                      color: AppColors.hintTextColor,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap:
+                      true, // Important for nested ListView in SingleChildScrollView
+                  physics:
+                      const NeverScrollableScrollPhysics(), // Disable scrolling for inner list
+                  itemCount: districts.length,
+                  itemBuilder: (context, index) {
+                    final district = districts[index];
+                    return Padding(
+                      padding: EdgeInsets.only(bottom: 8.h),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: 10.h,
+                            horizontal: 20.w,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  district.name,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.edit,
+                                      color: Colors.blueAccent,
+                                      size: 24.sp,
+                                    ),
+                                    onPressed: () {
+                                      _showEditDistrictDialog(district);
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: AppColors.errorColor,
+                                      size: 24.sp,
+                                    ),
+                                    onPressed: () =>
+                                        _deleteDistrict(district.id),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ],
       ),
     );
@@ -775,7 +789,7 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                   spreadRadius: 1,
                   blurRadius: 8,
                   offset: const Offset(0, 0),
-                )
+                ),
               ],
             ),
             child: Form(
@@ -802,35 +816,48 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                           color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 5),
-                        )
+                        ),
                       ],
                     ),
                     child: DropdownButtonFormField<District>(
                       initialValue: _selectedDistrictForCity,
                       decoration: InputDecoration(
-
                         filled: true,
                         fillColor: Colors.white,
                         hintText: 'Select City',
-                        hintStyle: GoogleFonts.poppins(color: AppColors.hintTextColor),
+                        hintStyle: GoogleFonts.poppins(
+                          color: AppColors.hintTextColor,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8.r),
                           borderSide: BorderSide.none,
                         ),
-                        prefixIcon: Icon(Icons.map, color: AppColors.primaryColor, size: 24.sp),
-                        contentPadding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 10.w),
+                        prefixIcon: Icon(
+                          Icons.map,
+                          color: AppColors.primaryColor,
+                          size: 24.sp,
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: 12.h,
+                          horizontal: 10.w,
+                        ),
                       ),
                       items: districts.map((district) {
                         return DropdownMenuItem(
                           value: district,
-                          child: Text(district.name, style: GoogleFonts.poppins()),
+                          child: Text(
+                            district.name,
+                            style: GoogleFonts.poppins(),
+                          ),
                         );
                       }).toList(),
                       onChanged: (District? newValue) {
                         setState(() {
                           _selectedDistrictForCity = newValue;
                           if (newValue != null) {
-                            _fetchCitiesByDistrict(newValue.id); // Fetch cities for selected district
+                            _fetchCitiesByDistrict(
+                              newValue.id,
+                            ); // Fetch cities for selected district
                           } else {
                             cities = []; // Clear cities if no district selected
                           }
@@ -858,7 +885,7 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                           spreadRadius: 1,
                           blurRadius: 8,
                           offset: const Offset(0, 0),
-                        )
+                        ),
                       ],
                     ),
                     child: TextFormField(
@@ -868,13 +895,22 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                         filled: true,
                         fillColor: Colors.white,
                         hintText: 'Enter Area Name',
-                        hintStyle: GoogleFonts.poppins(color: AppColors.hintTextColor),
+                        hintStyle: GoogleFonts.poppins(
+                          color: AppColors.hintTextColor,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8.r),
                           borderSide: BorderSide.none,
                         ),
-                        prefixIcon: Icon(Icons.location_on, color: AppColors.primaryColor, size: 24.sp),
-                        contentPadding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 10.w),
+                        prefixIcon: Icon(
+                          Icons.location_on,
+                          color: AppColors.primaryColor,
+                          size: 24.sp,
+                        ),
+                        contentPadding: EdgeInsets.symmetric(
+                          vertical: 12.h,
+                          horizontal: 10.w,
+                        ),
                       ),
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
@@ -890,7 +926,10 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                       width: 150.w,
                       height: 45.h,
                       child: ElevatedButton(
-                        onPressed: isAddingCity || _selectedDistrictForCity == null ? null : _addCity,
+                        onPressed:
+                            isAddingCity || _selectedDistrictForCity == null
+                            ? null
+                            : _addCity,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primaryColor,
                           shape: RoundedRectangleBorder(
@@ -900,14 +939,21 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
                         ),
                         child: isAddingCity
                             ? SizedBox(
-                          width: 20.w,
-                          height: 20.h,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.w),
-                        )
+                                width: 20.w,
+                                height: 20.h,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.w,
+                                ),
+                              )
                             : Text(
-                          'Add Area',
-                          style: GoogleFonts.poppins(color: Colors.white, fontSize: 16.sp, fontWeight: FontWeight.bold),
-                        ),
+                                'Add Area',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 16.sp,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                       ),
                     ),
                   ),
@@ -927,101 +973,139 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
           ),
           SizedBox(height: 15.h),
           isLoadingCities
-              ? Center(child: CircularProgressIndicator(color: AppColors.primaryColor))
+              ? Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.primaryColor,
+                  ),
+                )
               : citiesErrorMessage != null
               ? Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, color: AppColors.errorColor, size: 50.sp),
-                SizedBox(height: 10.h),
-                Text(
-                  citiesErrorMessage!,
-                  style: GoogleFonts.poppins(color: AppColors.errorColor, fontSize: 16.sp),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 20.h),
-                ElevatedButton.icon(
-                  onPressed: _selectedDistrictForCity != null
-                      ? () => _fetchCitiesByDistrict(_selectedDistrictForCity!.id)
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primaryColor,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
-                    padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 10.h),
-                  ),
-                  icon: Icon(Icons.refresh, color: Colors.white),
-                  label: Text('Retry', style: GoogleFonts.poppins(color: Colors.white, fontSize: 16.sp)),
-                ),
-              ],
-            ),
-          )
-              : cities.isEmpty
-              ? Center(
-            child: Text(
-              _selectedDistrictForCity == null
-                  ? 'Please select a City to view area.'
-                  : 'No area added yet for this city.',
-              style: GoogleFonts.poppins(fontSize: 16.sp, color: AppColors.hintTextColor),
-              textAlign: TextAlign.center,
-            ),
-          )
-              : ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: cities.length,
-            itemBuilder: (context, index) {
-              final city = cities[index];
-              return Padding(
-                padding:  EdgeInsets.only(bottom: 8.h),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      )
-                    ],
-                  ),
-                  child: Padding(
-                    padding:  EdgeInsets.symmetric(vertical: 10.h, horizontal: 20.w),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            city.name,
-                            style: GoogleFonts.poppins(
-                              fontSize: 16.sp,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primaryColor,
-                            ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        color: AppColors.errorColor,
+                        size: 50.sp,
+                      ),
+                      SizedBox(height: 10.h),
+                      Text(
+                        citiesErrorMessage!,
+                        style: GoogleFonts.poppins(
+                          color: AppColors.errorColor,
+                          fontSize: 16.sp,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      SizedBox(height: 20.h),
+                      ElevatedButton.icon(
+                        onPressed: _selectedDistrictForCity != null
+                            ? () => _fetchCitiesByDistrict(
+                                _selectedDistrictForCity!.id,
+                              )
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                          ),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 20.w,
+                            vertical: 10.h,
                           ),
                         ),
-                        Row(
-                          children: [
-                            IconButton(
-                              icon: Icon(Icons.edit, color: Colors.blueAccent, size: 24.sp),
-                              onPressed: () {
-                                _showEditCityDialog(city);
-                              },
-                            ),
-                            IconButton(
-                              icon: Icon(Icons.delete, color: AppColors.errorColor, size: 24.sp),
-                              onPressed: () => _deleteCity(city.id),
+                        icon: Icon(Icons.refresh, color: Colors.white),
+                        label: Text(
+                          'Retry',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 16.sp,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : cities.isEmpty
+              ? Center(
+                  child: Text(
+                    _selectedDistrictForCity == null
+                        ? 'Please select a City to view area.'
+                        : 'No area added yet for this city.',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16.sp,
+                      color: AppColors.hintTextColor,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: cities.length,
+                  itemBuilder: (context, index) {
+                    final city = cities[index];
+                    return Padding(
+                      padding: EdgeInsets.only(bottom: 8.h),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 5),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: 10.h,
+                            horizontal: 20.w,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  city.name,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16.sp,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primaryColor,
+                                  ),
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.edit,
+                                      color: Colors.blueAccent,
+                                      size: 24.sp,
+                                    ),
+                                    onPressed: () {
+                                      _showEditCityDialog(city);
+                                    },
+                                  ),
+                                  IconButton(
+                                    icon: Icon(
+                                      Icons.delete,
+                                      color: AppColors.errorColor,
+                                      size: 24.sp,
+                                    ),
+                                    onPressed: () => _deleteCity(city.id),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ],
       ),
     );
@@ -1029,15 +1113,22 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
 
   // --- Dialog for Editing District ---
   void _showEditDistrictDialog(District district) {
-    final TextEditingController editController = TextEditingController(text: district.name);
+    final TextEditingController editController = TextEditingController(
+      text: district.name,
+    );
     final editFormKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r)),
-          title: Text("Edit City", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15.r),
+          ),
+          title: Text(
+            "Edit City",
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          ),
           content: Form(
             key: editFormKey,
             child: TextFormField(
@@ -1060,7 +1151,10 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.primaryColor)),
+              child: Text(
+                "Cancel",
+                style: GoogleFonts.poppins(color: AppColors.primaryColor),
+              ),
             ),
             ElevatedButton(
               onPressed: () {
@@ -1071,9 +1165,14 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryColor,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
               ),
-              child: Text("Update", style: GoogleFonts.poppins(color: Colors.white)),
+              child: Text(
+                "Update",
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
             ),
           ],
         );
@@ -1083,15 +1182,22 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
 
   // --- Dialog for Editing City ---
   void _showEditCityDialog(City city) {
-    final TextEditingController editController = TextEditingController(text: city.name);
+    final TextEditingController editController = TextEditingController(
+      text: city.name,
+    );
     final editFormKey = GlobalKey<FormState>();
 
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.r)),
-          title: Text("Edit Area", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15.r),
+          ),
+          title: Text(
+            "Edit Area",
+            style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+          ),
           content: Form(
             key: editFormKey,
             child: TextFormField(
@@ -1114,7 +1220,10 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
           actions: <Widget>[
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text("Cancel", style: GoogleFonts.poppins(color: AppColors.primaryColor)),
+              child: Text(
+                "Cancel",
+                style: GoogleFonts.poppins(color: AppColors.primaryColor),
+              ),
             ),
             ElevatedButton(
               onPressed: () {
@@ -1125,9 +1234,14 @@ class _LocationManagementScreenState extends State<LocationManagementScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primaryColor,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8.r),
+                ),
               ),
-              child: Text("Update", style: GoogleFonts.poppins(color: Colors.white)),
+              child: Text(
+                "Update",
+                style: GoogleFonts.poppins(color: Colors.white),
+              ),
             ),
           ],
         );

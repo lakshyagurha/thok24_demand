@@ -46,7 +46,8 @@ type Body = {
     | "delete"
     | "order_status"
     | "set_setting"
-    | "set_user_status";
+    | "set_user_status"
+    | "upload_image";
   table?: string;
   id?: number | string;
   values?: Record<string, unknown>;
@@ -176,6 +177,67 @@ Deno.serve(async (req) => {
           ).single();
         if (error) throw error;
         return json({ success: true, data }, 200, req);
+      }
+
+      case "upload_image": {
+        // The bucket has no client write policy on purpose: a signed-in customer must
+        // not be able to push files into the store's image bucket. Uploads therefore
+        // come through here, where staff membership has already been checked.
+        //
+        // Returns the stored PATH, not a URL. Rows store the path and the host is
+        // applied at render time -- baking a host into the row is what left `localhost`
+        // and `192.168.31.10` in the old data.
+        const b64 = String(body.value ?? "");
+        if (!b64) {
+          return json(
+            { success: false, message: "value (base64) required" },
+            400,
+            req,
+          );
+        }
+
+        const contentType = String(body.status ?? "image/jpeg");
+        if (!["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+          return json(
+            { success: false, message: "Unsupported image type" },
+            400,
+            req,
+          );
+        }
+
+        let bytes: Uint8Array;
+        try {
+          bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        } catch {
+          return json(
+            { success: false, message: "Invalid base64 image" },
+            400,
+            req,
+          );
+        }
+        if (bytes.byteLength > 5 * 1024 * 1024) {
+          return json(
+            { success: false, message: "Image exceeds 5 MB" },
+            400,
+            req,
+          );
+        }
+
+        // Server-generated name: a client-supplied filename could contain path
+        // traversal or collide with an existing object.
+        const ext = contentType === "image/png"
+          ? "png"
+          : contentType === "image/webp"
+          ? "webp"
+          : "jpg";
+        const path = `uploads/${crypto.randomUUID()}.${ext}`;
+
+        const { error } = await admin.storage
+          .from("product-images")
+          .upload(path, bytes, { contentType, upsert: false });
+        if (error) throw error;
+
+        return json({ success: true, data: { path } }, 200, req);
       }
 
       case "set_user_status": {

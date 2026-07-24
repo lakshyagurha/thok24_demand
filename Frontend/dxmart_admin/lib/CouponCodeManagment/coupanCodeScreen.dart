@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
 
 class CouponCodeScreen extends StatefulWidget {
@@ -40,19 +39,11 @@ class _CouponCodeScreenState extends State<CouponCodeScreen> {
   Future<void> _fetchCoupons() async {
     setState(() => _isLoadingList = true);
     try {
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_COUPON));
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-
-        if (decoded['success'] == true && decoded['data'] is List) {
-          setState(() {
-            _couponList = List<Map<String, dynamic>>.from(decoded['data']);
-          });
-        } else {
-          _showSnackBar("No coupons found", AppColors.warningColor);
-        }
-      } else {
-        _showSnackBar("Error fetching coupons: ${response.statusCode}", AppColors.errorColor);
+      final rows = await AdminApi.list(AdminTables.coupon, limit: 200);
+      if (!mounted) return;
+      setState(() => _couponList = rows);
+      if (rows.isEmpty) {
+        _showSnackBar("No coupons found", AppColors.warningColor);
       }
     } catch (e) {
       _showSnackBar("Connection error: $e", AppColors.errorColor);
@@ -108,30 +99,28 @@ class _CouponCodeScreenState extends State<CouponCodeScreen> {
     setState(() => _isLoadingForm = true);
 
     try {
-      final res = await http.post(
-        Uri.parse(ApiConstants.ADD_COUPON),
-        body: {
-          "title": coupon_title.text.toUpperCase(),
-          "description": coupon_description.text,
-          "code_name": coupon_name.text.toUpperCase(),
-          "discount": coupon_discount.text,
-          "min_amount" : min_order_value.text.toString(),
-          "expri_date": coupon_expri_date.text,
-          "status": selectedStatus,
+      // Typed columns now: discount and min_amount are integers and expiry_date is a
+      // real date, so the values are parsed here rather than posted as strings.
+      await AdminApi.insert(AdminTables.coupon, {
+        "title": coupon_title.text.toUpperCase(),
+        "description": coupon_description.text,
+        "code_name": coupon_name.text.toUpperCase(),
+        "discount": int.tryParse(coupon_discount.text.trim()) ?? 0,
+        "min_amount": int.tryParse(min_order_value.text.trim()) ?? 0,
+        "expiry_date": coupon_expri_date.text.trim().isEmpty
+            ? null
+            : coupon_expri_date.text.trim(),
+        "status": selectedStatus,
+      });
 
-        },
-      );
-
-      final response = jsonDecode(res.body);
-      if (response["success"] == "true") {
-        _showSnackBar("Coupon Added Successfully! ✅", AppColors.successColor);
-        _resetForm();
-        _fetchCoupons();
-      } else {
-        _showSnackBar("Error: ${response["message"] ?? "Unknown error"}", AppColors.errorColor);
-      }
+      if (!mounted) return;
+      _showSnackBar("Coupon Added Successfully! ✅", AppColors.successColor);
+      _resetForm();
+      _fetchCoupons();
     } catch (e) {
-      _showSnackBar("Network error: $e", AppColors.errorColor);
+      _showSnackBar(
+          e is AdminApiException ? e.message : "Network error: $e",
+          AppColors.errorColor);
     } finally {
       setState(() => _isLoadingForm = false);
     }
@@ -140,19 +129,14 @@ class _CouponCodeScreenState extends State<CouponCodeScreen> {
   Future<void> _deleteCoupon(String id) async {
     setState(() => _isLoadingList = true);
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.DELETE_COUPON),
-        body: {"id": id},
-      );
-      final responseData = jsonDecode(response.body);
-      if (response.statusCode == 200 && responseData["success"] == true) {
-        _showSnackBar("Coupon deleted successfully", AppColors.successColor);
-        await _fetchCoupons();
-      } else {
-        _showSnackBar("Failed to delete: ${responseData["message"]}", AppColors.errorColor);
-      }
+      await AdminApi.delete(AdminTables.coupon, id);
+      if (!mounted) return;
+      _showSnackBar("Coupon deleted successfully", AppColors.successColor);
+      await _fetchCoupons();
     } catch (e) {
-      _showSnackBar("Deletion error: $e", AppColors.errorColor);
+      _showSnackBar(
+          e is AdminApiException ? e.message : "Deletion error: $e",
+          AppColors.errorColor);
     } finally {
       setState(() => _isLoadingList = false);
     }
@@ -462,7 +446,7 @@ class _CouponCodeScreenState extends State<CouponCodeScreen> {
               _buildDetailItem(
                 icon: Icons.calendar_today,
                 label: "Expires",
-                value: coupon['expri_date'] ?? "N/A",
+                value: coupon['expiry_date'] ?? "N/A",
               ),
             ],
           ),

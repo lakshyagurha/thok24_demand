@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The single data path for the admin app.
@@ -96,6 +98,24 @@ class AdminApi {
       'value': value,
     });
     return _row(body);
+  }
+
+  /// Uploads an image and returns its STORED PATH (e.g. `uploads/<uuid>.jpg`).
+  ///
+  /// The bucket has no client write policy: a signed-in customer must not be able to
+  /// push files into the store's bucket, so uploads go through the function where staff
+  /// membership is already established. Store the returned path on the row and resolve
+  /// it with `Db.imageUrl()` at render time -- never store a full URL.
+  static Future<String> uploadImage(
+    List<int> bytes, {
+    String contentType = 'image/jpeg',
+  }) async {
+    final body = await _invoke({
+      'action': 'upload_image',
+      'value': base64Encode(bytes),
+      'status': contentType,
+    });
+    return _row(body)['path']?.toString() ?? '';
   }
 
   /// Blocks or unblocks a customer. `user_profiles` is not generally writable -- ops
