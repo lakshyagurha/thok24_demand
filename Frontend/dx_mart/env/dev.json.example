@@ -1,0 +1,5 @@
+{
+  "SUPABASE_URL": "https://asnjjkpjuqsmjqrjojzl.supabase.co",
+  "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_replace_me",
+  "SUPABASE_STORAGE_BUCKET": "product-images"
+}

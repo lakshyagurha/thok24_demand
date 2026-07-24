@@ -20,6 +20,11 @@ error_log
 # ...but the template documents variable NAMES only and must stay tracked.
 !.env.example
 !**/.env.example
+
+# Flutter --dart-define-from-file config. The publishable key in here is safe to ship in
+# a client build, but URLs/keys differ per environment, so only the template is tracked.
+Frontend/*/env/*.json
+!Frontend/*/env/*.json.example
 *.pem
 *.key
 *.p12
