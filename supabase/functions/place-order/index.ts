@@ -24,6 +24,17 @@ type Body = {
 
 const ALLOWED_PAYMENT = new Set(["COD", "RAZORPAY"]);
 
+/**
+ * An online payment is only honestly offerable if the webhook that confirms it can
+ * actually verify a signature. Without RAZORPAY_WEBHOOK_SECRET, razorpay-webhook fails
+ * closed (correctly) -- which would leave the order stuck at 'pending' forever while the
+ * customer believes they have paid. Refuse the method outright rather than take money we
+ * cannot reconcile. Setting the secret enables online payment with no code change.
+ */
+function onlinePaymentAvailable(): boolean {
+  return !!Deno.env.get("RAZORPAY_WEBHOOK_SECRET");
+}
+
 /** Rounds to paise. Money is numeric(10,2) in the database; keep JS from drifting. */
 const money = (n: number) => Math.round(n * 100) / 100;
 
@@ -48,6 +59,19 @@ Deno.serve(async (req) => {
   if (!ALLOWED_PAYMENT.has(paymentMethod)) {
     return json(
       { success: false, message: "Unsupported payment method" },
+      400,
+      req,
+    );
+  }
+  if (paymentMethod === "RAZORPAY" && !onlinePaymentAvailable()) {
+    console.error(
+      "RAZORPAY requested but RAZORPAY_WEBHOOK_SECRET is not set; refusing the order.",
+    );
+    return json(
+      {
+        success: false,
+        message: "Online payment is unavailable right now. Please choose Cash on Delivery.",
+      },
       400,
       req,
     );

@@ -67,17 +67,28 @@ verifies with `OtpType.sms`. The project's enabled auth providers are, verified 
 **Consequence: not one consumer user can sign in.** The app code is correct; the
 configuration does not exist.
 
-This is a spend decision, so it is yours to make, not mine to assume. It needs: an SMS
-provider account (MSG91 is usually cheaper for Indian traffic than Twilio and supports the
-DLT registration Indian carriers require), the sender/DLT template registration, and then
-Supabase Auth → Providers → Phone configured with the credentials. Per-message cost is
-real and recurring — gate it like any other spend, and note that OTP SMS to Indian numbers
-requires DLT template approval which takes days, so start early if you want it.
+**Decision made 2026-07-25: MSG91.** Steps, in the order they gate each other:
 
-*Interim option if you want to pilot before paying for SMS:* the admin app already uses
-email/password successfully, and the consumer app could be pointed at the same mechanism
-for a closed test group. That is a code change to `auth_repository.dart` plus the OTP
-screen, not a config toggle — say the word if you want it and I'll scope it.
+1. **Create the MSG91 account** and get an Auth Key.
+2. **Register DLT** (Distributed Ledger Technology) — mandatory for A2P SMS to Indian
+   numbers. Register the Principal Entity, then a Sender ID (6 alpha chars, e.g. `THOK24`),
+   then the OTP **content template**. The template text must match what is actually sent,
+   variable placeholders included. **Approval takes days, sometimes 1–2 weeks.** Nothing
+   else here is blocked by it, so start this first and let it run in the background.
+3. Once approved, configure **Supabase dashboard → Authentication → Providers → Phone**:
+   enable phone, select MSG91, paste the Auth Key and Sender ID / template ID.
+4. **Turn off "Enable phone confirmations" bypasses** and leave `phone_autoconfirm` off —
+   the OTP *is* the verification; auto-confirm would defeat it.
+5. Verify on a real handset: the app's `sendOtp` → `verifyOtp` round-trip must produce a
+   session. `normalisePhone()` already converts `9876543210` → `+919876543210`, so test
+   with a plain 10-digit entry the way a real user types it.
+
+No app code changes are needed — `auth_repository.dart` is already correct and provider-
+agnostic. This is purely configuration plus the DLT wait.
+
+*Cost note:* per-message cost is real and recurring. Every OTP send is billable, including
+retries and mistyped numbers, so watch the "resend" behaviour in `Auth/otpScreen.dart`
+during the pilot.
 
 ### B. `private.admin_users` is empty — the admin app is unusable by anyone
 
@@ -95,12 +106,22 @@ insert into private.admin_users (id) values ('<that useruuid>');
 
 Tell me the email you want and I'll do this end to end.
 
-### C. Razorpay webhook cannot verify payments
+### C. Razorpay cannot confirm payments — *resolved for launch: COD only*
 
-`RAZORPAY_WEBHOOK_SECRET` is unset, so the function **fails closed** — it returns 500 and
-refuses to act (correct, verified in the e2e run: an unsigned payload was rejected). But
-that means **online payments can never be confirmed**. Set the secret before enabling any
-non-COD payment method, or restrict payment to COD at launch.
+`RAZORPAY_WEBHOOK_SECRET` is unset, so `razorpay-webhook` **fails closed** — it returns 500
+and refuses to act (correct, and verified: an unsigned payload was rejected). But that
+means an online payment could never be confirmed, leaving the order stuck at `pending`
+while the customer believes they have paid.
+
+**Decision made 2026-07-25: launch COD-only.** Rather than rely on the client never
+offering the option, `place-order` now refuses `RAZORPAY` outright whenever the webhook
+secret is absent, returning *"Online payment is unavailable right now. Please choose Cash
+on Delivery."* (place-order v3; verified live — `RAZORPAY` is rejected, `COD` proceeds
+normally).
+
+The guard is self-clearing: **setting `RAZORPAY_WEBHOOK_SECRET` re-enables online payment
+with no code change and no redeploy.** When you do enable it, verify a real signed webhook
+actually flips an order's status before taking live money.
 
 ---
 
@@ -111,7 +132,7 @@ safely without its secret, so nothing crashes — features are simply inert.
 
 | Secret | Unset today means | Severity |
 |---|---|---|
-| `RAZORPAY_WEBHOOK_SECRET` | payments never confirm (blocker C) | blocks paid orders |
+| `RAZORPAY_WEBHOOK_SECRET` | online payment is refused with a clear message; COD unaffected | deferred by choice |
 | `ALLOWED_ORIGINS` | no CORS header is emitted at all; fine for native Flutter, breaks any web build | needed only for web |
 | `GEMINI_API_KEY` | voice ordering silently loses its LLM fallback — deterministic Hindi/Hinglish parsing still works, messier phrasing does not | degrades BolKeOrder |
 | `RESEND_API_KEY` + `ORDER_EMAIL_FROM` | no order confirmation emails are sent (order still places correctly) | user-visible gap |
@@ -172,10 +193,13 @@ deliberate or discovered gap. Confirm you accept them.
 
 Do not start until blockers A–C are resolved and the regressions above are accepted.
 
+0. **Start MSG91 DLT registration now** (blocker A, step 2). It is the long pole — days to
+   weeks of external approval — and nothing else waits on it. Kick it off, then continue.
 1. **Copy imagery to Storage** (STEP 1 above). Verify `failed: 0`. **Do not skip.**
 2. **Seed the admin account** (blocker B) and confirm login to the admin app works.
-3. **Set Edge Function secrets** (table above).
-4. **Configure phone auth** (blocker A) and confirm a real OTP round-trip on a real
+3. **Set Edge Function secrets** (table above). `RAZORPAY_WEBHOOK_SECRET` is deliberately
+   skipped for a COD-only launch.
+4. **Finish phone auth** once DLT clears, and confirm a real OTP round-trip on a real
    handset.
 5. **Move off the free tier before real users arrive.** Free projects auto-pause after 7
    days of inactivity and have **no automatic backups** — an unacceptable combination once
