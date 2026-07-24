@@ -84,6 +84,35 @@ class AdminApi {
     await _invoke({'action': 'delete', 'table': table, 'id': id});
   }
 
+  /// Upserts an app_settings row by its text key. app_settings has no `id` column, so
+  /// [update] cannot address it -- this is the action to use for settings.
+  static Future<Map<String, dynamic>> setSetting(
+    String key,
+    String value,
+  ) async {
+    final body = await _invoke({
+      'action': 'set_setting',
+      'key': key,
+      'value': value,
+    });
+    return _row(body);
+  }
+
+  /// Blocks or unblocks a customer. `user_profiles` is not generally writable -- ops
+  /// should not be able to rewrite arbitrary columns on someone's profile -- so status
+  /// has its own narrow action.
+  static Future<Map<String, dynamic>> setUserStatus(
+    Object userId,
+    String status,
+  ) async {
+    final body = await _invoke({
+      'action': 'set_user_status',
+      'id': userId,
+      'status': status,
+    });
+    return _row(body);
+  }
+
   /// Orders are otherwise immutable: status is the only field ops may move, and only
   /// to one of [AdminTables.orderStatuses].
   static Future<Map<String, dynamic>> setOrderStatus(
@@ -204,6 +233,53 @@ class AdminTables {
   ];
 }
 
+/// Catalog reads that need more than one table stitched together.
+///
+/// The Edge Function's `list` action returns flat rows from a single table, which is
+/// deliberate -- it keeps the surface small and auditable. The screens that show a
+/// product with its variants and images therefore assemble the shape here, client-side,
+/// rather than the function growing a bespoke join per screen.
+class AdminCatalog {
+  const AdminCatalog._();
+
+  /// Products with their variants and image paths nested, matching the shape the
+  /// product and stock screens already render.
+  static Future<List<Map<String, dynamic>>> productsWithDetail({
+    int limit = 100,
+    int offset = 0,
+  }) async {
+    final products = await AdminApi.list(
+      AdminTables.products,
+      limit: limit,
+      offset: offset,
+    );
+    if (products.isEmpty) return const [];
+
+    // Two extra reads rather than N: fetch the full child sets once and group in memory.
+    final variants = await AdminApi.list(AdminTables.productVariants, limit: 500);
+    final images = await AdminApi.list(AdminTables.productImages, limit: 500);
+
+    final variantsByProduct = <String, List<Map<String, dynamic>>>{};
+    for (final v in variants) {
+      (variantsByProduct[v['product_id'].toString()] ??= []).add(v);
+    }
+    final imagesByProduct = <String, List<String>>{};
+    for (final i in images) {
+      (imagesByProduct[i['product_id'].toString()] ??= [])
+          .add((i['image_url'] ?? '').toString());
+    }
+
+    return products.map((p) {
+      final id = p['id'].toString();
+      return {
+        ...p,
+        'variants': variantsByProduct[id] ?? const [],
+        'images': imagesByProduct[id] ?? const [],
+      };
+    }).toList();
+  }
+}
+
 /// Keys used in `app_settings`, which the schema collapsed the old one-row-per-setting
 /// PHP endpoints into.
 class SettingKeys {
@@ -221,16 +297,10 @@ class SettingKeys {
 
 /// Reads and writes for `app_settings`.
 ///
-/// Reads work. Writes currently do NOT, and this is a backend gap rather than
-/// something to route around from the client:
-///
-///   `app_settings` is keyed by `key` (text) — it has no `id` column — but the
-///   Edge Function's `update` action is hardcoded to `.eq("id", body.id)`. Any write
-///   here therefore fails with a 500 from PostgREST rather than corrupting anything.
-///
-/// TODO(backend): add an `app_settings` upsert action (or a `key` column match) to
-/// supabase/functions/admin-api/index.ts, then this class works unchanged. Do not
-/// "fix" it from the client by reaching for the service-role key.
+/// `app_settings` is keyed by `key` (text) and has no `id` column, so the generic
+/// update action cannot address it. The Edge Function grew a dedicated `set_setting`
+/// upsert for exactly this, which [set] uses — writing a key that has never been
+/// stored works too.
 class AdminSettings {
   const AdminSettings._();
 
@@ -252,7 +322,6 @@ class AdminSettings {
   }
 
   static Future<void> set(String key, String value) async {
-    // See the class doc: this is the shape the fixed function should accept.
-    await AdminApi.update(AdminTables.appSettings, key, {'value': value});
+    await AdminApi.setSetting(key, value);
   }
 }

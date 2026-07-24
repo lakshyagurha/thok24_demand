@@ -1,10 +1,9 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
 
 
@@ -41,46 +40,55 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
 
   Future<void> fetchUsers() async {
     setState(() => isLoading = true);
-
-    final uri = Uri.parse(
-      "${ApiConstants.GET_ALL_USER}?limit=$limit&offset=$offset&search=${Uri.encodeComponent(searchQuery)}",
-    );
-
     try {
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success']) {
-          setState(() {
-            users = data['users'];
-            totalUsers = data['total'];
-          });
-        }
-      }
+      // Server-side search was a query param on the old endpoint; the Edge Function
+      // exposes equality filters only, so the (small) page is filtered client-side.
+      final rows = await AdminApi.list(
+        AdminTables.userProfiles,
+        limit: limit,
+        offset: offset,
+      );
+      final q = searchQuery.trim().toLowerCase();
+      final filtered = q.isEmpty
+          ? rows
+          : rows
+              .where((r) =>
+                  '${r['name'] ?? ''}'.toLowerCase().contains(q) ||
+                  '${r['phone'] ?? ''}'.toLowerCase().contains(q))
+              .toList();
+
+      if (!mounted) return;
+      setState(() {
+        // The UI reads 'email' and 'date_time'. user_profiles has neither: email lives
+        // in auth.users and phone/OTP accounts may not have one at all, so the contact
+        // column shows the phone instead.
+        users = filtered
+            .map((r) => {
+                  'id': r['id'],
+                  'name': r['name'] ?? '',
+                  'email': r['phone'] ?? '',
+                  'status': r['status'] ?? 'active',
+                  'date_time': r['created_at'] ?? '',
+                })
+            .toList();
+        totalUsers = filtered.length < limit ? offset + filtered.length : offset + limit + 1;
+      });
     } catch (e) {
       debugPrint("Error fetching users: $e");
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
-  Future<void> toggleUserStatus(int userId, String currentStatus) async {
-    String newStatus = currentStatus == 'active' ? 'blocked' : 'active';
-
+  Future<void> toggleUserStatus(Object userId, String currentStatus) async {
+    final newStatus = currentStatus == 'active' ? 'blocked' : 'active';
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.USER_STATUS_UPDATE),
-        body: {
-          'user_id': userId.toString(),
-          'new_status': newStatus,
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success']) {
-          fetchUsers();
-        }
+      await AdminApi.setUserStatus(userId, newStatus);
+      await fetchUsers();
+    } on AdminApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.message)));
       }
     } catch (e) {
       debugPrint("Error toggling status: $e");

@@ -1,15 +1,14 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'dart:convert';
 import '../MainCategory/main_category.dart';
 import '../Order/order_management_screen.dart';
 import '../Product/product_management_screen.dart';
 import '../StockManagement/stockManagementScreen.dart';
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
 import '../utils/date_helper.dart';
 
@@ -46,52 +45,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> fetchUsers() async {
     setState(() => isLoading = true);
-
-    final uri = Uri.parse(
-      "${ApiConstants.GET_ALL_USER}?limit=$limit&offset=$offset&search=${Uri.encodeComponent(searchQuery)}",
-    );
-
     try {
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success']) {
-          setState(() {
-            users = data['users'];
-            totalUsers = data['total'];
-          });
-        }
-      }
+      final rows = await AdminApi.list(
+        AdminTables.userProfiles,
+        limit: limit,
+        offset: offset,
+      );
+      if (!mounted) return;
+      setState(() {
+        users = rows;
+        totalUsers = rows.length;
+      });
     } catch (e) {
       debugPrint("Error fetching users: $e");
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
   Future<void> fetchDashboardData() async {
     try {
-      final url = Uri.parse(ApiConstants.GET_ALL_ORDER_DASHBOARD);
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data["success"] == true) {
-        setState(() {
-          orders = data["orders"];
-          _calculateDashboardData();
-          isLoading = false;
-        });
-      } else {
-        setState(() {
-          isLoading = false;
-          isLoading = false;
-        });
-      }
-    } catch (e) {
-      print("Error fetching dashboard data: $e");
+      // Orders are read-only here; the dashboard only aggregates them.
+      final rows = await AdminApi.list(AdminTables.orders, limit: 500);
+      if (!mounted) return;
       setState(() {
+        orders = rows;
+        _calculateDashboardData();
         isLoading = false;
       });
+    } catch (e) {
+      debugPrint("Error fetching dashboard data: $e");
+      if (mounted) setState(() => isLoading = false);
     }
   }
 

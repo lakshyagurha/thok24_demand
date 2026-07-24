@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
+import '../core/supabase.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:shimmer/shimmer.dart';
 
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
 
 class StockManagementScreen extends StatefulWidget {
@@ -57,23 +57,24 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
     }
 
     try {
-      // ✅ Base URL build
-      String url = '${ApiConstants.VIEW_ALL_PRODUCTS}?page=$currentPage&limit=$itemsPerPage';
+      final rows = await AdminCatalog.productsWithDetail(
+        limit: itemsPerPage,
+        offset: (currentPage - 1) * itemsPerPage,
+      );
+      // Search was a query param on the old endpoint; the Edge Function exposes
+      // equality filters only, so the page is narrowed client-side.
+      final q = searchQuery.trim().toLowerCase();
+      final rowsFiltered = q.isEmpty
+          ? rows
+          : rows
+              .where((r) => '${r['name'] ?? ''}'.toLowerCase().contains(q))
+              .toList();
 
-      // ✅ Add search query if available
-      if (searchQuery.isNotEmpty) {
-        url += '&search=$searchQuery';
-      }
-
-      final res = await http.get(Uri.parse(url));
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-
-        if (data['success']) {
+      if (mounted) {
+        {
           setState(() {
-            products = List<Map<String, dynamic>>.from(data['products']);
-            totalProducts = data['total'];
+            products = rowsFiltered;
+            totalProducts = rowsFiltered.length;
             isInitialLoad = false;
           });
 
@@ -91,11 +92,7 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
               }
             }
           }
-        } else {
-          _showSnackBar('Failed to load products: ${data['message']}', AppColors.errorColor);
         }
-      } else {
-        _showSnackBar('Failed to load products: ${res.statusCode}', AppColors.errorColor);
       }
     } catch (e) {
       // _showSnackBar('Error fetching products: $e', AppColors.errorColor);
@@ -137,17 +134,14 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
         return;
       }
 
-      final res = await http.post(
-        Uri.parse(ApiConstants.UPDATE_STOCK),
-        body: {
-          'variant_id': variantId.toString(),
-          'stock': newTotalStock.toString(),
-        },
+      await AdminApi.update(
+        AdminTables.productVariants,
+        variantId,
+        {'stock': newTotalStock},
       );
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        if (data['success']) {
+      if (mounted) {
+        {
           _showSnackBar('Stock updated successfully. New total: $newTotalStock', AppColors.successColor);
 
           // Update the UI immediately without waiting for API refresh
@@ -168,11 +162,7 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
 
           // Clear the input field after successful update
           _stockControllers[variantId]?.text = '0';
-        } else {
-          _showSnackBar('Failed to update stock: ${data['message']}', AppColors.errorColor);
         }
-      } else {
-        _showSnackBar('Failed to update stock: ${res.statusCode}', AppColors.errorColor);
       }
     } catch (e) {
       _showSnackBar('Error updating stock: $e', AppColors.errorColor);
@@ -393,7 +383,8 @@ class _StockManagementScreenState extends State<StockManagementScreen> {
     final productId = product['id'];
     final productName = product['name'];
     final imageUrl = product['images'] != null && product['images'].isNotEmpty
-        ? ApiConstants.BASE_IMAGE_URL + product['images'][0]
+        // Stored path resolved at render time, so the row never carries a host.
+        ? Db.imageUrl(product['images'][0] as String?)
         : null;
 
     final hasVariants =

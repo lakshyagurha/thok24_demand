@@ -1,13 +1,12 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+
+import '../core/admin_api.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
 import '../utils/date_helper.dart';
 import 'package:printing/printing.dart';
@@ -192,40 +191,36 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
       });
     }
 
-    final url = Uri.parse("${ApiConstants.GET_ALL_ORDER}?page=$currentPage&limit=$limit");
     try {
-      final response = await http.get(url);
-      final data = json.decode(response.body);
+      // The old endpoint returned a pagination envelope; the Edge Function returns rows,
+      // so "is there another page" is inferred from whether a full page came back.
+      final rows = await AdminApi.list(
+        AdminTables.orders,
+        limit: limit,
+        offset: (currentPage - 1) * limit,
+      );
 
-      if (data["success"] == true) {
+      if (mounted) {
         setState(() {
           if (isRefresh || currentPage == 1) {
-            orders = data["orders"];
+            orders = rows;
           } else {
-            orders.addAll(data["orders"]);
+            orders.addAll(rows);
           }
 
           // Apply current filter to new data
           filteredOrders = _filterOrdersByCriteria(orders, selectedFilter, searchController.text, selectedStartDate, selectedEndDate);
 
-          currentPage = data["pagination"]["current_page"];
-          totalPages = data["pagination"]["total_pages"];
-          totalOrders = data["pagination"]["total_orders"];
-          hasMore = data["pagination"]["has_next"];
+          hasMore = rows.length == limit;
+          totalOrders = orders.length;
+          totalPages = hasMore ? currentPage + 1 : currentPage;
 
           isLoading = false;
           isLoadingMore = false;
         });
-      } else {
-        setState(() {
-          isLoading = false;
-          isLoadingMore = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["message"] ?? "Failed to fetch orders")),
-        );
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         isLoading = false;
         isLoadingMore = false;
@@ -248,16 +243,12 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
   }
 
   Future<void> updateOrderStatus(int orderId, String newStatus) async {
-    final url = Uri.parse(ApiConstants.UPDATE_ORDER_STATUS);
     try {
-      final response = await http.post(url, body: {
-        'order_id': orderId.toString(),
-        'status': newStatus,
-      });
+      // Only the status field, and only to a value the function validates -- orders are
+      // otherwise immutable, so no arbitrary column writes on financial records.
+      await AdminApi.setOrderStatus(orderId, newStatus);
 
-      final data = json.decode(response.body);
-
-      if (data["success"] == true) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Order status updated to $newStatus"),
@@ -266,18 +257,12 @@ class _OrderManagementScreenState extends State<OrderManagementScreen> {
         );
         // Refresh the orders list
         fetchOrders(isRefresh: true);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(data["message"] ?? "Failed to update order status"),
-            backgroundColor: AppColors.errorColor,
-          ),
-        );
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Error: $e"),
+          content: Text(e is AdminApiException ? e.message : "Error: $e"),
           backgroundColor: AppColors.errorColor,
         ),
       );

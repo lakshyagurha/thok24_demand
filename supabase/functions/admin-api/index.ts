@@ -39,7 +39,14 @@ const READABLE = new Set([
 ]);
 
 type Body = {
-  action: "list" | "insert" | "update" | "delete" | "order_status";
+  action:
+    | "list"
+    | "insert"
+    | "update"
+    | "delete"
+    | "order_status"
+    | "set_setting"
+    | "set_user_status";
   table?: string;
   id?: number | string;
   values?: Record<string, unknown>;
@@ -48,6 +55,8 @@ type Body = {
   offset?: number;
   order_id?: number;
   status?: string;
+  key?: string;
+  value?: string;
 };
 
 const ORDER_STATUSES = new Set([
@@ -165,6 +174,57 @@ Deno.serve(async (req) => {
           .from("orders").update({ status }).eq("id", body.order_id).select(
             "id, status",
           ).single();
+        if (error) throw error;
+        return json({ success: true, data }, 200, req);
+      }
+
+      case "set_user_status": {
+        // user_profiles is deliberately NOT in WRITABLE: ops should not be able to
+        // rewrite arbitrary columns on a customer's profile. Blocking an account is a
+        // real need though, so it gets a narrow action with a fixed value set --
+        // the same shape as order_status.
+        const status = String(body.status ?? "");
+        if (status !== "active" && status !== "blocked") {
+          return json(
+            { success: false, message: "Status must be active or blocked" },
+            400,
+            req,
+          );
+        }
+        if (!body.id) {
+          return json({ success: false, message: "id required" }, 400, req);
+        }
+        const { data, error } = await admin
+          .from("user_profiles")
+          .update({ status })
+          .eq("id", body.id)
+          .select("id, status")
+          .single();
+        if (error) throw error;
+        return json({ success: true, data }, 200, req);
+      }
+
+      case "set_setting": {
+        // app_settings is keyed by `key` (text) and has no `id` column, so the generic
+        // update action above cannot address it -- it matches on id and would 500.
+        // Upsert by key instead, which also covers first-time writes for a setting
+        // that has never been stored.
+        const key = String(body.key ?? "").trim();
+        if (!key) {
+          return json({ success: false, message: "key required" }, 400, req);
+        }
+        const { data, error } = await admin
+          .from("app_settings")
+          .upsert(
+            {
+              key,
+              value: String(body.value ?? ""),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "key" },
+          )
+          .select()
+          .single();
         if (error) throw error;
         return json({ success: true, data }, 200, req);
       }
