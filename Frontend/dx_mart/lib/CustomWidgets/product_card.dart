@@ -1,12 +1,12 @@
-import 'dart:convert';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../ProductDetailScreen/product_details_screen.dart';
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/cart_repository.dart';
+import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import '../utils/responsive_helper.dart';
 import 'cart_provider.dart';
@@ -14,7 +14,11 @@ import '../utils/language_provider.dart';
 
 class ProductCard extends StatefulWidget {
   final Map<String, dynamic> product;
+
+  /// Ignored. Identity comes from the session and RLS enforces ownership in the
+  /// database. Retained only so call sites can be migrated one at a time; pass ''.
   final String userId;
+
   final VoidCallback? onCartUpdated;
   final VoidCallback? onWishlistUpdated;
   final VoidCallback? onCategoryBack;
@@ -47,89 +51,54 @@ class _ProductCardState extends State<ProductCard> {
     checkWishlistStatus();
   }
 
+  int get _productId => int.tryParse('${widget.product['id']}') ?? 0;
+
   Future<void> checkWishlistStatus() async {
-    if (widget.userId.isEmpty) return;
+    if (!Db.isSignedIn) return;
 
-    setState(() {
-      isWishlistLoading = true;
-    });
-
+    setState(() => isWishlistLoading = true);
     try {
-      final url = Uri.parse('${ApiConstants.CHECK_WISHLIST}?user_id=${widget.userId}&product_id=${widget.product['id']}');
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          isWishlisted = data['is_wishlisted'] ?? false;
-        });
-      }
+      // No user_id in the query: RLS scopes the lookup to the signed-in user.
+      final inList = await const WishlistRepository().contains(_productId);
+      if (!mounted) return;
+      setState(() => isWishlisted = inList);
     } catch (e) {
-      print('Error checking wishlist status: $e');
+      debugPrint('Error checking wishlist status: $e');
     } finally {
-      setState(() {
-        isWishlistLoading = false;
-      });
+      if (mounted) setState(() => isWishlistLoading = false);
     }
   }
 
   Future<void> toggleWishlist() async {
-    if (widget.userId.isEmpty) {
-      // Optionally show a login prompt here
+    if (!Db.isSignedIn) {
+      _showToastMessage('Please sign in to use your wishlist.');
       return;
     }
 
-    setState(() {
-      isWishlistLoading = true;
-    });
-
+    setState(() => isWishlistLoading = true);
     try {
-      final url = Uri.parse(isWishlisted ? ApiConstants.REMOVE_FROM_WISHLIST : ApiConstants.ADD_TO_WISHLIST);
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'user_id': widget.userId,
-          'product_id': widget.product['id'],
-        }),
-      );
-
-      final data = json.decode(response.body);
-      if (data['success']) {
-        setState(() {
-          isWishlisted = !isWishlisted;
-        });
-        widget.onWishlistUpdated?.call();
-      }
+      final nowWishlisted = await const WishlistRepository().toggle(_productId);
+      if (!mounted) return;
+      setState(() => isWishlisted = nowWishlisted);
+      widget.onWishlistUpdated?.call();
     } catch (e) {
-      print('Error toggling wishlist: $e');
+      debugPrint('Error toggling wishlist: $e');
     } finally {
-      setState(() {
-        isWishlistLoading = false;
-      });
+      if (mounted) setState(() => isWishlistLoading = false);
     }
   }
 
   Future<void> fetchDeliveryTime() async {
-    final url = Uri.parse(ApiConstants.DELIVERY_TIME);
-
     try {
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          deliveryTime = data['data']['time'];
-        });
-      } else {
-        setState(() {
-          deliveryTime = 'No time found';
-        });
-      }
+      // Was its own endpoint and its own single-row table; now one app_settings key.
+      final settings = await const CatalogRepository().settings();
+      final time = settings['delivery_time'];
+      if (!mounted) return;
+      // Keep the existing default rather than showing an error string in the badge:
+      // an unset setting is a configuration gap, not something the shopper caused.
+      if (time != null && time.isNotEmpty) setState(() => deliveryTime = time);
     } catch (e) {
-      setState(() {
-        deliveryTime = 'Error fetching time';
-      });
+      debugPrint('Error fetching delivery time: $e');
     }
   }
 
@@ -144,64 +113,40 @@ class _ProductCardState extends State<ProductCard> {
     );
   }
 
-  Future<void> addToCart(int variantId, String imageUrl) async {
-    setState(() {
-      isLoading = true;
-    });
+  /// [imagePath] is the STORED path (e.g. `uploads/x.png`), not a built URL. The old
+  /// backend wrote a full URL with the serving host baked in, which is why existing rows
+  /// contain localhost and 192.168.31.10.
+  Future<void> addToCart(int variantId, String imagePath) async {
+    if (!Db.isSignedIn) {
+      _showToastMessage('Please sign in to add items to your cart.');
+      return;
+    }
 
+    setState(() => isLoading = true);
     try {
-      final productId = widget.product['id'].toString();
-
-      final url = Uri.parse(ApiConstants.ADD_TO_CART);
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'user_id': widget.userId.toString(),
-          'product_id': productId,
-          'variant_id': variantId.toString(),
-          'quantity': 1,
-          'image_url': imageUrl,
-        }),
+      await const CartRepository().add(
+        productId: _productId,
+        variantId: variantId,
+        quantity: 1,
+        imagePath: imagePath,
       );
 
-      final data = json.decode(response.body);
-
-      if (response.statusCode == 200 && data['success'] == true) {
-        final cartProvider = Provider.of<CartProvider>(context, listen: false);
-
-        cartProvider.updateCartQuantities(
-          widget.userId,
-          productId,
-          variantId.toString(),
-          1,
-          data['cart_id'] ?? 0,
-        );
-
-        widget.onCartUpdated?.call();
-        setState(() {});
-      } else {
-        Fluttertoast.showToast(
-          msg: data['message'] ?? "Failed to add to cart!",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-        );
-      }
+      if (!mounted) return;
+      // Re-read from the server rather than guessing the new row id locally.
+      await context.read<CartProvider>().refreshCartData();
+      widget.onCartUpdated?.call();
+      if (mounted) setState(() {});
     } catch (e) {
-      print('❌ Error adding to cart: $e');
+      debugPrint('Error adding to cart: $e');
       Fluttertoast.showToast(
-        msg: "Something went wrong!",
+        msg: e is DataException ? e.message : "Something went wrong!",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.red,
         textColor: Colors.white,
       );
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -236,17 +181,19 @@ class _ProductCardState extends State<ProductCard> {
         }
       }
 
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
+      final cartProvider = context.read<CartProvider>();
       final productId = widget.product['id'].toString();
 
-      int cartId = cartProvider.getCartId(widget.userId, productId, variantId.toString());
+      var cartId = cartProvider.getCartId('', productId, variantId.toString());
 
-      // 🟢 FIX: Try direct API if local cartId is not found
+      // The local mirror can be stale (e.g. the row was added on another screen), so
+      // re-sync from the server before giving up. The old code hit a second endpoint
+      // with a user_id in the query string to do this.
       if (cartId == 0) {
-        cartId = await _findCartIdDirectly(widget.userId, productId, variantId.toString());
+        await cartProvider.refreshCartData();
+        cartId = cartProvider.getCartId('', productId, variantId.toString());
 
         if (cartId == 0) {
-          print("⚠️ Cart item not found in server either");
           Fluttertoast.showToast(
             msg: "Cart item not found. Please add it again.",
             toastLength: Toast.LENGTH_SHORT,
@@ -258,112 +205,50 @@ class _ProductCardState extends State<ProductCard> {
         }
       }
 
-      // Update API call
-      final url = Uri.parse(ApiConstants.UPDATE_QUANTITY);
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id': cartId, 'quantity': newQuantity}),
-      );
+      await const CartRepository()
+          .setQuantity(cartItemId: cartId, quantity: newQuantity);
 
-      final data = json.decode(response.body);
-      if (data['success']) {
-        _refreshCartData(); // UI refresh
-        cartProvider.updateCartQuantities(
-          widget.userId,
-          productId,
-          variantId.toString(),
-          newQuantity,
-          cartId,
-        );
-        widget.onCartUpdated?.call();
-        setState(() {});
-      } else {
-        print("⚠️ Update quantity API failed: ${data['message']}");
-        Fluttertoast.showToast(
-          msg: "Failed to update quantity",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-        );
-      }
+      if (!mounted) return;
+      await cartProvider.refreshCartData();
+      widget.onCartUpdated?.call();
+      if (mounted) setState(() {});
     } catch (e) {
-      print('Error updating quantity: $e');
+      debugPrint('Error updating quantity: $e');
       Fluttertoast.showToast(
-        msg: "Network error. Please try again.",
+        msg: e is DataException ? e.message : "Network error. Please try again.",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.red,
         textColor: Colors.white,
       );
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) setState(() => isLoading = false);
     }
-  }
-
-
-  Future<int> _findCartIdDirectly(String userId, String productId, String variantId) async {
-    try {
-      final url = Uri.parse('${ApiConstants.GET_CART_ITEMS}?user_id=$userId');
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        final cartItems = List<Map<String, dynamic>>.from(data['cart'] ?? []);
-
-        for (var item in cartItems) {
-          final itemProductId = item['product_id'].toString();
-          final itemVariantId = item['variant_id'].toString();
-
-          if (itemProductId == productId && itemVariantId == variantId) {
-            return item['id'] as int;
-          }
-        }
-      }
-    } catch (e) {
-      print('Error finding cart ID directly: $e');
-    }
-
-    return 0;
-  }
-
-
-
-  void _refreshCartData() {
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    cartProvider.refreshCartData(widget.userId).then((_) {
-      setState(() {}); // Force UI update
-    });
   }
 
   Future<void> removeFromCart(int variantId) async {
-    setState(() {
-      isLoading = true;
-    });
-
+    setState(() => isLoading = true);
     try {
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      final cartId = cartProvider.getCartId(widget.userId, widget.product['id'].toString(), variantId.toString());
+      final cartProvider = context.read<CartProvider>();
+      final cartId = cartProvider.getCartId(
+        '',
+        widget.product['id'].toString(),
+        variantId.toString(),
+      );
+      if (cartId == 0) return;
 
-      final url = Uri.parse('${ApiConstants.REMOVE_CART_ITEM}?id=$cartId');
-      final response = await http.get(url);
-      final data = json.decode(response.body);
+      // RLS makes another user's cart row invisible, so this can only ever delete
+      // the caller's own row -- the old endpoint deleted by raw id with no check.
+      await const CartRepository().remove(cartId);
 
-      if (data['success']) {
-        cartProvider.removeCartItem(widget.userId, widget.product['id'].toString(), variantId.toString());
-        widget.onCartUpdated?.call();
-        // Force UI update
-        setState(() {});
-      }
+      if (!mounted) return;
+      cartProvider.removeCartItem('', widget.product['id'].toString(), variantId.toString());
+      widget.onCartUpdated?.call();
+      if (mounted) setState(() {});
     } catch (e) {
-      print('Error removing from cart: $e');
+      debugPrint('Error removing from cart: $e');
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -389,8 +274,8 @@ class _ProductCardState extends State<ProductCard> {
               final cartProvider = Provider.of<CartProvider>(context);
 
               void _localAddToCart(int variantId) async {
-                final imageUrl = ApiConstants.BASE_URL + 'product_api_project/$productImage';
-                await addToCart(variantId, imageUrl);
+                // Pass the stored path; the host is applied at render time.
+                await addToCart(variantId, productImage);
                 setModalState(() {});
               }
 
@@ -448,7 +333,7 @@ class _ProductCardState extends State<ProductCard> {
 
                           final variantId = int.tryParse(variant['id']?.toString() ?? '0') ?? 0;
                           final quantity = cartProvider.getQuantity(
-                            widget.userId,
+                            '',
                             widget.product['id'].toString(),
                             variantId.toString(),
                           );
@@ -483,8 +368,8 @@ class _ProductCardState extends State<ProductCard> {
                                               borderRadius: BorderRadius.circular(12.r),
                                               child: Center(
                                                 child: Image.network(
-                                                  ApiConstants.BASE_URL +
-                                                      'product_api_project/${widget.product['images'][0]}',
+                                                  Db.imageUrl(
+                                                      '${widget.product['images'][0]}'),
                                                   width: ResponsiveHelper.getResponsiveWidth(context,
                                                     mobile: 40.w,
                                                     tablet: 50.w,
@@ -846,8 +731,7 @@ class _ProductCardState extends State<ProductCard> {
                               padding: EdgeInsets.all(8.w),
                               child: Center(
                                 child: Image.network(
-                                  ApiConstants.BASE_URL +
-                                      'product_api_project/$productImage',
+                                  Db.imageUrl(productImage),
                                   fit: BoxFit.contain,
                                   errorBuilder: (_, __, ___) => Image.asset(
                                     "assets/images/placeholder_product_card.png",
@@ -1011,7 +895,7 @@ class _ProductCardState extends State<ProductCard> {
 
     return Consumer<CartProvider>(
       builder: (context, cartProvider, child) {
-        final productQuantity = cartProvider.getProductTotalQuantity(widget.userId, widget.product['id'].toString());
+        final productQuantity = cartProvider.getProductTotalQuantity('', widget.product['id'].toString());
 
         if (productQuantity > 0) {
           return Container(
@@ -1032,7 +916,7 @@ class _ProductCardState extends State<ProductCard> {
                       for (var variant in variants) {
                         final variantId = int.tryParse(variant['id']?.toString() ?? '0') ?? 0;
                         final quantity = cartProvider
-                            .getQuantity(widget.userId, widget.product['id'].toString(), variantId.toString());
+                            .getQuantity('', widget.product['id'].toString(), variantId.toString());
 
                         if (quantity > 0) {
                           removeFromCart(variantId);
@@ -1044,7 +928,7 @@ class _ProductCardState extends State<ProductCard> {
                       for (var variant in variants) {
                         final variantId = int.tryParse(variant['id']?.toString() ?? '0') ?? 0;
                         final quantity = cartProvider
-                            .getQuantity(widget.userId, widget.product['id'].toString(), variantId.toString());
+                            .getQuantity('', widget.product['id'].toString(), variantId.toString());
 
                         if (quantity > 0) {
                           updateQuantity(variantId, quantity - 1);
@@ -1080,7 +964,7 @@ class _ProductCardState extends State<ProductCard> {
                     for (var variant in variants) {
                       final variantId = int.tryParse(variant['id']?.toString() ?? '0') ?? 0;
                       final quantity = cartProvider
-                          .getQuantity(widget.userId, widget.product['id'].toString(), variantId.toString());
+                          .getQuantity('', widget.product['id'].toString(), variantId.toString());
 
                       if (quantity > 0) {
                         final variantStock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
@@ -1122,9 +1006,7 @@ class _ProductCardState extends State<ProductCard> {
                 if (stock <= 0) {
                   _showToastMessage(Provider.of<LanguageProvider>(context, listen: false).translate('product_out_of_stock_msg'));
                 } else {
-                  final imageUrl = ApiConstants.BASE_URL +
-                      'product_api_project/$productImage';
-                  addToCart(variantId, imageUrl);
+                  addToCart(variantId, productImage);
                 }
               }
             },

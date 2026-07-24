@@ -1,12 +1,11 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../BottomNav/Screens/cartScreen.dart';
 import '../CustomWidgets/product_card.dart';
 import '../SearchProduct/search_product.dart';
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import 'package:provider/provider.dart';
 import '../CustomWidgets/cart_provider.dart';
@@ -30,96 +29,46 @@ class _SimilarProductState extends State<SimilarProduct> {
   bool _isLoadingProducts = false;
   List<Map<String, dynamic>> cartList = [];
 
-  String userEmail = "";
-  String userName = "";
-  String userID = "";
 
   @override
   void initState() {
     super.initState();
-    fetchUserData();
+    _refreshCart();
     fetchAllProductsFromCategory(widget.category_id);
   }
 
 
-  Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      fetchUserDetails(email);
-    }
-  }
 
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(ApiConstants.BASE_URL+"auth/get_user.php?email=$email");
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-
-          setState(() {
-            userName = data["user"]["name"];
-            userID = data["user"]["id"];
-            fetchCartQuantity(userID);
-          });
-        }
-      }
-    } catch (e) {
-      print("Error fetching user details: $e");
-    }
-  }
-
-  /// ✅ Cart quantity fetch
-  Future<void> fetchCartQuantity(String id) async {
-    if (id.isEmpty) return;
+  /// Cart sync. RLS scopes this to the signed-in user, so there is no id to pass.
+  Future<void> _refreshCart() async {
+    if (!Db.isSignedIn) return;
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.refreshCartData(id);
-      setState(() {
-        cartList = cartProvider.getCartItemsAsList(id);
-      });
+      await cartProvider.refreshCartData();
+      if (!mounted) return;
+      setState(() => cartList = cartProvider.getCartItemsAsList());
     } catch (e) {
-      setState(() {
-        cartList = [];
-      });
+      if (mounted) setState(() => cartList = []);
     }
   }
 
-  /// ✅ Products fetch
+  /// Products fetch. Localisation is applied in the widgets via the model's
+  /// localizedName(), so the language no longer travels to the server as a query param.
   Future<void> fetchAllProductsFromCategory(String id) async {
     setState(() {
       _isLoadingProducts = true;
       products = [];
     });
 
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    final url = Uri.parse(
-      '${ApiConstants.VIEW_ALL_PRODUCTS_BY_CATEGORY}?category_id=$id&lang=$lang',
-    );
-
     try {
-      final res = await http.get(url);
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-
-        setState(() {
-          if (data is List) {
-            products = data;
-          } else if (data['products'] != null) {
-            products = data['products'];
-          } else {
-            products = [];
-          }
-        });
-      } else {
-        setState(() => products = []);
-      }
+      final categoryId = int.tryParse(id) ?? 0;
+      final result = await const CatalogRepository().productsByCategory(categoryId);
+      if (!mounted) return;
+      setState(() => products = result.map((p) => p.toCardMap()).toList());
     } catch (e) {
-      setState(() => products = []);
+      if (mounted) setState(() => products = []);
     } finally {
-      setState(() => _isLoadingProducts = false);
+      if (mounted) setState(() => _isLoadingProducts = false);
     }
   }
 
@@ -147,7 +96,7 @@ class _SimilarProductState extends State<SimilarProduct> {
           // ✅ Floating Cart Button (Only show if cart is not empty)
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount(userID);
+              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
               final hasItems = uniqueItemsCount > 0;
 
               return AnimatedPositioned(
@@ -324,10 +273,8 @@ class _SimilarProductState extends State<SimilarProduct> {
           final product = list[index];
           return ProductCard(
             product: product,
-            userId: userID,
-            onCartUpdated: () {
-              fetchCartQuantity(userID); // ✅ Real-time update
-            },
+            userId: '',
+            onCartUpdated: _refreshCart,
           );
         },
       ),

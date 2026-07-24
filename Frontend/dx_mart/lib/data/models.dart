@@ -148,6 +148,36 @@ class Product {
         _ => description,
       };
 
+  /// Bridge to the map shape `ProductCard` and the older screens still consume.
+  ///
+  /// Lets a screen move to typed repository reads without also rewriting the widget
+  /// that renders it. `images` holds stored PATHS, not URLs — the card resolves them
+  /// through `Db.imageUrl()` at render time.
+  Map<String, dynamic> toCardMap() => {
+        'id': id,
+        'name': name,
+        'name_hi': nameHi,
+        'name_hn': nameHn,
+        'description': description,
+        'description_hi': descriptionHi,
+        'description_hn': descriptionHn,
+        'main_category_id': mainCategoryId,
+        'types': types,
+        'images': images,
+        'variants': variants
+            .map((v) => {
+                  'id': v.id,
+                  'product_id': v.productId,
+                  'name': v.name,
+                  'name_hi': v.nameHi,
+                  'name_hn': v.nameHn,
+                  'price': v.price,
+                  'selling_price': v.sellingPrice,
+                  'stock': v.stock,
+                })
+            .toList(),
+      };
+
   factory Product.fromMap(Map<String, dynamic> m) {
     final imageRows = (m['product_images'] as List?) ?? const [];
     final variantRows = (m['product_variants'] as List?) ?? const [];
