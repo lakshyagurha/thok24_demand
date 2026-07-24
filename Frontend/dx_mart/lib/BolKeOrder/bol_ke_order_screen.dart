@@ -1,19 +1,19 @@
-import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:provider/provider.dart';
 
 import '../../CustomWidgets/cart_provider.dart';
-import '../../utils/api_constants.dart';
+import '../../core/supabase.dart';
+import '../../data/cart_repository.dart';
+import '../../data/catalog_repository.dart';
+import '../../data/order_repository.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
 import 'models/chat_message.dart';
 import 'services/bot_service.dart';
-import 'services/hybrid_bot_service.dart';
+import 'services/supabase_bot_service.dart';
 import 'widgets/bahi_khata_bill.dart';
 import 'widgets/ramu_bhai_avatar.dart';
 import '../ProductDetailScreen/product_details_screen.dart';
@@ -32,13 +32,16 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
   final FocusNode _focusNode = FocusNode();
   final List<ChatMessage> _messages = [];
   
-  final BotService _botService = HybridBotService();
+  // Same BotService contract as before, but the request carries only the message: the
+  // Edge Function reads identity from the verified JWT instead of a client-supplied id.
+  final BotService _botService = const SupabaseBotService();
+  final CartRepository _cart = const CartRepository();
+  final CatalogRepository _catalog = const CatalogRepository();
+  final OrderRepository _orders = const OrderRepository();
+
   RamuBhaiState _avatarState = RamuBhaiState.idle;
   String _speechBubbleText = "Namaste Didi! 🙏 Aaj kya bhejna hai? Aap bas likh dijiye ya mic daba kar boliye.";
 
-  String userId = "";
-  String userName = "";
-  String userEmail = "";
   bool _isLoading = true;
   List<dynamic> _previousPurchases = [];
 
@@ -52,7 +55,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
   @override
   void initState() {
     super.initState();
-    _loadUserAndHistory();
+    _loadHistory();
     _initializeSpeech();
   }
 
@@ -94,50 +97,45 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     }
   }
 
-  Future<void> _loadUserAndHistory() async {
+  /// Warms the cart and the "aapka regular" suggestions. Nothing here identifies the
+  /// user: the session does, and RLS scopes both reads to their own rows.
+  Future<void> _loadHistory() async {
     try {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      String? email = prefs.getString('user_email');
-      if (email != null) {
-        userEmail = email;
-        final url = Uri.parse("${ApiConstants.BASE_URL}auth/get_user.php?email=$email");
-        final response = await http.get(url);
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body);
-          if (data["status"] == "success") {
-            userName = data["user"]["name"];
-            userId = data["user"]["id"].toString();
-            
-            // Sync cart provider initial state
-            final cartProvider = Provider.of<CartProvider>(context, listen: false);
-            await cartProvider.refreshCartData(userId);
+      if (Db.isSignedIn) {
+        // Sync cart provider initial state
+        final cartProvider = Provider.of<CartProvider>(context, listen: false);
+        await cartProvider.refreshCartData();
 
-            // Load last ordered items
-            await _fetchLastPurchased();
-          }
-        }
+        // Load last ordered items
+        await _fetchLastPurchased();
       }
     } catch (e) {
-      debugPrint("Error loading user in BolKeOrder: $e");
+      debugPrint("Error loading history in BolKeOrder: $e");
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _fetchLastPurchased() async {
-    if (userId.isEmpty) return;
+    if (!Db.isSignedIn) return;
     try {
       final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-      final url = Uri.parse("${ApiConstants.BOL_KE_ORDER_LAST_PURCHASED}?user_id=$userId&lang=$lang");
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true) {
-          setState(() {
-            _previousPurchases = data['products'] ?? [];
-          });
-        }
-      }
+      final rows = await _orders.regulars();
+      if (!mounted) return;
+      setState(() {
+        // Reshaped to the {'name': ...} entries the suggestion builder already reads, so
+        // the chip copy and ordering are unchanged.
+        _previousPurchases = rows.map((r) {
+          final product = (r['products'] as Map?) ?? const {};
+          final hindi = (product['name_hi'] ?? '').toString();
+          final english = (product['name'] ?? '').toString();
+          return {
+            'name': (lang == 'hi' && hindi.isNotEmpty) ? hindi : english,
+            'product_id': r['product_id'],
+            'variant_id': r['variant_id'],
+          };
+        }).toList();
+      });
     } catch (e) {
       debugPrint("Error loading last purchased: $e");
     }
@@ -229,8 +227,10 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     _inputController.clear();
     _scrollToBottom();
 
-    // Call bot logic parser
-    final botResponse = await _botService.processMessage(text, userId, context);
+    // Call bot logic parser. The empty string is the vestigial userId parameter on the
+    // BotService interface: SupabaseBotService ignores it and the function derives the
+    // user from the JWT, so there is no id to pass.
+    final botResponse = await _botService.processMessage(text, '', context);
 
     final botMsg = ChatMessage(
       id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
@@ -257,11 +257,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     _scrollToBottom();
 
     if (botResponse.messageType == MessageType.checkout) {
-      _navigateToCheckout(
-        botResponse.cartItems,
-        botResponse.subtotal,
-        botResponse.finalAmount,
-      );
+      _navigateToCheckout();
     }
   }
 
@@ -277,36 +273,17 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     });
   }
 
-  void _navigateToCheckout(List<Map<String, dynamic>> cartItems, double subtotal, double finalAmount) {
-    if (userId.isEmpty) return;
-
-    double saveAmount = 0.0;
-    for (var item in cartItems) {
-      final price = double.tryParse(item['price']?.toString() ?? '0.0') ?? 0.0;
-      final sellingPrice = double.tryParse(item['selling_price']?.toString() ?? '0.0') ?? 0.0;
-      final quantity = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
-      if (price > sellingPrice) {
-        saveAmount += (price - sellingPrice) * quantity;
-      }
-    }
-
-    final double deliveryCharge = subtotal < 500 ? 10.0 : 0.0;
-    final double handlingCharge = 5.0;
+  /// Hands off to checkout. Nothing is carried across any more — no user id, no email,
+  /// and none of the amounts the parchi is showing. CheckoutScreen recomputes the
+  /// preview from the same cart rows, and the place-order function recomputes the real
+  /// totals server-side, so the numbers Ramu Bhai quotes can never become the price.
+  void _navigateToCheckout() {
+    if (!Db.isSignedIn) return;
 
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => CheckoutScreen(
-          saveAmount: saveAmount,
-          finalWithCharge: finalAmount,
-          userId: userId,
-          userEmail: userEmail,
-          userName: userName,
-          giftName: '',
-          deliveyCharge: deliveryCharge,
-          handlingCharge: handlingCharge,
-          coupon_code_name: '',
-        ),
+        builder: (context) => const CheckoutScreen(),
       ),
     );
   }
@@ -317,16 +294,14 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
       _avatarState = RamuBhaiState.thinking;
     });
 
-    final updateUrl = Uri.parse(ApiConstants.UPDATE_QUANTITY);
-    await http.post(
-      updateUrl,
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'id': cartItemId, 'quantity': newQty}),
-    );
+    // The row id alone is enough: the UPDATE policy makes another user's cart row
+    // invisible, so a tampered id affects nothing rather than the wrong cart.
+    await _cart.setQuantity(cartItemId: cartItemId, quantity: newQty);
 
+    if (!mounted) return;
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    await cartProvider.refreshCartData(userId);
-    
+    await cartProvider.refreshCartData();
+
     // Simulate re-trigger of bill summary
     await _sendMessage("bill dikhao");
   }
@@ -337,11 +312,11 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
       _avatarState = RamuBhaiState.thinking;
     });
 
-    final removeUrl = Uri.parse('${ApiConstants.REMOVE_CART_ITEM}?id=$cartItemId');
-    await http.get(removeUrl);
+    await _cart.remove(cartItemId);
 
+    if (!mounted) return;
     final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    await cartProvider.refreshCartData(userId);
+    await cartProvider.refreshCartData();
 
     // Simulate re-trigger of bill summary
     await _sendMessage("bill dikhao");
@@ -411,23 +386,38 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
 
     try {
       final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-      final url = Uri.parse("${ApiConstants.BASE_URL}product_api_project/product/single_product_details.php?product_id=$productId&lang=$lang");
-      final response = await http.get(url);
+      final product = await _catalog.product(productId);
 
       // 3. Dismiss loading dialog safely
       if (mounted && dialogOpened) {
         Navigator.of(context).pop();
         dialogOpened = false;
       }
-      
+
       // 4. Wait for dialog fade-out animation to complete to prevent transition collision
       await Future.delayed(const Duration(milliseconds: 250));
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['success'] == true && data['product'] != null) {
-          final productData = Map<String, dynamic>.from(data['product']);
-          
+      if (product != null) {
+        // Same key set the old `single_product_details.php` returned, so the details
+        // sheet renders identically.
+          final productData = <String, dynamic>{
+            'id': product.id,
+            'name': product.localizedName(lang),
+            'description': product.localizedDescription(lang),
+            'main_category_id': product.mainCategoryId,
+            'images': product.imageUrls,
+            'variants': [
+              for (final v in product.variants)
+                {
+                  'id': v.id,
+                  'name': v.localizedName(lang),
+                  'price': v.price,
+                  'selling_price': v.sellingPrice,
+                  'stock': v.stock,
+                },
+            ],
+          };
+
           if (!mounted) return;
 
           // 5. Open in a premium bottom-sheet drawer (85% height) to retain chat context
@@ -462,11 +452,8 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
               ),
             ),
           );
-        } else {
-          _showErrorSnackBar("Product details missing on server");
-        }
       } else {
-        _showErrorSnackBar("Server error: ${response.statusCode}");
+        _showErrorSnackBar("Product details missing on server");
       }
     } catch (e) {
       // Dismiss loading dialog if error occurs and it's still open
@@ -583,11 +570,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                         finalAmount: msg.finalAmount,
                         onQuantityChanged: _updateQuantityDirectly,
                         onItemRemoved: _removeItemDirectly,
-                        onOrderConfirmed: () => _navigateToCheckout(
-                          msg.cartItems,
-                          msg.subtotal,
-                          msg.finalAmount,
-                        ),
+                        onOrderConfirmed: _navigateToCheckout,
                         isConfirmedView: false,
                       );
                     }

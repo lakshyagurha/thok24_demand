@@ -1,10 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import '../../Auth/edit_profile.dart';
 import '../../Auth/loginScreen.dart';
@@ -15,7 +11,8 @@ import '../../ProfileScreen/about_screen.dart';
 import '../../ProfileScreen/privacy_policy.dart';
 import '../../ProfileScreen/return_policy.dart';
 import '../../ProfileScreen/terms_condition.dart';
-import '../../utils/api_constants.dart';
+import '../../CustomWidgets/cart_provider.dart';
+import '../../data/auth_repository.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
 import 'order_screen.dart';
@@ -29,8 +26,10 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  String userEmail = "";
+  final AuthRepository _auth = const AuthRepository();
+
   String userName = "";
+  String userPhone = "";
 
   @override
   void initState() {
@@ -38,33 +37,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
     fetchUserData();
   }
 
+  /// Loads the signed-in user's own profile. No email is read from SharedPreferences and
+  /// no id is sent: the session identifies the user and RLS returns only their row.
   Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      fetchUserDetails(email);
-    }
-  }
-
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(ApiConstants.BASE_URL+"auth/get_user.php?email=$email");
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-          setState(() => userName = data["user"]["name"]);
-        }
-      }
+      final profile = await _auth.currentProfile();
+      if (!mounted || profile == null) return;
+      setState(() {
+        userName = (profile['name'] ?? '').toString();
+        userPhone = (profile['phone'] ?? '').toString();
+      });
     } catch (e) {
-      print("Error fetching user details: $e");
+      debugPrint("Error fetching user details: $e");
     }
   }
 
   Future<void> logoutUser() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.remove('user_email');
+    // Ends the Supabase session and clears the stored tokens. The old code removed a
+    // 'user_email' preference, which nothing writes any more — so it logged nobody out.
+    final cart = context.read<CartProvider>();
+    await _auth.signOut();
+    // Drop the in-memory cart too, so the next user to sign in on this device does not
+    // inherit the previous one's quantities.
+    cart.clearCart();
     if (!mounted) return;
     Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => LoginScreen()));
   }
@@ -135,11 +130,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Icon(Icons.edit,size: 18.sp,color: AppColors.primaryColor,)
                           ],
                         ),
-                        onTap: (){
-                          Navigator.push(context, MaterialPageRoute(builder: (context)=>EditProfile(email: userEmail, fullName: userName)));
+                        onTap: () async {
+                          // No arguments: EditProfile loads and updates the signed-in
+                          // user's own row from the session, so there is nothing
+                          // authoritative for this screen to hand it.
+                          await Navigator.push(context, MaterialPageRoute(builder: (context)=>EditProfile()));
+                          fetchUserData();
                         },
                       ),
-                      Text(userEmail,style: TextStyle(
+                      Text(userPhone,style: TextStyle(
                         fontWeight: FontWeight.w400,
 
                       ),)

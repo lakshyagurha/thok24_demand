@@ -5,11 +5,15 @@ import 'package:provider/provider.dart';
 
 import 'CustomWidgets/cart_provider.dart';
 import 'SplashScreen/splashScreen.dart';
+import 'core/supabase.dart';
 import 'utils/colors.dart';
 import 'utils/language_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Restores any persisted session before the first frame, so screens can rely on
+  // Db.isSignedIn instead of re-identifying the user from stored email on every route.
+  await Db.init();
   runApp(const MyApp());
 }
 

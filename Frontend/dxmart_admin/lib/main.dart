@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'core/supabase.dart';
 import 'SplashScreen/splashScreen.dart';
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Restores any persisted admin session before the first frame, so SplashScreen can
+  // route on a real session instead of an email left in SharedPreferences.
+  await Db.init();
 
   runApp(const MyApp());
 }

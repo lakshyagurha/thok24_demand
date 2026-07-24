@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/supabase.dart';
 import '../HomeScreen/home_screen.dart';
-import '../utils/api_constants.dart';
 import '../utils/colors.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -25,8 +24,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   String _errorMessage = '';
 
-  final String _loginUrl = ApiConstants.LOGIN;
-
   @override
   void initState() {
     super.initState();
@@ -34,30 +31,35 @@ class _LoginScreenState extends State<LoginScreen> {
     _checkLogin();
   }
 
-  _checkLogin() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('token');
-
-    if (token != null && token.isNotEmpty) {
+  /// The old version read a `token` key from SharedPreferences that nothing ever
+  /// wrote, so it was always null and this check never fired. The real question is
+  /// whether Supabase restored a session in `Db.init()`.
+  void _checkLogin() {
+    if (!Db.isSignedIn) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => HomeScreen()),
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
-    }
+    });
   }
 
   _loadSavedCredentials() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       setState(() {
         _rememberMe = prefs.getBool('rememberMe') ?? false;
         if (_rememberMe) {
           _emailController.text = prefs.getString('savedEmail') ?? '';
-          _passwordController.text = prefs.getString('savedPassword') ?? '';
         }
       });
+      // The password is deliberately no longer stored. Supabase persists and
+      // refreshes the session itself, so "Remember Me" only needs to prefill the
+      // email — keeping an admin password in plaintext on disk bought nothing.
     } catch (e) {
-      print("Error loading saved credentials: $e");
+      debugPrint("Error loading saved credentials: $e");
     }
   }
 
@@ -69,36 +71,42 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = '';
     });
 
+    final email = _emailController.text.trim();
+
     try {
-      final response = await http.post(
-        Uri.parse(_loginUrl),
-        body: {
-          'email': _emailController.text.trim(),
-          'password': _passwordController.text.trim(),
-        },
+      // Replaces admin_login.php, which compared the password in plaintext and
+      // interpolated the email straight into SQL. Admins are Supabase Auth users;
+      // whether an authenticated user is *staff* is decided server-side by the
+      // admin-api Edge Function against a private admin_users table.
+      final res = await Db.client.auth.signInWithPassword(
+        email: email,
+        password: _passwordController.text,
       );
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        if (data['status'] == 'success') {
-          SharedPreferences prefs = await SharedPreferences.getInstance();
-          await prefs.setString('user_email', data['user']['email']);
-
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => HomeScreen()),
-          );
-        } else {
-          setState(() => _errorMessage = data['message'] ?? "Login failed");
-        }
-      } else {
-        setState(() => _errorMessage = "Server error: ${response.statusCode}");
+      if (res.session == null) {
+        setState(() => _errorMessage = "Login failed");
+        return;
       }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('rememberMe', _rememberMe);
+      if (_rememberMe) {
+        await prefs.setString('savedEmail', email);
+      } else {
+        await prefs.remove('savedEmail');
+      }
+
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } on AuthException catch (e) {
+      setState(() => _errorMessage = e.message);
     } catch (e) {
       setState(() => _errorMessage = "Something went wrong: $e");
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 

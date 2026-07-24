@@ -2,40 +2,82 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 
+import '../core/supabase.dart';
+import '../data/models.dart';
 import '../utils/colors.dart';
 
-class OrderSummary extends StatelessWidget {
-  final Map orderMap;
-  const OrderSummary({super.key, required this.orderMap});
+/// Read-only view of one order.
+///
+/// Everything shown here is the server's own arithmetic, read back from `orders`. The
+/// screen never recomputes a total: the place-order Edge Function is the only thing that
+/// decides what an order costs.
+class OrderSummary extends StatefulWidget {
+  final Order order;
+  const OrderSummary({super.key, required this.order});
+
+  @override
+  State<OrderSummary> createState() => _OrderSummaryState();
+}
+
+class _OrderSummaryState extends State<OrderSummary> {
+  // Gift note and the delivery address are not part of the shared order graph, so they
+  // are read separately. RLS scopes `orders` to the caller, and the address is reached
+  // through the order row, so this cannot surface anyone else's details.
+  String _gift = "";
+  String _addressName = "";
+  String _addressPhone = "";
+  String _fullAddress = "";
+  String _pinCode = "";
+  String _landmark = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDeliveryDetails();
+  }
+
+  Future<void> _loadDeliveryDetails() async {
+    try {
+      final row = await Db.client
+          .from('orders')
+          .select(
+            'gift, delivery_address(name, phone, full_address, pin_code, landmark)',
+          )
+          .eq('id', widget.order.id)
+          .maybeSingle();
+      if (!mounted || row == null) return;
+
+      final address = row['delivery_address'] as Map?;
+      setState(() {
+        _gift = (row['gift'] ?? "") as String;
+        _addressName = ((address?['name']) ?? "") as String;
+        _addressPhone = ((address?['phone']) ?? "") as String;
+        _fullAddress = ((address?['full_address']) ?? "") as String;
+        _pinCode = ((address?['pin_code']) ?? "") as String;
+        _landmark = ((address?['landmark']) ?? "") as String;
+      });
+    } catch (e) {
+      debugPrint("Error loading order delivery details: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final orderData = orderMap["order"] ?? {};
-    final orderItems = (orderMap["items"] ?? []) as List;
+    final order = widget.order;
+    final orderItems = order.items;
 
-    final finalAmount = double.tryParse(orderData['final_amount']?.toString() ?? "0") ?? 0;
-    final itemsTotal = double.tryParse(orderData['total_amount']?.toString() ?? "0") ?? finalAmount;
-    final discount = double.tryParse(orderData['discount_amount']?.toString() ?? "0") ?? 0;
-    final handling = double.tryParse(orderData['handling_charge']?.toString() ?? "0") ?? 0;
-    final delivery = double.tryParse(orderData['delivery_charge']?.toString() ?? "0") ?? 0;
-    final deliveryDate = orderData['delivery_date']?.toString() ?? "";
-    final gift = orderData['gift']?.toString() ?? "";
-    final deliveryTime = orderData['delivery_time']?.toString() ?? "";
-    final status = orderData['status']?.toString() ?? "Pending";
-    final paymentMethod = orderData['payment_method']?.toString() ?? "COD";
+    final finalAmount = order.finalAmount;
+    final itemsTotal = order.totalAmount;
+    final discount = order.discountAmount;
+    final handling = order.handlingCharge;
+    final delivery = order.deliveryCharge;
+    final deliveryTime = order.deliveryTimeWindow ?? "";
+    final status = order.status;
+    final paymentMethod = order.paymentMethod;
 
-    // Address Details
-    final addressName = orderData['address_name']?.toString() ?? "";
-    final addressPhone = orderData['address_phone']?.toString() ?? "";
-    final fullAddress = orderData['full_address']?.toString() ?? "";
-    final pinCode = orderData['pin_code']?.toString() ?? "";
-    final landmark = orderData['landmark']?.toString() ?? "";
-
-    final rawDate = deliveryDate.toString();
-    final parsedDate = DateTime.tryParse(rawDate);
-    final formattedDate = parsedDate != null
-        ? DateFormat("dd MMM yyyy").format(parsedDate)
-        : rawDate;
+    final formattedDate = order.deliveryDate != null
+        ? DateFormat("dd MMM yyyy").format(order.deliveryDate!)
+        : DateFormat("dd MMM yyyy").format(order.orderedAt);
 
     return Scaffold(
       backgroundColor: AppColors.neutral100,
@@ -95,14 +137,13 @@ class OrderSummary extends StatelessWidget {
                         color: AppColors.primaryTextColor,
                       ),
                     ),
-                    if (orderData['id'] != null)
-                      Text(
-                        "Order #000${orderData['id']}",
-                        style: TextStyle(
-                          fontSize: 11.sp,
-                          color: AppColors.neutral500,
-                        ),
+                    Text(
+                      "Order #000${order.id}",
+                      style: TextStyle(
+                        fontSize: 11.sp,
+                        color: AppColors.neutral500,
                       ),
+                    ),
                   ],
                 ),
               ],
@@ -120,7 +161,7 @@ class OrderSummary extends StatelessWidget {
                   _buildStatusCard(status, formattedDate, deliveryTime),
 
                   // Gift Banner (If exists)
-                  if (gift.isNotEmpty && gift.toLowerCase() != "null") ...[
+                  if (_gift.isNotEmpty && _gift.toLowerCase() != "null") ...[
                     Container(
                       margin: EdgeInsets.only(left: 14.w, right: 14.w, top: 12.h),
                       padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
@@ -147,7 +188,7 @@ class OrderSummary extends StatelessWidget {
                                 ),
                                 SizedBox(height: 2.h),
                                 Text(
-                                  gift,
+                                  _gift,
                                   style: TextStyle(
                                     fontSize: 11.sp,
                                     color: AppColors.neutral700,
@@ -202,73 +243,42 @@ class OrderSummary extends StatelessWidget {
                             thickness: 1,
                           ),
                           itemBuilder: (context, index) {
-                            final item = orderItems[index];
-                            final price = double.tryParse(item['selling_price']?.toString() ?? "0") ?? 0;
-                            final mrp = double.tryParse(item['price']?.toString() ?? "0") ?? price;
-
-                            final variantPrice = double.tryParse(item?['price']?.toString() ?? "0") ?? 0;
-                            final variantSellingPrice = double.tryParse(item?['selling_price']?.toString() ?? "0") ?? 0;
-
-                            final discountPercentage = (variantPrice > 0 && variantSellingPrice > 0)
-                                ? (((variantPrice - variantSellingPrice) / variantPrice) * 100).round()
-                                : 0;
+                            final OrderLine item = orderItems[index];
+                            // What the line actually cost when it was ordered. Null for
+                            // orders migrated from the old backend, which recorded no
+                            // per-line price -- show nothing rather than guess from the
+                            // current catalog price.
+                            final unitPrice = item.unitPrice;
 
                             return Padding(
                               padding: EdgeInsets.all(12.w),
                               child: Row(
                                 children: [
                                   // Product Image Thumbnail
-                                  Stack(
-                                    children: [
-                                      Container(
-                                        width: 54.h,
-                                        height: 54.h,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.neutral50,
-                                          borderRadius: BorderRadius.circular(8.r),
-                                          border: Border.all(color: AppColors.neutral200.withOpacity(0.5)),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(8.r),
-                                          child: Center(
-                                            child: Image.network(
-                                              item['image_url'] ?? "",
-                                              width: 44.w,
-                                              height: 44.h,
-                                              fit: BoxFit.contain,
-                                              errorBuilder: (context, error, stackTrace) => Icon(
-                                                Icons.image_not_supported_outlined,
-                                                size: 20.sp,
-                                                color: AppColors.neutral400,
-                                              ),
-                                            ),
+                                  Container(
+                                    width: 54.h,
+                                    height: 54.h,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.neutral50,
+                                      borderRadius: BorderRadius.circular(8.r),
+                                      border: Border.all(color: AppColors.neutral200.withOpacity(0.5)),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(8.r),
+                                      child: Center(
+                                        child: Image.network(
+                                          item.imageUrl,
+                                          width: 44.w,
+                                          height: 44.h,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (context, error, stackTrace) => Icon(
+                                            Icons.image_not_supported_outlined,
+                                            size: 20.sp,
+                                            color: AppColors.neutral400,
                                           ),
                                         ),
                                       ),
-                                      if (discountPercentage > 0)
-                                        Positioned(
-                                          top: 0,
-                                          left: 0,
-                                          child: Container(
-                                            padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.secondaryColor,
-                                              borderRadius: BorderRadius.only(
-                                                topLeft: Radius.circular(8.r),
-                                                bottomRight: Radius.circular(8.r),
-                                              ),
-                                            ),
-                                            child: Text(
-                                              '$discountPercentage% OFF',
-                                              style: TextStyle(
-                                                fontSize: 8.sp,
-                                                fontWeight: FontWeight.bold,
-                                                color: AppColors.primaryTextColor,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
+                                    ),
                                   ),
                                   SizedBox(width: 12.w),
                                   // Product Info
@@ -277,7 +287,7 @@ class OrderSummary extends StatelessWidget {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          item['product_name'] ?? "",
+                                          item.productName,
                                           style: TextStyle(
                                             fontSize: 13.sp,
                                             fontWeight: FontWeight.w600,
@@ -289,7 +299,7 @@ class OrderSummary extends StatelessWidget {
                                         ),
                                         SizedBox(height: 4.h),
                                         Text(
-                                          "${item['variant_name'] ?? ''}  •  ${item['quantity'] ?? '1'} Unit${(int.tryParse(item['quantity']?.toString() ?? '1') ?? 1) > 1 ? 's' : ''}",
+                                          "${item.quantity} Unit${item.quantity > 1 ? 's' : ''}",
                                           style: TextStyle(
                                             fontSize: 11.sp,
                                             color: AppColors.neutral500,
@@ -301,31 +311,31 @@ class OrderSummary extends StatelessWidget {
                                   ),
                                   SizedBox(width: 12.w),
                                   // Price
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        "₹${price.toStringAsFixed(0)}",
-                                        style: TextStyle(
-                                          fontSize: 14.sp,
-                                          fontWeight: FontWeight.bold,
-                                          color: AppColors.primaryTextColor,
-                                        ),
-                                      ),
-                                      if (mrp > price) ...[
-                                        SizedBox(height: 2.h),
+                                  if (unitPrice != null)
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
                                         Text(
-                                          "₹${mrp.toStringAsFixed(0)}",
+                                          "₹${(unitPrice * item.quantity).toStringAsFixed(0)}",
                                           style: TextStyle(
-                                            fontSize: 11.sp,
-                                            color: AppColors.neutral400,
-                                            decoration: TextDecoration.lineThrough,
+                                            fontSize: 14.sp,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.primaryTextColor,
                                           ),
                                         ),
+                                        if (item.quantity > 1) ...[
+                                          SizedBox(height: 2.h),
+                                          Text(
+                                            "₹${unitPrice.toStringAsFixed(0)} each",
+                                            style: TextStyle(
+                                              fontSize: 11.sp,
+                                              color: AppColors.neutral400,
+                                            ),
+                                          ),
+                                        ],
                                       ],
-                                    ],
-                                  ),
+                                    ),
                                 ],
                               ),
                             );
@@ -336,7 +346,7 @@ class OrderSummary extends StatelessWidget {
                   ),
 
                   // Delivery Address Card (If exists)
-                  if (fullAddress.isNotEmpty) ...[
+                  if (_fullAddress.isNotEmpty) ...[
                     Container(
                       margin: EdgeInsets.only(left: 14.w, right: 14.w, top: 12.h),
                       padding: EdgeInsets.all(14.w),
@@ -373,9 +383,9 @@ class OrderSummary extends StatelessWidget {
                             ],
                           ),
                           SizedBox(height: 12.h),
-                          if (addressName.isNotEmpty) ...[
+                          if (_addressName.isNotEmpty) ...[
                             Text(
-                              addressName,
+                              _addressName,
                               style: TextStyle(
                                 fontSize: 12.sp,
                                 fontWeight: FontWeight.bold,
@@ -386,9 +396,9 @@ class OrderSummary extends StatelessWidget {
                           ],
                           Text(
                             [
-                              fullAddress,
-                              if (landmark.isNotEmpty) "Landmark: $landmark",
-                              if (pinCode.isNotEmpty) "Pin: $pinCode",
+                              _fullAddress,
+                              if (_landmark.isNotEmpty) "Landmark: $_landmark",
+                              if (_pinCode.isNotEmpty) "Pin: $_pinCode",
                             ].join(", "),
                             style: TextStyle(
                               fontSize: 12.sp,
@@ -396,10 +406,10 @@ class OrderSummary extends StatelessWidget {
                               height: 1.3,
                             ),
                           ),
-                          if (addressPhone.isNotEmpty) ...[
+                          if (_addressPhone.isNotEmpty) ...[
                             SizedBox(height: 6.h),
                             Text(
-                              "Phone: $addressPhone",
+                              "Phone: $_addressPhone",
                               style: TextStyle(
                                 fontSize: 11.sp,
                                 color: AppColors.neutral500,
@@ -458,7 +468,13 @@ class OrderSummary extends StatelessWidget {
                           valueColor: delivery == 0 ? AppColors.success500 : null,
                         ),
                         if (discount > 0)
-                          _billRow("Discount", "-₹${discount.toStringAsFixed(0)}", valueColor: AppColors.success500),
+                          _billRow(
+                            order.couponCode == null || order.couponCode!.isEmpty
+                                ? "Discount"
+                                : "Discount (${order.couponCode})",
+                            "-₹${discount.toStringAsFixed(0)}",
+                            valueColor: AppColors.success500,
+                          ),
                         _billRow("Payment Method", paymentMethod),
                         Padding(
                           padding: EdgeInsets.symmetric(vertical: 8.h),

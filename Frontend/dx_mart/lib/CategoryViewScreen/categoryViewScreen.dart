@@ -1,17 +1,34 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../BottomNav/Screens/cartScreen.dart';
 import '../CustomWidgets/product_card.dart';
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/catalog_repository.dart';
+import '../data/models.dart';
 import '../utils/colors.dart';
 import 'package:provider/provider.dart';
 import '../utils/language_provider.dart';
 import '../CustomWidgets/cart_provider.dart';
+
+/// Shapes a [Product] into the map [ProductCard] still reads. Transitional — see the
+/// identical note in `homeScreen.dart`.
+Map<String, dynamic> _productCardData(Product p, String lang) => {
+      'id': p.id,
+      'name': p.localizedName(lang),
+      'images': p.images,
+      'variants': [
+        for (final v in p.variants)
+          {
+            'id': v.id,
+            'name': v.localizedName(lang),
+            'price': v.price,
+            'selling_price': v.sellingPrice,
+            'stock': v.stock,
+          },
+      ],
+    };
 
 class CategoryViewScreen extends StatefulWidget {
   final int? categoryId;
@@ -28,80 +45,47 @@ class CategoryViewScreen extends StatefulWidget {
 }
 
 class _CategoryViewScreenState extends State<CategoryViewScreen> {
+  final CatalogRepository _catalog = const CatalogRepository();
+
   late int selectedCategoryId;
-  late String selectedCategoryName;
-  List categories = [];
-  List products = [];
+  List<Category> categories = [];
+  List<Product> products = [];
   bool _isLoadingProducts = false;
   bool _isLoadingCategories = true;
   List<Map<String, dynamic>> cartList = [];
 
-  String userEmail = "";
-  String userName = "";
-  String userID = "";
-  String _lastFetchedLang = "";
-  // shopId को हटा दिया गया
-
   @override
   void initState() {
     super.initState();
-    fetchUserData();
     selectedCategoryId = widget.categoryId ?? 0;
-    selectedCategoryName = widget.categoryName ?? "";
+    // Names are localized from the model at render time, so no re-fetch per language.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeData();
+      fetchCartQuantity();
+    });
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final activeLang = Provider.of<LanguageProvider>(context).currentLanguage;
-    if (_lastFetchedLang != activeLang) {
-      _lastFetchedLang = activeLang;
-      fetchCategories();
-      if (selectedCategoryId != 0) {
-        fetchProductsByCategory(selectedCategoryId);
-      }
+  /// Title for the header and the caller-supplied fallback. Resolved from the loaded
+  /// category list so it follows the selected tab and the current language.
+  String get selectedCategoryName {
+    final lang = Provider.of<LanguageProvider>(context).currentLanguage;
+    for (final c in categories) {
+      if (c.id == selectedCategoryId) return c.localizedName(lang);
     }
+    return widget.categoryName ?? "";
   }
 
-  Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    // shopId को हटा दिया गया
-    if (email != null) {
-      setState(() => userEmail = email);
-      fetchUserDetails(email);
-    }
-  }
-
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(ApiConstants.BASE_URL + "auth/get_user.php?email=$email");
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-          setState(() {
-            userName = data["user"]["name"];
-            userID = data["user"]["id"];
-            fetchCartQuantity(userID);
-            _initializeData();
-          });
-        }
-      }
-    } catch (e) {
-      print("Error fetching user details: $e");
-    }
-  }
-
-  Future<void> fetchCartQuantity(String id) async {
-    if (id.isEmpty) return;
+  Future<void> fetchCartQuantity() async {
+    if (!Db.isSignedIn) return;
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.refreshCartData(id);
+      await cartProvider.refreshCartData();
+      if (!mounted) return;
       setState(() {
-        cartList = cartProvider.getCartItemsAsList(id);
+        cartList = cartProvider.getCartItemsAsList();
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         cartList = [];
       });
@@ -110,14 +94,11 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
 
   Future<void> _initializeData() async {
     await fetchCategories();
-    if (selectedCategoryId != 0) {
-      await fetchProductsByCategory(selectedCategoryId);
-    } else if (categories.isNotEmpty) {
+    if (selectedCategoryId == 0 && categories.isNotEmpty) {
       // Agar categoryId 0 hai to pehli category select karo
-      setState(() {
-        selectedCategoryId = int.tryParse(categories[0]['id'].toString()) ?? 0;
-        selectedCategoryName = categories[0]['name'] ?? "";
-      });
+      setState(() => selectedCategoryId = categories.first.id);
+    }
+    if (selectedCategoryId != 0) {
       await fetchProductsByCategory(selectedCategoryId);
     }
   }
@@ -128,46 +109,14 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
     });
 
     try {
-      final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-      final url = Uri.parse("${ApiConstants.MAIN_VIEW_CATEGORY}?lang=$lang");
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        if (data is List) {
-          setState(() {
-            categories = data;
-            _isLoadingCategories = false;
-
-            // Sync selectedCategoryName with localized name from categories list
-            final currentCategory = categories.firstWhere(
-              (cat) => (int.tryParse(cat['id'].toString()) ?? 0) == selectedCategoryId,
-              orElse: () => null,
-            );
-            if (currentCategory != null) {
-              selectedCategoryName = currentCategory['name'] ?? selectedCategoryName;
-            }
-          });
-        } else if (data is Map && data.containsKey('success') && !data['success']) {
-          setState(() {
-            categories = [];
-            _isLoadingCategories = false;
-          });
-        } else {
-          setState(() {
-            categories = [];
-            _isLoadingCategories = false;
-          });
-        }
-      } else {
-        setState(() {
-          categories = [];
-          _isLoadingCategories = false;
-        });
-      }
+      final rows = await _catalog.categories();
+      if (!mounted) return;
+      setState(() {
+        categories = rows;
+        _isLoadingCategories = false;
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         categories = [];
         _isLoadingCategories = false;
@@ -181,52 +130,16 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
       products = [];
     });
 
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    final url = Uri.parse(
-      '${ApiConstants.VIEW_ALL_PRODUCTS_BY_CATEGORY}?category_id=$categoryId&lang=$lang',
-    );
-
     try {
-      final res = await http.get(url);
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        setState(() {
-          if (data is List) {
-            products = data;
-          } else if (data['products'] != null) {
-            products = data['products'];
-          } else {
-            products = [];
-          }
-          _processProductVariants();
-        });
-      } else {
-        setState(() {
-          products = [];
-        });
-      }
+      final rows = await _catalog.productsByCategory(categoryId);
+      if (!mounted) return;
+      setState(() => products = rows);
     } catch (e) {
-      setState(() {
-        products = [];
-      });
+      if (!mounted) return;
+      setState(() => products = []);
     } finally {
-      setState(() {
-        _isLoadingProducts = false;
-      });
-    }
-  }
-
-  void _processProductVariants() {
-    for (var product in products) {
-      if (product['variants'] != null && product['variants'].isNotEmpty) {
-        product['selectedVariantName'] = product['variants'][0]['name'];
-        product['selectedPrice'] = double.tryParse(
-          product['variants'][0]['selling_price'].toString(),
-        );
-      } else {
-        product['selectedVariantName'] = null;
-        product['selectedPrice'] = null;
+      if (mounted) {
+        setState(() => _isLoadingProducts = false);
       }
     }
   }
@@ -234,7 +147,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
   Widget _buildCategoryImage(String? imageUrl) {
     if (imageUrl != null && imageUrl.isNotEmpty) {
       return Image.network(
-        ApiConstants.BASE_URL + 'main_category/$imageUrl',
+        imageUrl,
         width: 45.w,
         height: 45.h,
         fit: BoxFit.contain,
@@ -350,16 +263,13 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
                           itemCount: categories.length,
                           itemBuilder: (context, index) {
                             final category = categories[index];
-                            final int categoryId = int.tryParse(category['id'].toString()) ?? 0;
+                            final int categoryId = category.id;
                             final bool isSelected = categoryId == selectedCategoryId;
 
                             return GestureDetector(
                               onTap: () {
                                 if (categoryId != selectedCategoryId) {
-                                  setState(() {
-                                    selectedCategoryId = categoryId;
-                                    selectedCategoryName = category['name'] ?? "";
-                                  });
+                                  setState(() => selectedCategoryId = categoryId);
                                   fetchProductsByCategory(categoryId);
                                 }
                               },
@@ -389,7 +299,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
                                           child: Center(
                                             child: ClipRRect(
                                               borderRadius: BorderRadius.circular(22.r),
-                                              child: _buildCategoryImage(category['image']),
+                                              child: _buildCategoryImage(category.imageUrl),
                                             ),
                                           ),
                                         ),
@@ -402,7 +312,9 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
                                             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                                           ),
                                           child: Text(
-                                            category['name'] ?? 'Category',
+                                            category.localizedName(
+                                              Provider.of<LanguageProvider>(context).currentLanguage,
+                                            ),
                                             textAlign: TextAlign.center,
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
@@ -472,16 +384,14 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
                               itemBuilder: (context, index) {
                                 final product = products[index];
                                 return ProductCard(
-                                  product: product,
-                                  userId: userID,
-                                  onCartUpdated: () {
-                                    fetchCartQuantity(userID);
-                                  },
-                                  onCategoryBack: (){
-                                    setState(() {
-                                      fetchCartQuantity(userID);
-                                    });
-                                  },
+                                  product: _productCardData(
+                                    product,
+                                    Provider.of<LanguageProvider>(context).currentLanguage,
+                                  ),
+                                  // Identity comes from the session, never from the widget tree.
+                                  userId: '',
+                                  onCartUpdated: fetchCartQuantity,
+                                  onCategoryBack: fetchCartQuantity,
                                 );
                               },
                             ),
@@ -497,7 +407,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
 
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount(userID);
+              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
               final hasItems = uniqueItemsCount > 0;
 
               return AnimatedPositioned(

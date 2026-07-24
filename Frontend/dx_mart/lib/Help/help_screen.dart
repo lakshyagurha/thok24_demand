@@ -1,10 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
-import '../utils/api_constants.dart';
+import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import 'package:flutter/services.dart';
 
@@ -16,6 +13,8 @@ class HelpScreen extends StatefulWidget {
 }
 
 class _HelpScreenState extends State<HelpScreen> {
+  final CatalogRepository _catalog = const CatalogRepository();
+
   String callingNumber = 'Loading...!';
   String whatsapp_Number = 'Loading...!';
   String support_email = 'Loading...!';
@@ -23,73 +22,36 @@ class _HelpScreenState extends State<HelpScreen> {
   @override
   void initState() {
     super.initState();
-    fetchCallingNumber();
-    fetchWhatsappNumber();
-    fetchEmail();
+    fetchContactDetails();
   }
 
-  Future<void> fetchCallingNumber() async {
+  /// One read replaces three endpoints. The old backend kept the call number, the
+  /// WhatsApp number and the support email in three separate single-row tables behind
+  /// three separate GETs; they are now three rows of `app_settings`.
+  ///
+  /// A key that is absent shows 'Not available' rather than blanking the card, because
+  /// `app_settings` may not be populated yet.
+  Future<void> fetchContactDetails() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_CALLING_NUMBER));
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          callingNumber = data['data']['call_help'];
-        });
-      } else {
-        setState(() {
-          callingNumber = 'Not available';
-        });
-      }
+      final settings = await _catalog.settings();
+      if (!mounted) return;
+      setState(() {
+        callingNumber = _valueOr(settings['help_call'], 'Not available');
+        whatsapp_Number = _valueOr(settings['help_whatsapp'], 'Not available');
+        support_email = _valueOr(settings['help_email'], 'Not available');
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         callingNumber = 'Error loading';
-      });
-    }
-  }
-
-  Future<void> fetchWhatsappNumber() async {
-    try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_WHATSAPP_NUMBER));
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          whatsapp_Number = data['data']['whatsapp_no'];
-        });
-      } else {
-        setState(() {
-          whatsapp_Number = 'Not available';
-        });
-      }
-    } catch (e) {
-      setState(() {
         whatsapp_Number = 'Error loading';
-      });
-    }
-  }
-
-  Future<void> fetchEmail() async {
-    try {
-      final response = await http.get(Uri.parse(ApiConstants.GET_EMAIL));
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          support_email = data['data']['email'];
-        });
-      } else {
-        setState(() {
-          support_email = 'Not available';
-        });
-      }
-    } catch (e) {
-      setState(() {
         support_email = 'Error loading';
       });
     }
   }
+
+  static String _valueOr(String? value, String fallback) =>
+      (value == null || value.trim().isEmpty) ? fallback : value.trim();
 
   void _copyToClipboard(String text, String message) {
     Clipboard.setData(ClipboardData(text: text));

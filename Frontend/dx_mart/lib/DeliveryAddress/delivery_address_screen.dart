@@ -1,12 +1,11 @@
-import 'dart:convert';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/models.dart';
+import '../data/order_repository.dart';
 import '../utils/colors.dart';
 
 class DeliveryAddressScreen extends StatefulWidget {
@@ -17,17 +16,17 @@ class DeliveryAddressScreen extends StatefulWidget {
 }
 
 class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
-  String userEmail = "";
-  String userName = "";
-  String userID = "";
+  final AddressRepository _addresses = const AddressRepository();
 
-  List<dynamic> addressList = [];
+  List<Address> addressList = [];
   bool isLoading = false;
   bool isAddingAddress = false;
   bool isEditing = false;
-  String? editingAddressId;
+  int? editingAddressId;
 
-  // Selected address id store करने के लिए variable
+  // Selected address id store करने के लिए variable.
+  // This is a UI preference, not an identity: it only remembers which of the user's own
+  // addresses was last chosen. The addresses themselves come from the session + RLS.
   String? selectedAddressId;
 
   final TextEditingController nameController = TextEditingController();
@@ -39,8 +38,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
   @override
   void initState() {
     super.initState();
-    fetchUserData();
     _loadSelectedAddress();
+    fetchAddresses();
   }
 
   @override
@@ -57,6 +56,7 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
   Future<void> _loadSelectedAddress() async {
     final prefs = await SharedPreferences.getInstance();
     final savedAddressId = prefs.getString('selected_address_id');
+    if (!mounted) return;
     setState(() {
       selectedAddressId = savedAddressId;
     });
@@ -73,9 +73,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
       return;
     }
 
-    // Check if user ID is available
-    if (userID.isEmpty) {
-      _showSnackBar("User not logged in or data not fetched.", AppColors.errorColor);
+    if (!Db.isSignedIn) {
+      _showSnackBar("Please sign in first.", AppColors.errorColor);
       return;
     }
 
@@ -84,92 +83,69 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
     });
 
     try {
-      final apiUrl = isEditing ? ApiConstants.UPDATE_ADDRESS : ApiConstants.ADD_ADDRESS;
+      // No user_id in the payload. The insert is stamped with the session's user and the
+      // update simply matches zero rows if the id is not the caller's own.
+      final draft = Address(
+        id: editingAddressId ?? 0,
+        name: nameController.text.trim(),
+        phone: phoneController.text.trim(),
+        fullAddress: fullAddressController.text.trim(),
+        pinCode: pinCodeController.text.trim(),
+        landmark: landmarkController.text.trim(),
+      );
 
-      final body = {
-        "user_id": userID,
-        "name": nameController.text.trim(),
-        "phone": phoneController.text.trim(),
-        "full_address": fullAddressController.text.trim(),
-        "pin_code": pinCodeController.text.trim(),
-        "landmark": landmarkController.text.trim(),
-      };
-
-      // Add address_id if editing
       if (isEditing && editingAddressId != null) {
-        body["address_id"] = editingAddressId!;
-      }
-
-      final res = await http.post(Uri.parse(apiUrl), body: body);
-
-      if (res.statusCode == 200) {
-        final response = jsonDecode(res.body);
-        if (response["success"] == "true" || response["status"] == "success") {
-          _showSnackBar(
-            isEditing ? "Address Updated Successfully! ✅" : "Address Added Successfully! ✅",
-            AppColors.successColor,
-          );
-          _resetForm();
-          fetchAddresses(); // Refresh addresses
-          Navigator.pop(context); // Close the bottom sheet
-        } else {
-          _showSnackBar(response["message"] ?? "An unknown error occurred.", AppColors.errorColor);
-        }
+        await _addresses.update(editingAddressId!, draft);
       } else {
-        _showSnackBar("Server Error: ${res.statusCode}", AppColors.errorColor);
+        await _addresses.add(draft);
       }
-    } catch (e) {
-      _showSnackBar("Network error: $e", AppColors.errorColor);
-    } finally {
-      setState(() {
-        isAddingAddress = false;
-      });
-    }
-  }
 
-  Future<void> _deleteAddress(String addressId) async {
-    try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.DELETE_ADDRESS),
-        body: {"id": addressId},
-      );
-
-      if (response.statusCode == 200) {
-        final jsonData = json.decode(response.body);
-
-        if (jsonData["success"] == "true") {
-          _showSnackBar("Address deleted successfully", AppColors.successColor);
-          // अगर deleted address selected थी, तो selectedAddressId को null करें
-          if (selectedAddressId == addressId) {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.remove('selected_address_id');
-            await prefs.remove('selected_address_full');
-            setState(() {
-              selectedAddressId = null;
-            });
-          }
-          fetchAddresses(); // List refresh
-        } else {
-          _showSnackBar(
-            jsonData["message"] ?? "Failed to delete address",
-            AppColors.errorColor,
-          );
-        }
-      } else {
-        _showSnackBar(
-          "Server error: ${response.statusCode}",
-          AppColors.errorColor,
-        );
-      }
-    } catch (e) {
+      if (!mounted) return;
       _showSnackBar(
-        "Error deleting address: $e",
-        AppColors.errorColor,
+        isEditing ? "Address Updated Successfully! ✅" : "Address Added Successfully! ✅",
+        AppColors.successColor,
       );
+      _resetForm();
+      Navigator.pop(context); // Close the bottom sheet
+      await fetchAddresses(); // Refresh addresses
+    } on DataException catch (e) {
+      _showSnackBar(e.message, AppColors.errorColor);
+    } catch (e) {
+      _showSnackBar("Could not save the address: $e", AppColors.errorColor);
+    } finally {
+      if (mounted) {
+        setState(() {
+          isAddingAddress = false;
+        });
+      }
     }
   }
 
-  void _showDeleteConfirmation(String addressId) {
+  Future<void> _deleteAddress(int addressId) async {
+    try {
+      await _addresses.remove(addressId);
+      if (!mounted) return;
+      _showSnackBar("Address deleted successfully", AppColors.successColor);
+
+      // अगर deleted address selected थी, तो selectedAddressId को null करें
+      if (selectedAddressId == addressId.toString()) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('selected_address_id');
+        await prefs.remove('selected_address_full');
+        if (!mounted) return;
+        setState(() {
+          selectedAddressId = null;
+        });
+      }
+      await fetchAddresses(); // List refresh
+    } on DataException catch (e) {
+      _showSnackBar(e.message, AppColors.errorColor);
+    } catch (e) {
+      _showSnackBar("Error deleting address: $e", AppColors.errorColor);
+    }
+  }
+
+  void _showDeleteConfirmation(int addressId) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -193,6 +169,7 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
   }
 
   void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(color: Colors.white)),
@@ -216,84 +193,43 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
     });
   }
 
+  /// Lists the signed-in user's addresses. No user id is sent: RLS returns only rows the
+  /// caller owns, so there is no id to tamper with.
   Future<void> fetchAddresses() async {
-    if (userID.isEmpty) return;
+    if (!Db.isSignedIn) return;
 
     setState(() {
       isLoading = true;
     });
 
     try {
-      final response = await http.post(
-        Uri.parse(ApiConstants.VIEW_ADDRESS),
-        body: {"user_id": userID},
-      );
-
-      if (response.statusCode == 200) {
-        final jsonData = json.decode(response.body);
-        if (jsonData["status"] == "success") {
-          setState(() {
-            addressList = jsonData["data"];
-          });
-        } else {
-          setState(() {
-            addressList = [];
-          });
-          _showSnackBar(jsonData["message"] ?? "No addresses found.", AppColors.warningColor);
-        }
-      } else {
-        _showSnackBar("Server error: ${response.statusCode}", AppColors.errorColor);
-      }
+      final rows = await _addresses.list();
+      if (!mounted) return;
+      setState(() {
+        addressList = rows;
+      });
+    } on DataException catch (e) {
+      _showSnackBar(e.message, AppColors.errorColor);
     } catch (e) {
       _showSnackBar("Error fetching addresses: $e", AppColors.errorColor);
     } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
-  }
-
-  Future<void> fetchUserData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      fetchUserDetails(email);
-    }
-  }
-
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse("${ApiConstants.BASE_URL}auth/get_user.php?email=$email");
-    try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-          setState(() {
-            userName = data["user"]["name"];
-            userID = data["user"]["id"];
-          });
-          await fetchAddresses();
-        } else {
-          _showSnackBar(data["message"] ?? "Failed to fetch user details.", AppColors.errorColor);
-        }
-      } else {
-        _showSnackBar("Server error: ${response.statusCode}", AppColors.errorColor);
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
       }
-    } catch (e) {
-      _showSnackBar("Error fetching user details: $e", AppColors.errorColor);
     }
   }
 
-  void _editAddress(Map<String, dynamic> address) {
+  void _editAddress(Address address) {
     setState(() {
       isEditing = true;
-      editingAddressId = address["id"].toString();
-      nameController.text = address["name"] ?? "";
-      phoneController.text = address["phone"] ?? "";
-      fullAddressController.text = address["full_address"] ?? "";
-      pinCodeController.text = address["pin_code"] ?? "";
-      landmarkController.text = address["landmark"] ?? "";
+      editingAddressId = address.id;
+      nameController.text = address.name;
+      phoneController.text = address.phone;
+      fullAddressController.text = address.fullAddress;
+      pinCodeController.text = address.pinCode;
+      landmarkController.text = address.landmark ?? "";
     });
     _showAddAddressModal();
   }
@@ -353,16 +289,17 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
               padding: EdgeInsets.zero,
               itemBuilder: (context, index) {
                 final address = addressList[index];
-                final isSelected = address["id"].toString() == selectedAddressId;
+                final isSelected = address.id.toString() == selectedAddressId;
 
                 return GestureDetector(
                   onTap: () async {
                     final prefs = await SharedPreferences.getInstance();
-                    await prefs.setString('selected_address_id', address["id"].toString());
-                    await prefs.setString('selected_address_full', address["full_address"] ?? "");
+                    await prefs.setString('selected_address_id', address.id.toString());
+                    await prefs.setString('selected_address_full', address.fullAddress);
 
+                    if (!mounted) return;
                     setState(() {
-                      selectedAddressId = address["id"].toString();
+                      selectedAddressId = address.id.toString();
                     });
 
                     _showSnackBar("Address Selected ✅", AppColors.successColor);
@@ -395,7 +332,7 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                               Row(
                                 children: [
                                   Text(
-                                    address["name"] ?? "Name Not Available",
+                                    address.name.isEmpty ? "Name Not Available" : address.name,
                                     style: TextStyle(
                                       fontWeight: FontWeight.w600,
                                       fontSize: 14.sp,
@@ -423,7 +360,7 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                                   ),
                                   SizedBox(width: 10.w),
                                   GestureDetector(
-                                    onTap: () => _showDeleteConfirmation(address["id"].toString()),
+                                    onTap: () => _showDeleteConfirmation(address.id),
                                     child: Icon(
                                       Icons.delete,
                                       size: 18.sp,
@@ -436,12 +373,12 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
                           ),
                           SizedBox(height: 5.h),
                           Text(
-                            "${address["full_address"] ?? ""}, Landmark: ${address["landmark"] ?? ""}, Pin: ${address["pin_code"] ?? ""}",
+                            "${address.fullAddress}, Landmark: ${address.landmark ?? ""}, Pin: ${address.pinCode}",
                             style: TextStyle(fontSize: 12.sp),
                           ),
                           SizedBox(height: 5.h),
                           Text(
-                            "Phone: ${address["phone"] ?? "Not available"}",
+                            "Phone: ${address.phone.isEmpty ? "Not available" : address.phone}",
                             style: TextStyle(
                               fontSize: 12.sp,
                               color: Colors.grey,

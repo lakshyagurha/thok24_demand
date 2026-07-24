@@ -3,14 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
-
 
 import '../Auth/loginScreen.dart';
 import '../BottomNav/bottomNavScreen.dart';
 import '../LocationScreen/locationScreen.dart';
+import '../core/supabase.dart';
 import '../utils/colors.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -44,35 +42,37 @@ class _SplashScreenState extends State<SplashScreen> {
 
   }
 
+  /// `Db.init()` has already run in main(), so a persisted Supabase session is restored
+  /// by this point. Whether the user is signed in comes from that session — not from an
+  /// email left in SharedPreferences, which any process could have written and which
+  /// proved nothing about the account.
   Future<void> checkLogin() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-
-    String? userEmail = prefs.getString('user_email');
-    String? district = prefs.getString('selected_district_name');
-    String? city = prefs.getString('selected_city_name');
-
-    if (!mounted) return;
-
-    if (userEmail != null) {
-      // ✅ User is logged in
-      if (district == null || city == null || district.isEmpty || city.isEmpty) {
-        // 🔁 Location not selected
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => LocationScreen()),
-        );
-      } else {
-        // ✅ Location already selected
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => BottomNavScreen()),
-        );
-      }
-    } else {
-      // 🔴 User not logged in
+    if (!Db.isSignedIn) {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => LoginScreen()),
+      );
+      return;
+    }
+
+    // Location is a display preference, not identity, so it stays in SharedPreferences.
+    final prefs = await SharedPreferences.getInstance();
+    final String? district = prefs.getString('selected_district_name');
+    final String? city = prefs.getString('selected_city_name');
+
+    if (!mounted) return;
+
+    if (district == null || city == null || district.isEmpty || city.isEmpty) {
+      // Location not selected yet
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => LocationScreen()),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => BottomNavScreen()),
       );
     }
   }

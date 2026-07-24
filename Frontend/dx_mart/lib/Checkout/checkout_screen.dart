@@ -1,40 +1,42 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
 import 'package:lottie/lottie.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../BottomNav/Screens/order_screen.dart';
+import '../CustomWidgets/cart_provider.dart';
 import '../DeliveryAddress/delivery_address_screen.dart';
-import '../utils/api_constants.dart';
+import '../OrderSummary/order_summary.dart';
+import '../core/supabase.dart';
+import '../data/cart_repository.dart';
+import '../data/catalog_repository.dart';
+import '../data/models.dart';
+import '../data/order_repository.dart';
 import '../utils/colors.dart';
 import '../utils/language_provider.dart';
 
+/// Checkout.
+///
+/// The screen takes no user id, no email and no amounts. Identity comes from the
+/// Supabase session, and every rupee in the placed order is recomputed server-side by
+/// the place-order Edge Function. The figures rendered here before the tap are a
+/// PREVIEW, derived from the same cart rows and the same app_settings the server reads;
+/// nothing about money is ever sent.
 class CheckoutScreen extends StatefulWidget {
-  final double saveAmount;
-  final double finalWithCharge;
-  final String userId;
-  final String userEmail;
-  final String userName;
+  /// Optional gift note carried over from the cart / BolKeOrder flows.
   final String giftName;
-  final double deliveyCharge;
-  final double handlingCharge;
-  final String coupon_code_name;
 
-  CheckoutScreen({
-    required this.saveAmount,
-    required this.finalWithCharge,
-    required this.userId,
-    required this.userEmail,
-    required this.userName,
-    required this.giftName,
-    required this.deliveyCharge,
-    required this.handlingCharge,
-    required this.coupon_code_name,
+  /// Code the user chose in the cart. Passed through verbatim; the server decides
+  /// whether it is valid and what it is worth.
+  final String couponCode;
+
+  const CheckoutScreen({
+    super.key,
+    this.giftName = '',
+    this.couponCode = '',
   });
 
   @override
@@ -42,15 +44,34 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
+  final _addressRepo = const AddressRepository();
+  final _orderRepo = const OrderRepository();
+  final _cartRepo = const CartRepository();
+  final _catalog = const CatalogRepository();
+
   late DateTime selectedMonth;
   DateTime? selectedDate;
-  String fullAddress = "";
-  String location_id = "";
+
+  List<Address> _addresses = [];
+  Address? _selectedAddress;
+
   int selectedIndex = 1;
   String selectedTimeSlot = '';
   String selectedPaymentMethod = 'cod'; // 'cod' or 'upi'
   String selectedUpiApp = ''; // For storing selected UPI app
   bool _isPlacingOrder = false; // Track if order is being placed
+
+  // ---- Local PREVIEW only. Never sent anywhere. --------------------------------
+  double _subtotal = 0;
+  double _itemSavings = 0;
+  double _deliveryCharge = 0;
+  double _handlingCharge = 0;
+  double _couponDiscount = 0;
+
+  double get _previewTotal =>
+      _subtotal - _couponDiscount + _deliveryCharge + _handlingCharge;
+
+  double get _previewSavings => _itemSavings + _couponDiscount;
 
   List<DateTime> localDates = [];
 
@@ -72,6 +93,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     },
   ];
 
+  String? get _couponCode {
+    final code = widget.couponCode.trim();
+    // The cart screen used to stringify a null selection, so "null" arrives as text.
+    if (code.isEmpty || code.toLowerCase() == 'null') return null;
+    return code;
+  }
+
+  String? get _gift {
+    final gift = widget.giftName.trim();
+    if (gift.isEmpty || gift.toLowerCase() == 'null' || gift == 'noGift') {
+      return null;
+    }
+    return gift;
+  }
+
+  String get _fullAddress => _selectedAddress?.fullAddress ?? '';
+
   @override
   void initState() {
     super.initState();
@@ -81,7 +119,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     // Initialize localDates with current month days
     _updateLocalDates();
-    _loadSelectedAddress();
+    _loadAddresses();
+    _loadPreview();
   }
 
   // Update local dates based on selected month
@@ -105,45 +144,124 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }).toList();
   }
 
-  // Listen for address updates when returning to this screen
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _loadSelectedAddress();
-  }
+  /// Addresses come from the database, scoped by RLS to the signed-in user, so the id
+  /// handed to place-order can only ever be one of the caller's own.
+  Future<void> _loadAddresses() async {
+    try {
+      final addresses = await _addressRepo.list();
+      if (!mounted) return;
 
-  Future<void> _loadSelectedAddress() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      location_id = prefs.getString('selected_address_id') ?? "";
-      fullAddress = prefs.getString('selected_address_full') ?? "";
-    });
-  }
-
-  Future<void> placeOrder({
-    required String userId,
-    required String couponCode,
-    required double discountAmount,
-    required double deliveryCharge,
-    required double handlingCharge,
-    required String paymentMethod,
-    required String deliveryDate,
-    required String deliverTime,
-    required String dateTimeNow,
-    required String locationId,
-    required double famount,
-    required BuildContext context,
-  }) async {
-    // Validate address
-    if (locationId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            Provider.of<LanguageProvider>(context, listen: false).translate('please_select_address'),
-          ),
-          backgroundColor: Colors.red,
-        ),
+      // The address screen remembers the last pick locally; treat it as a hint only and
+      // fall back to the first address the server actually returned.
+      final prefs = await SharedPreferences.getInstance();
+      final rememberedId = int.tryParse(
+        prefs.getString('selected_address_id') ?? '',
       );
+      if (!mounted) return;
+
+      setState(() {
+        _addresses = addresses;
+        _selectedAddress = addresses.isEmpty
+            ? null
+            : addresses.firstWhere(
+                (a) => a.id == rememberedId,
+                orElse: () => addresses.first,
+              );
+      });
+    } catch (e) {
+      debugPrint("Error loading addresses: $e");
+    }
+  }
+
+  /// Builds the running bill shown before the user commits. Deliberately mirrors the
+  /// Edge Function's arithmetic so the preview and the receipt agree, but the server's
+  /// numbers are the ones that count -- see [_placeOrder].
+  Future<void> _loadPreview() async {
+    try {
+      final lines = await _cartRepo.items();
+      final settings = await _catalog.settings();
+      if (!mounted) return;
+
+      double subtotal = 0;
+      double savings = 0;
+      for (final CartLine l in lines) {
+        subtotal += l.lineTotal;
+        if (l.price > l.sellingPrice) {
+          savings += (l.price - l.sellingPrice) * l.quantity;
+        }
+      }
+
+      double setting(String key, double fallback) {
+        final raw = settings[key];
+        if (raw == null) return fallback;
+        return double.tryParse(raw) ?? fallback;
+      }
+
+      final freeDeliveryOver = setting('free_delivery_threshold', 500);
+      final delivery =
+          subtotal >= freeDeliveryOver ? 0.0 : setting('delivery_charge', 10);
+      final handling = setting('handling_charge', 5);
+
+      final discount = await _previewCouponDiscount(subtotal);
+      if (!mounted) return;
+
+      setState(() {
+        _subtotal = subtotal;
+        _itemSavings = savings;
+        _deliveryCharge = delivery;
+        _handlingCharge = handling;
+        _couponDiscount = discount;
+      });
+    } catch (e) {
+      debugPrint("Error building order preview: $e");
+    }
+  }
+
+  /// Best-effort preview of a coupon. Only public codes can be looked up from a client;
+  /// a privately shared code still redeems, it just shows no discount until the server
+  /// confirms it. The server is the only thing that actually applies a discount.
+  Future<double> _previewCouponDiscount(double subtotal) async {
+    final code = _couponCode;
+    if (code == null) return 0;
+    try {
+      final coupons = await _catalog.publicCoupons();
+      final match = coupons.where(
+        (c) => c.codeName.toLowerCase() == code.toLowerCase(),
+      );
+      if (match.isEmpty) return 0;
+      final coupon = match.first;
+      if (coupon.expiryDate != null &&
+          coupon.expiryDate!.isBefore(DateTime.now())) {
+        return 0;
+      }
+      if (subtotal < coupon.minAmount) return 0;
+      // `discount` is a percentage, matching the place-order function.
+      final value = subtotal * (coupon.discount / 100);
+      return value > subtotal ? subtotal : value;
+    } catch (e) {
+      debugPrint("Coupon preview unavailable: $e");
+      return 0;
+    }
+  }
+
+  /// Places the order.
+  ///
+  /// Sends only: which address, when, how they intend to pay, the coupon code and the
+  /// gift note. No user id, no email, and no amounts -- the old endpoint took
+  /// `final_amount` straight from this request body, which let a client name its own
+  /// price. What comes back is the server's authoritative [Order], and that is what the
+  /// confirmation shows.
+  Future<void> _placeOrder() async {
+    final language = Provider.of<LanguageProvider>(context, listen: false);
+
+    if (!Db.isSignedIn) {
+      _showError('Please sign in first.');
+      return;
+    }
+
+    final address = _selectedAddress;
+    if (address == null) {
+      _showError(language.translate('please_select_address'));
       return;
     }
 
@@ -151,139 +269,173 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _isPlacingOrder = true; // Show progress indicator
     });
 
-    final url = Uri.parse(ApiConstants.PLACE_ORDER);
-
-    final body = {
-      "user_id": userId,
-      "coupon_code": couponCode,
-      "discount_amount": discountAmount.toString(),
-      "delivery_charge": deliveryCharge.toString(),
-      "handling_charge": handlingCharge.toString(),
-      "payment_method": paymentMethod,
-      "dateTimeNow": dateTimeNow,
-      "deliveryDate": deliveryDate,
-      "deliverTime": deliverTime,
-      "location_id": locationId,
-      "famount": famount.toString(),
-      "gift" : widget.giftName.toString(),
-      "user_email" : widget.userEmail.toString(),
-      "user_name" : widget.userName.toString(),
-    };
-
     try {
-      final response = await http.post(
-        url,
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
+      final Order order = await _orderRepo.place(
+        deliveryAddressId: address.id,
+        deliveryDate: selectedDate ?? DateTime.now(),
+        deliveryTimeWindow: selectedTimeSlot,
+        // 'COD' and 'RAZORPAY' are the only values the server accepts. Razorpay
+        // settlement is confirmed by the payment webhook, not by this client.
+        paymentMethod: selectedPaymentMethod == 'upi' ? 'RAZORPAY' : 'COD',
+        couponCode: _couponCode,
+        gift: _gift,
       );
 
-      final data = jsonDecode(response.body);
-
+      if (!mounted) return;
       setState(() {
         _isPlacingOrder = false; // Hide progress indicator
       });
 
-      if (data['success'] == true) {
-        print("✅ Order placed successfully!");
+      // The server already emptied the cart; this just resyncs the local badge/state.
+      await context.read<CartProvider>().refreshCartData();
 
-        // Clear cart or perform other success actions here
+      if (!mounted) return;
+      _showSuccessDialog(order);
+    } on DataException catch (e) {
+      // Bad, expired or below-minimum coupons land here with a message meant for the
+      // user, as do empty carts and addresses that are not theirs.
+      if (!mounted) return;
+      setState(() => _isPlacingOrder = false);
+      _showError(e.message);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isPlacingOrder = false);
+      debugPrint("Error placing order: $e");
+      _showError('Could not place the order. Please try again.');
+    }
+  }
 
-        // Show success dialog
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) {
-            return AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  /// Confirmation. Every figure here is [order]'s -- the server's -- not the preview
+  /// this screen computed.
+  void _showSuccessDialog(Order order) {
+    final language = Provider.of<LanguageProvider>(context, listen: false);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          contentPadding: const EdgeInsets.all(16),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Lottie.asset(
+                'assets/success.json',
+                width: 200,
+                height: 200,
+                repeat: false,
               ),
-              contentPadding: const EdgeInsets.all(16),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Lottie.asset(
-                    'assets/success.json',
-                    width: 200,
-                    height: 200,
-                    repeat: false,
+              SizedBox(height: 10.h),
+              Text(
+                language.translate('order_placed'),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              SizedBox(height: 6.h),
+              Text(
+                'Order #000${order.id}  •  ₹${order.finalAmount.toStringAsFixed(0)}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.neutral600,
+                ),
+              ),
+              if (order.discountAmount > 0) ...[
+                SizedBox(height: 4.h),
+                Text(
+                  '${language.translate('you_save')} ₹${order.discountAmount.toStringAsFixed(0)} ${language.translate('on_this_order')}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
                   ),
-                  SizedBox(height: 10.h),
-                  Text(
-                    Provider.of<LanguageProvider>(context, listen: false).translate('order_placed'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.w600,
+                ),
+              ],
+              SizedBox(height: 20.h),
+              InkWell(
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => OrderSummary(order: order),
                     ),
+                  );
+                },
+                child: Container(
+                  width: 120.w,
+                  height: 27.h,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryColor,
+                    borderRadius: BorderRadius.circular(7.r),
                   ),
-                  SizedBox(height: 20.h),
-                  InkWell(
-                    onTap: () {
-                      Navigator.of(context).popUntil((route) => route.isFirst);
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(builder: (context) => OrderScreen()),
-                      );
-                    },
-                    child: Container(
-                      width: 120.w,
-                      height: 27.h,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
-                        borderRadius: BorderRadius.circular(7.r),
-                      ),
-                      child: Center(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              Provider.of<LanguageProvider>(context, listen: false).translate('view_order'),
-                              style: TextStyle(
-                                fontSize: 12.sp,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                            SizedBox(width: 7.w),
-                            SvgPicture.asset(
-                              'assets/svg/arrow.svg',
-                              color: Colors.white, // High contrast white arrow
-                              width: 15.w,
-                            ),
-                          ],
+                  child: Center(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          language.translate('view_order'),
+                          style: TextStyle(
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
+                        SizedBox(width: 7.w),
+                        SvgPicture.asset(
+                          'assets/svg/arrow.svg',
+                          color: Colors.white, // High contrast white arrow
+                          width: 15.w,
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
-            );
-          },
-        );
-      } else {
-        print("❌ Failed: ${data['message']}");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Order failed: ${data['message']}'),
-            backgroundColor: Colors.red,
+              SizedBox(height: 10.h),
+              InkWell(
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).popUntil((route) => route.isFirst);
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => const OrderScreen()),
+                  );
+                },
+                child: Text(
+                  'My Orders',
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryColor,
+                  ),
+                ),
+              ),
+            ],
           ),
         );
-      }
-    } catch (e) {
-      setState(() {
-        _isPlacingOrder = false; // Hide progress indicator on error
-      });
-
-      print("⚠️ Error placing order: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error placing order: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
+      },
+    );
   }
 
   void changeMonth(int offset) {
@@ -478,13 +630,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      fullAddress.isNotEmpty
-                                          ? fullAddress
+                                      _fullAddress.isNotEmpty
+                                          ? _fullAddress
                                           : Provider.of<LanguageProvider>(context).translate('no_address'),
                                       style: TextStyle(
                                         fontSize: 13.sp,
-                                        color: fullAddress.isNotEmpty ? AppColors.neutral700 : Colors.red,
-                                        fontWeight: fullAddress.isNotEmpty ? FontWeight.w500 : FontWeight.bold,
+                                        color: _fullAddress.isNotEmpty ? AppColors.neutral700 : Colors.red,
+                                        fontWeight: _fullAddress.isNotEmpty ? FontWeight.w500 : FontWeight.bold,
                                         height: 1.4,
                                       ),
                                     ),
@@ -492,13 +644,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   SizedBox(width: 12.w),
                                   InkWell(
                                     onTap: () async {
+                                      if (_addresses.length > 1) {
+                                        final picked = await _showAddressPicker();
+                                        if (picked != null) {
+                                          setState(() => _selectedAddress = picked);
+                                          return;
+                                        }
+                                        if (!context.mounted) return;
+                                      }
                                       await Navigator.push(
                                         context,
                                         MaterialPageRoute(
                                           builder: (context) => DeliveryAddressScreen(),
                                         ),
                                       );
-                                      _loadSelectedAddress();
+                                      _loadAddresses();
                                     },
                                     child: Container(
                                       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
@@ -507,7 +667,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         borderRadius: BorderRadius.circular(6.r),
                                       ),
                                       child: Text(
-                                        fullAddress.isNotEmpty
+                                        _fullAddress.isNotEmpty
                                             ? Provider.of<LanguageProvider>(context).translate('change')
                                             : Provider.of<LanguageProvider>(context).translate('select'),
                                         style: TextStyle(
@@ -945,7 +1105,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               ),
                                             ),
                                           );
-                                        }).toList(),
+                                        }),
                                       ],
                                     ],
                                   ),
@@ -985,21 +1145,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               SizedBox(height: 12.h),
                               _buildSummaryRow(
                                 Provider.of<LanguageProvider>(context).translate('delivery_charge'),
-                                widget.deliveyCharge == 0
+                                _deliveryCharge == 0
                                     ? Provider.of<LanguageProvider>(context).translate('free')
-                                    : '₹${widget.deliveyCharge.toStringAsFixed(0)}',
-                                isFree: widget.deliveyCharge == 0,
+                                    : '₹${_deliveryCharge.toStringAsFixed(0)}',
+                                isFree: _deliveryCharge == 0,
                               ),
                               SizedBox(height: 8.h),
                               _buildSummaryRow(
                                 Provider.of<LanguageProvider>(context).translate('handling_charge'),
-                                '₹${widget.handlingCharge.toStringAsFixed(0)}',
+                                '₹${_handlingCharge.toStringAsFixed(0)}',
                               ),
-                              if (widget.coupon_code_name.isNotEmpty && widget.coupon_code_name != "null" && widget.coupon_code_name != "") ...[
+                              if (_couponCode != null) ...[
                                 SizedBox(height: 8.h),
                                 _buildSummaryRow(
                                   'Coupon Code',
-                                  widget.coupon_code_name,
+                                  _couponCode!,
                                 ),
                               ],
                               SizedBox(height: 10.h),
@@ -1017,7 +1177,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     ),
                                   ),
                                   Text(
-                                    '₹${widget.finalWithCharge.toStringAsFixed(0)}',
+                                    '₹${_previewTotal.toStringAsFixed(0)}',
                                     style: TextStyle(
                                       fontSize: 16.sp,
                                       fontWeight: FontWeight.bold,
@@ -1026,7 +1186,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ),
                                 ],
                               ),
-                              if (widget.saveAmount > 0) ...[
+                              if (_previewSavings > 0) ...[
                                 SizedBox(height: 10.h),
                                 Container(
                                   width: double.infinity,
@@ -1044,7 +1204,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       ),
                                       SizedBox(width: 8.w),
                                       Text(
-                                        '${Provider.of<LanguageProvider>(context).translate('you_save')} ₹${widget.saveAmount.toStringAsFixed(0)} ${Provider.of<LanguageProvider>(context).translate('on_this_order')}',
+                                        '${Provider.of<LanguageProvider>(context).translate('you_save')} ₹${_previewSavings.toStringAsFixed(0)} ${Provider.of<LanguageProvider>(context).translate('on_this_order')}',
                                         style: TextStyle(
                                           color: Colors.green,
                                           fontSize: 11.sp,
@@ -1087,58 +1247,36 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 top: false,
                 child: InkWell(
                   onTap: () {
-                    if (location_id.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            Provider.of<LanguageProvider>(context, listen: false).translate('please_select_address'),
-                          ),
-                          backgroundColor: Colors.red,
-                        ),
+                    if (_isPlacingOrder) return;
+
+                    if (_selectedAddress == null) {
+                      _showError(
+                        Provider.of<LanguageProvider>(context, listen: false)
+                            .translate('please_select_address'),
                       );
                       return;
                     }
 
                     if (selectedPaymentMethod == 'upi') {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('UPI payment not enabled yet'),
-                          backgroundColor: Colors.red,
-                        ),
-                      );
+                      // Razorpay is not wired into this screen yet; the webhook that
+                      // confirms payment exists, the client-side checkout does not.
+                      _showError('UPI payment not enabled yet');
                       return;
                     }
 
-                    if (selectedPaymentMethod == 'cod') {
-                      placeOrder(
-                        userId: widget.userId,
-                        couponCode: widget.coupon_code_name,
-                        discountAmount: widget.saveAmount,
-                        deliveryCharge: widget.deliveyCharge,
-                        handlingCharge: widget.handlingCharge,
-                        paymentMethod: 'COD',
-                        deliveryDate: selectedDate != null
-                            ? DateFormat('yyyy-MM-dd').format(selectedDate!)
-                            : DateFormat('yyyy-MM-dd').format(DateTime.now()),
-                        deliverTime: selectedTimeSlot,
-                        dateTimeNow: DateFormat('dd-MM-yyyy hh:mm a').format(DateTime.now()),
-                        locationId: location_id,
-                        famount: widget.finalWithCharge,
-                        context: context,
-                      );
-                    }
+                    _placeOrder();
                   },
                   child: Container(
                     height: 48.h,
                     decoration: BoxDecoration(
-                      color: location_id.isEmpty ? Colors.grey : AppColors.primaryColor,
+                      color: _selectedAddress == null ? Colors.grey : AppColors.primaryColor,
                       borderRadius: BorderRadius.circular(12.r),
                     ),
                     child: Center(
                       child: Text(
                         _isPlacingOrder
                             ? Provider.of<LanguageProvider>(context).translate('placing_order')
-                            : '${Provider.of<LanguageProvider>(context).translate('place_order_btn')}: ₹${widget.finalWithCharge.toStringAsFixed(0)} →',
+                            : '${Provider.of<LanguageProvider>(context).translate('place_order_btn')}: ₹${_previewTotal.toStringAsFixed(0)} →',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16.sp,
@@ -1188,6 +1326,105 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
         ],
       ),
+    );
+  }
+
+  /// Lets the user switch between the addresses the server returned, without leaving
+  /// checkout. Adding or editing still goes to the address screen.
+  Future<Address?> _showAddressPicker() {
+    return showModalBottomSheet<Address>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.r)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.all(16.w),
+                child: Text(
+                  Provider.of<LanguageProvider>(context, listen: false)
+                      .translate('delivery_address'),
+                  style: TextStyle(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primaryTextColor,
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _addresses.length,
+                  itemBuilder: (context, index) {
+                    final address = _addresses[index];
+                    return ListTile(
+                      leading: Icon(
+                        address.id == _selectedAddress?.id
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: AppColors.primaryColor,
+                        size: 18.sp,
+                      ),
+                      title: Text(
+                        address.name,
+                        style: TextStyle(
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryTextColor,
+                        ),
+                      ),
+                      subtitle: Text(
+                        address.fullAddress,
+                        style: TextStyle(
+                          fontSize: 11.sp,
+                          color: AppColors.neutral600,
+                        ),
+                      ),
+                      onTap: () => Navigator.pop(sheetContext, address),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
+                child: InkWell(
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => DeliveryAddressScreen(),
+                      ),
+                    );
+                    _loadAddresses();
+                  },
+                  child: Row(
+                    children: [
+                      Icon(Icons.add, size: 16.sp, color: AppColors.primaryColor),
+                      SizedBox(width: 8.w),
+                      Text(
+                        Provider.of<LanguageProvider>(context, listen: false)
+                            .translate('delivery_address'),
+                        style: TextStyle(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 8.h),
+            ],
+          ),
+        );
+      },
     );
   }
 }

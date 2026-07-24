@@ -1,13 +1,14 @@
-import 'dart:convert';
 import 'package:dotted_line/dotted_line.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/catalog_repository.dart';
+import '../data/models.dart';
 import '../utils/colors.dart';
 
 
@@ -19,26 +20,49 @@ class CouponScreen extends StatefulWidget {
 }
 
 class _CouponScreenState extends State<CouponScreen> {
-  List<Map<String, dynamic>> _couponList = [];
+  final _catalog = const CatalogRepository();
+
+  List<Coupon> _couponList = [];
+  bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
     _fetchCoupons();
   }
+
   Future<void> _fetchCoupons() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_COUPON));
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['success'] == true && decoded['data'] is List) {
-          setState(() => _couponList = List<Map<String, dynamic>>.from(decoded['data']));
-        }
-      }
+      // No client-side status filter any more: RLS only exposes status = 'Public'
+      // rows, so private codes cannot be enumerated from here at all. A privately
+      // shared code still redeems at checkout, where the server validates it.
+      final coupons = await _catalog.publicCoupons();
+      if (!mounted) return;
+      setState(() {
+        _couponList = coupons;
+        _isLoading = false;
+      });
+    } on DataException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _isLoading = false;
+      });
     } catch (e) {
       debugPrint("Error fetching coupons: $e");
+      if (!mounted) return;
+      setState(() {
+        _error = "Could not load coupons.";
+        _isLoading = false;
+      });
     }
+  }
+
+  String _validityLabel(Coupon coupon) {
+    final expiry = coupon.expiryDate;
+    if (expiry == null) return 'No expiry';
+    return 'Valid ${DateFormat('dd MMM yyyy').format(expiry)}';
   }
 
   @override
@@ -110,22 +134,45 @@ class _CouponScreenState extends State<CouponScreen> {
           Expanded(
             child: Builder(
               builder: (context) {
-                // Sirf wahi coupons show honge jinka status "Private" nahi hai
-                final visibleCoupons = _couponList
-                    .where((coupon) => coupon['status'] != "Private")
-                    .toList();
+                if (_isLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (_error != null) {
+                  return Center(
+                    child: Text(
+                      _error!,
+                      style: TextStyle(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  );
+                }
+                if (_couponList.isEmpty) {
+                  return Center(
+                    child: Text(
+                      "No coupons available right now",
+                      style: TextStyle(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  );
+                }
 
                 return ListView.builder(
                   padding: EdgeInsets.zero,
                   scrollDirection: Axis.vertical,
-                  itemCount: visibleCoupons.length,
+                  itemCount: _couponList.length,
                   itemBuilder: (context, index) {
-                    final coupon = visibleCoupons[index];
+                    final coupon = _couponList[index];
 
                     return InkWell(
                       onTap: () {
                         Clipboard.setData(
-                          ClipboardData(text: coupon['code_name']),
+                          ClipboardData(text: coupon.codeName),
                         );
                         Fluttertoast.showToast(
                           msg: "Coupon code copied!",
@@ -179,7 +226,7 @@ class _CouponScreenState extends State<CouponScreen> {
                                       padding: EdgeInsets.symmetric(
                                           horizontal: 8.w, vertical: 2.h),
                                       child: Text(
-                                        'Valid ${coupon['expri_date']}',
+                                        _validityLabel(coupon),
                                         style: TextStyle(
                                           fontSize: 9.sp,
                                           fontWeight: FontWeight.w500,
@@ -214,14 +261,14 @@ class _CouponScreenState extends State<CouponScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          coupon['title'],
+                                          coupon.title,
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 11.sp,
                                           ),
                                         ),
                                         Text(
-                                          coupon['description'],
+                                          coupon.description,
                                           style: TextStyle(
                                             fontWeight: FontWeight.w500,
                                             fontSize: 10.sp,
@@ -245,7 +292,7 @@ class _CouponScreenState extends State<CouponScreen> {
                                       padding: EdgeInsets.symmetric(
                                           horizontal: 10.w, vertical: 4.h),
                                       child: Text(
-                                        coupon['code_name'],
+                                        coupon.codeName,
                                         style: TextStyle(
                                           fontSize: 11.sp,
                                           color: AppColors.primaryColor,

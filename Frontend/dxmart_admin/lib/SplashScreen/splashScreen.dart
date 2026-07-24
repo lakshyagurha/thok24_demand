@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../core/supabase.dart';
 import '../Auth/login_screen.dart';
 import '../HomeScreen/home_screen.dart';
 import '../utils/colors.dart';
@@ -58,12 +58,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   }
 
   Future<void> checkLogin() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? userEmail = prefs.getString('user_email');
+    // A restored Supabase session, not an email string anyone could have written.
+    // Db.init() in main() has already finished by the time this runs.
+    final signedIn = Db.isSignedIn;
 
     if (!mounted) return;
 
-    if (userEmail != null) {
+    if (signedIn) {
       // ✅ User is logged in
       Navigator.pushReplacement(
         context,

@@ -1,60 +1,83 @@
-import 'dart:convert';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
+
 import '../CustomWidgets/customTextFiledWidgets.dart';
 import '../CustomWidgets/custom_text.dart';
-import '../utils/api_constants.dart';
+import '../core/supabase.dart';
+import '../data/auth_repository.dart';
 import '../utils/colors.dart';
 
 
 class EditProfile extends StatefulWidget {
-  final String email;
-  final String fullName;
-
-
-  EditProfile({
-    required this.email,
-    required this.fullName,
-
+  /// [email] and [fullName] are only seed values for the fields while the real profile
+  /// loads. They are optional and carry no authority: the profile actually shown and
+  /// updated is the signed-in user's own row, fetched with no id argument and gated by
+  /// RLS.
+  const EditProfile({
+    super.key,
+    this.email,
+    this.fullName,
   });
+
+  final String? email;
+  final String? fullName;
 
   @override
   State<EditProfile> createState() => _EditProfileState();
 }
 
 class _EditProfileState extends State<EditProfile> {
+  final AuthRepository _auth = const AuthRepository();
+
   bool isLoading = false;
 
   final fullNameController = TextEditingController();
-  final emailTextController = TextEditingController();
-
-
-
-
+  final phoneController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    fullNameController.text = widget.fullName;
-    emailTextController.text = widget.email;
+    fullNameController.text = widget.fullName ?? '';
+    loadProfile();
   }
 
+  @override
+  void dispose() {
+    fullNameController.dispose();
+    phoneController.dispose();
+    super.dispose();
+  }
 
+  /// No id is sent. The session identifies the user and RLS returns only their row.
+  Future<void> loadProfile() async {
+    setState(() => isLoading = true);
+    try {
+      final profile = await _auth.currentProfile();
+      if (!mounted) return;
+      if (profile != null) {
+        fullNameController.text = (profile['name'] ?? '').toString();
+        phoneController.text = (profile['phone'] ?? '').toString();
+      }
+    } on DataException catch (e) {
+      showError(e.message);
+    } catch (e) {
+      showError('Could not load your profile. Try again.');
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
 
   String? validateFields() {
     if (fullNameController.text.trim().isEmpty) {
       return "Please enter full Name";
-    }
-    if (emailTextController.text.trim().isEmpty) {
-      return "Please enter your phone number";
     }
 
     return null;
   }
 
   void showError(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: TextStyle()),
@@ -74,37 +97,26 @@ class _EditProfileState extends State<EditProfile> {
     setState(() => isLoading = true);
 
     try {
-      final uri = Uri.parse(ApiConstants.EDIT_PROFILE); // 🟢 Replace with actual PHP API URL
-      Map<String, String> body = {
-        'email': widget.email,
-        'name': fullNameController.text.trim(),
-      };
+      // Only the name is editable. The phone number is the login identity held by
+      // Supabase Auth, so changing it here would desync the profile row from the
+      // account it belongs to.
+      await _auth.updateProfile(name: fullNameController.text.trim());
 
-      // Send POST request
-      final response = await http.post(uri, body: body);
-
+      if (!mounted) return;
       setState(() => isLoading = false);
-
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-
-        if (responseData['status'] == 'success') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Profile updated successfully!', style: TextStyle()),
-              backgroundColor: AppColors.primaryColor,
-            ),
-          );
-          Navigator.pop(context);
-        } else {
-          showError(responseData['message'] ?? 'Failed to update profile');
-        }
-      } else {
-        showError('Server error: ${response.statusCode}');
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Profile updated successfully!', style: TextStyle()),
+          backgroundColor: AppColors.primaryColor,
+        ),
+      );
+      Navigator.pop(context);
+    } on DataException catch (e) {
+      if (mounted) setState(() => isLoading = false);
+      showError(e.message);
     } catch (e) {
-      setState(() => isLoading = false);
-      showError('Error: $e');
+      if (mounted) setState(() => isLoading = false);
+      showError('Failed to update profile');
     }
   }
 
@@ -154,15 +166,15 @@ class _EditProfileState extends State<EditProfile> {
             keyboardType: TextInputType.text,
           ),
           SizedBox(height: 20.h),
-          CustomText(text: 'Email Address', fontWeight: FontWeight.w500),
+          CustomText(text: 'Mobile Number', fontWeight: FontWeight.w500),
 
 
           SizedBox(height: 6.h),
           CustomTextField(
-            controller: emailTextController,
-            keyboardType: TextInputType.emailAddress,
-            hintText: "Enter Email ",
-            enabled: false, // yeh line add karo
+            controller: phoneController,
+            keyboardType: TextInputType.phone,
+            hintText: "Mobile Number",
+            enabled: false, // login identity, not editable here
           ),
 
 
@@ -194,4 +206,3 @@ class _EditProfileState extends State<EditProfile> {
     );
   }
 }
-

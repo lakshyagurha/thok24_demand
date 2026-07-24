@@ -1,12 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../BottomNav/bottomNavScreen.dart';
 import '../CustomWidgets/customButton.dart';
-import '../utils/api_constants.dart';
+import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 
 class LocationScreen extends StatefulWidget {
@@ -17,6 +15,8 @@ class LocationScreen extends StatefulWidget {
 }
 
 class _LocationScreenState extends State<LocationScreen> {
+  final CatalogRepository _catalog = const CatalogRepository();
+
   bool isLoading = true;
   List<dynamic> districtList = [];
   List<dynamic> cityList = [];
@@ -36,46 +36,32 @@ class _LocationScreenState extends State<LocationScreen> {
   Future<void> getAllDistricts() async {
     try {
       setState(() => isLoading = true);
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_DISTRICT));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data['success'] == true && data['districts'] != null) {
-          setState(() {
-            districtList = data['districts'];
-            isLoading = false;
-          });
-        } else {
-          setState(() => isLoading = false);
-        }
-      } else {
-        setState(() => isLoading = false);
-      }
+      final rows = await _catalog.districts();
+      if (!mounted) return;
+      setState(() {
+        districtList = rows;
+        isLoading = false;
+      });
     } catch (e) {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
       debugPrint('Error fetching districts: $e');
     }
   }
 
   Future<void> viewCity() async {
-    if (selected_district == null) return;
+    final districtId = int.tryParse(selected_district ?? '');
+    if (districtId == null) return;
 
     try {
       setState(() => isLoading = true);
-      final response = await http.post(
-        Uri.parse(ApiConstants.VIEW_CITY),
-        body: {'district_id': selected_district!},
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          cityList = data['cities'] ?? [];
-          isLoading = false;
-        });
-      } else {
-        setState(() => isLoading = false);
-      }
+      final rows = await _catalog.cities(districtId);
+      if (!mounted) return;
+      setState(() {
+        cityList = rows;
+        isLoading = false;
+      });
     } catch (e) {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
       debugPrint('Error fetching cities: $e');
     }
   }

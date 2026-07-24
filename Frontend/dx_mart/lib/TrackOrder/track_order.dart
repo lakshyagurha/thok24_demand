@@ -1,19 +1,25 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:http/http.dart' as http;
-
 
 import '../Help/help_screen.dart';
-import '../utils/api_constants.dart';
+import '../data/catalog_repository.dart';
+import '../data/models.dart';
+import '../data/order_repository.dart';
 import '../utils/colors.dart';
 
 class TrackOrder extends StatefulWidget {
+  /// The order being tracked. Its live status is re-read from the server rather than
+  /// trusted from whatever the list screen happened to be showing.
+  final int orderId;
+
+  /// Status already known by the caller, used only so the timeline renders instantly
+  /// while [OrderRepository.byId] is in flight.
   final String status;
 
   const TrackOrder({
     super.key,
-    required this.status,
+    required this.orderId,
+    this.status = '',
   });
 
   @override
@@ -21,46 +27,52 @@ class TrackOrder extends StatefulWidget {
 }
 
 class _TrackOrderState extends State<TrackOrder> {
+  final _orders = const OrderRepository();
+  final _catalog = const CatalogRepository();
 
   int currentStep = 0;
   String deliveryTime = '0';
 
-
-
-
   @override
   void initState() {
     super.initState();
-    _setCurrentStepFromStatus();
+    _setCurrentStepFromStatus(widget.status);
+    _loadOrder();
     fetchDeliveryTime();
   }
 
-
-  Future<void> fetchDeliveryTime() async {
-    final url = Uri.parse(ApiConstants.DELIVERY_TIME);
-
+  /// Re-reads the order. RLS scopes `orders` to the signed-in user, so an id belonging
+  /// to somebody else simply comes back null instead of leaking their order.
+  Future<void> _loadOrder() async {
     try {
-      final response = await http.get(url);
-      final data = json.decode(response.body);
-
-      if (data['success']) {
-        setState(() {
-          deliveryTime = data['data']['time'];
-        });
-      } else {
-        setState(() {
-          deliveryTime = 'No time found';
-        });
-      }
+      final Order? order = await _orders.byId(widget.orderId);
+      if (!mounted || order == null) return;
+      setState(() => _setCurrentStepFromStatus(order.status));
     } catch (e) {
+      debugPrint("Error loading order: $e");
+    }
+  }
+
+  /// The estimated-delivery figure used to be its own single-row table and endpoint;
+  /// it is now one key in app_settings.
+  Future<void> fetchDeliveryTime() async {
+    try {
+      final settings = await _catalog.settings();
+      if (!mounted) return;
+      final value = settings['delivery_time'];
+      setState(() {
+        deliveryTime = (value == null || value.isEmpty) ? 'No time found' : value;
+      });
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         deliveryTime = 'Error fetching time';
       });
     }
   }
 
-  void _setCurrentStepFromStatus() {
-    switch (widget.status.toLowerCase()) {
+  void _setCurrentStepFromStatus(String status) {
+    switch (status.toLowerCase()) {
       case "pending":
         currentStep = 0;
         break;

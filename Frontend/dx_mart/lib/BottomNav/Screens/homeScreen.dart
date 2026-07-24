@@ -1,27 +1,44 @@
-import 'dart:convert';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:dotted_line/dotted_line.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:http/http.dart' as http;
-import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../CategoryViewScreen/categoryViewScreen.dart';
 import '../../CustomWidgets/product_card.dart';
 import '../../LocationScreen/locationScreen.dart';
 import '../../SearchProduct/search_product.dart';
-import '../../utils/api_constants.dart';
+import '../../core/supabase.dart';
+import '../../data/auth_repository.dart';
+import '../../data/catalog_repository.dart';
+import '../../data/models.dart';
 import '../../utils/colors.dart';
 import 'cartScreen.dart';
 import 'profileScreen.dart';
 import 'package:provider/provider.dart';
 import '../../CustomWidgets/cart_provider.dart';
 import '../../utils/language_provider.dart';
+
+/// Shapes a [Product] into the map [ProductCard] still reads.
+///
+/// Transitional: `ProductCard` has not been migrated to the typed model yet, so this
+/// keeps the widget's existing contract while the screen itself is fully typed. Delete
+/// it (and pass the `Product` straight through) once the card takes a `Product`.
+Map<String, dynamic> _productCardData(Product p, String lang) => {
+      'id': p.id,
+      'name': p.localizedName(lang),
+      'images': p.images,
+      'variants': [
+        for (final v in p.variants)
+          {
+            'id': v.id,
+            'name': v.localizedName(lang),
+            'price': v.price,
+            'selling_price': v.sellingPrice,
+            'stock': v.stock,
+          },
+      ],
+    };
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +48,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final CatalogRepository _catalog = const CatalogRepository();
+  final AuthRepository _auth = const AuthRepository();
+
   // Scroll controller for detecting scroll direction
   final ScrollController _scrollController = ScrollController();
   bool _showStickySearchBar = false;
@@ -41,48 +61,22 @@ class _HomeScreenState extends State<HomeScreen> {
   String district = '';
   String city = '';
   String userName = "";
-  String userEmail = "";
-  String userId = "";
   bool _isLoading = true;
-  List _categoryList = [];
-  List _sliderList = [];
-
-
-  // Category position lists
-  List<dynamic> mainFirstCategoryList = [];
-  List<dynamic> mainSecondCategoryList = [];
-  List<dynamic> mainThirdCategoryList = [];
-  List<dynamic> mainFourthCategoryList = [];
+  List<Category> _categoryList = [];
+  List<Map<String, dynamic>> _sliderList = [];
 
   // Product type lists
-  List everydayEssentialsList = [];
-  List bestSellingList = [];
-  List hotDealsList = [];
-  List exclusiveOffersList = [];
-  List newlyLaunchList = [];
-  List readyToEatList = [];
-  List<Map<String, dynamic>> cartList = [];
-  String _lastFetchedLang = '';
-
-  // Banner images
-  String? bannerImage;
-  String? discount_bannerImage;
+  List<Product> everydayEssentialsList = [];
+  List<Product> bestSellingList = [];
+  List<Product> hotDealsList = [];
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_scrollListener);
-    // initState will trigger _loadAllData on first build dependency setup
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final activeLang = Provider.of<LanguageProvider>(context).currentLanguage;
-    if (_lastFetchedLang != activeLang) {
-      _lastFetchedLang = activeLang;
-      _loadAllData();
-    }
+    // Names are localized client-side from the model now, so the catalog is fetched once
+    // rather than re-fetched every time the language changes.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadAllData());
   }
 
   @override
@@ -116,29 +110,26 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAllData() async {
-    _lastFetchedLang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
       await Future.wait([
-        // Basic user data
         fetchUserData(),
         fetchDeliveryTime(),
         loadLocation(),
-        fetchUserData(),
 
         // Categories and banners
         _fetchCategories(),
-
-
         _fetchSlider(),
-
 
         // Products
         loadAllTypes(),
       ]);
     } catch (e) {
-      _showSnackBar("Error loading data: $e", AppColors.errorColor);
+      if (mounted) {
+        _showSnackBar("Error loading data: $e", AppColors.errorColor);
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -146,57 +137,34 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-
-
+  /// The greeting name comes from the signed-in session's own profile row. No email or
+  /// user id is sent anywhere — RLS returns only the caller's row.
   Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      await fetchUserDetails(email);
-    }
-  }
-
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(ApiConstants.BASE_URL + "auth/get_user.php?email=$email");
+    if (!Db.isSignedIn) return;
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-          setState(() {
-            userName = data["user"]["name"];
-            userId = data["user"]["id"];
-            fetchCartQuantity(userId);
-          });
-        }
-
-      }
+      final profile = await _auth.currentProfile();
+      if (!mounted) return;
+      setState(() => userName = (profile?['name'] ?? '') as String);
+      await fetchCartQuantity();
     } catch (e) {
-      debugPrint("Error fetching user details: $e");
+      debugPrint("Error fetching profile: $e");
     }
   }
 
   /// ✅ Cart quantity fetch
-  Future<void> fetchCartQuantity(String id) async {
-    if (id.isEmpty) return;
+  Future<void> fetchCartQuantity() async {
+    if (!Db.isSignedIn) return;
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.refreshCartData(id);
-      setState(() {
-        cartList = cartProvider.getCartItemsAsList(id);
-      });
+      await cartProvider.refreshCartData();
     } catch (e) {
-      setState(() {
-        cartList = [];
-      });
+      debugPrint("Error refreshing cart: $e");
     }
   }
 
-
-
   Future<void> loadLocation() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       district = prefs.getString('selected_district_name') ?? 'Not Set';
       city = prefs.getString('selected_city_name') ?? 'Not Set';
@@ -205,40 +173,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> fetchDeliveryTime() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.DELIVERY_TIME));
-      final data = json.decode(response.body);
-      if (data['success']) {
-        setState(() => deliveryTime = data['data']['time']);
-      }
+      final settings = await _catalog.settings();
+      final time = settings['delivery_time'];
+      if (!mounted || time == null || time.isEmpty) return;
+      setState(() => deliveryTime = time);
     } catch (e) {
-      setState(() => deliveryTime = 'Error fetching time');
+      debugPrint("Error fetching delivery time: $e");
     }
   }
 
   Future<void> _fetchCategories() async {
     try {
-      final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-      final response = await http.get(Uri.parse("${ApiConstants.MAIN_VIEW_CATEGORY}?lang=$lang"));
-      if (response.statusCode == 200) {
-        final List<dynamic> decoded = jsonDecode(response.body);
-        setState(() {
-          _categoryList = decoded.where((category) {
-            final name = (category['name'] ?? '').toString().toLowerCase();
-            return !name.contains('electronic') && 
-                   !name.contains('appliance') && 
-                   !name.contains('fashion') && 
-                   !name.contains('clothing') &&
-                   !name.contains('wear');
-          }).toList();
-        });
-      }
+      final all = await _catalog.categories();
+      if (!mounted) return;
+      setState(() {
+        // Filtered on the canonical English name so the same categories are hidden
+        // whichever language the app is in.
+        _categoryList = all.where((category) {
+          final name = category.name.toLowerCase();
+          return !name.contains('electronic') &&
+                 !name.contains('appliance') &&
+                 !name.contains('fashion') &&
+                 !name.contains('clothing') &&
+                 !name.contains('wear');
+        }).toList();
+      });
     } catch (e) {
       debugPrint("Error fetching categories: $e");
     }
   }
-
-
-
 
   Future<void> loadAllTypes() async {
     await Future.wait([
@@ -248,49 +211,33 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
   }
 
-
   Future<void> fetchProductsByType(String type) async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    final url = Uri.parse("${ApiConstants.VIEW_PRODUCT_BY_TYPE}?type=$type&page=1&limit=10&lang=$lang");
-
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final body = jsonDecode(response.body);
-        if (body['success']) {
-          setState(() {
-            switch (type) {
-              case 'Everyday Essentials':
-                everydayEssentialsList = body['products'];
-                break;
-              case 'Best Selling':
-                bestSellingList = body['products'];
-                break;
-              case 'Hot Deals':
-                hotDealsList = body['products'];
-                break;
-
-            }
-          });
+      final products = await _catalog.productsByType(type);
+      if (!mounted) return;
+      setState(() {
+        switch (type) {
+          case 'Everyday Essentials':
+            everydayEssentialsList = products;
+            break;
+          case 'Best Selling':
+            bestSellingList = products;
+            break;
+          case 'Hot Deals':
+            hotDealsList = products;
+            break;
         }
-      }
+      });
     } catch (e) {
       debugPrint("Error fetching $type products: $e");
     }
   }
 
-
-
-
   Future<void> _fetchSlider() async {
     try {
-      final response = await http.get(Uri.parse(ApiConstants.VIEW_SLIDER));
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        if (jsonResponse['success'] == true) {
-          setState(() => _sliderList = jsonResponse['data']['offer_banners']);
-        }
-      }
+      final rows = await _catalog.banners();
+      if (!mounted) return;
+      setState(() => _sliderList = rows);
     } catch (e) {
       debugPrint("Error fetching slider: $e");
     }
@@ -542,7 +489,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(16.r),
                                           child: Image.network(
-                                            ApiConstants.BASE_URL + 'banner_api/' + item['banner_image'],
+                                            Db.imageUrl(item['banner_image'] as String?),
                                             fit: BoxFit.cover,
                                             width: double.infinity,
                                             height: 130.h,
@@ -554,12 +501,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                       ),
                                       onTap: (){
+                                        final categoryId =
+                                            int.tryParse(item['category_id']?.toString() ?? '') ?? 0;
+                                        if (categoryId == 0) return;
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
                                             builder: (context) => CategoryViewScreen(
-                                              categoryId: int.tryParse(item['category_id'].toString()) ?? 0,
-                                              categoryName: item['category_name']?.toString() ?? 'Category',
+                                              categoryId: categoryId,
+                                              categoryName: _categoryNameFor(categoryId),
                                             ),
                                           ),
                                         );
@@ -643,14 +593,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     itemCount: _categoryList.length > 8 ? 8 : _categoryList.length,
                     itemBuilder: (context, index) {
                       final item = _categoryList[index];
+                      final itemName = item.localizedName(
+                        Provider.of<LanguageProvider>(context).currentLanguage,
+                      );
                       return GestureDetector(
                         onTap: (){
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (context) => CategoryViewScreen(
-                                categoryId: int.tryParse(item['id'].toString()) ?? 0,
-                                categoryName: item['name']?.toString() ?? 'Category',
+                                categoryId: item.id,
+                                categoryName: itemName,
                               ),
                             ),
                           );
@@ -670,7 +623,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(10.r),
                                   child: Image.network(
-                                    ApiConstants.BASE_URL + "main_category/${item['image']}",
+                                    item.imageUrl,
                                     fit: BoxFit.contain,
                                     errorBuilder: (_, __, ___) => Icon(Icons.image_not_supported, color: Color(0xFF1B6E4A)),
                                   ),
@@ -681,7 +634,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             SizedBox(
                               width: 72.w,
                               child: Text(
-                                item['name'] ?? '',
+                                itemName,
                                 style: GoogleFonts.roboto(
                                   fontSize: 10.sp,
                                   fontWeight: FontWeight.w600,
@@ -778,7 +731,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           Consumer<CartProvider>(
             builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount(userId);
+              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
               final hasItems = uniqueItemsCount > 0;
 
               return AnimatedPositioned(
@@ -872,17 +825,21 @@ class _HomeScreenState extends State<HomeScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: () {
-          final category = _categoryList.firstWhere(
-            (c) => (c['name'] ?? '').toString().toLowerCase().contains(categoryKeyword.toLowerCase()),
-            orElse: () => null,
-          );
+          final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
+          Category? category;
+          for (final c in _categoryList) {
+            if (c.name.toLowerCase().contains(categoryKeyword.toLowerCase())) {
+              category = c;
+              break;
+            }
+          }
           if (category != null) {
             Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (context) => CategoryViewScreen(
-                  categoryId: int.tryParse(category['id'].toString()) ?? 0,
-                  categoryName: category['name']?.toString() ?? 'Category',
+                  categoryId: category!.id,
+                  categoryName: category.localizedName(lang),
                 ),
               ),
             );
@@ -955,7 +912,16 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget buildSection(String title, List<dynamic> list) {
+  /// Localized name for a category id, used by banners which only carry the id.
+  String _categoryNameFor(int categoryId) {
+    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
+    for (final c in _categoryList) {
+      if (c.id == categoryId) return c.localizedName(lang);
+    }
+    return 'Category';
+  }
+
+  Widget buildSection(String title, List<Product> list) {
     final langProvider = Provider.of<LanguageProvider>(context);
     String displayTitle = title;
     if (title == 'Everyday Essentials') {
@@ -993,16 +959,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: SizedBox(
                   width: 120.w,
                   child: ProductCard(
-                    product: product,
-                    userId: userId,
-                    onCartUpdated: () {
-                      fetchCartQuantity(userId);
-                    },
-                    onCategoryBack: () {
-                      setState(() {
-                        fetchCartQuantity(userId);
-                      });
-                    },
+                    product: _productCardData(product, langProvider.currentLanguage),
+                    // Identity comes from the session, never from the widget tree.
+                    userId: '',
+                    onCartUpdated: fetchCartQuantity,
+                    onCategoryBack: fetchCartQuantity,
                   ),
                 ),
               );

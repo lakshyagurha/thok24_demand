@@ -1,16 +1,13 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../OrderSummary/order_summary.dart';
 import '../../TrackOrder/track_order.dart';
-import '../../utils/api_constants.dart';
+import '../../core/supabase.dart';
+import '../../data/models.dart';
+import '../../data/order_repository.dart';
 import '../../utils/colors.dart';
-import '../../utils/language_provider.dart';
 import '../bottomNavScreen.dart';
 
 class OrderScreen extends StatefulWidget {
@@ -21,34 +18,19 @@ class OrderScreen extends StatefulWidget {
 }
 
 class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin {
-  bool isLoading = true;
-  List orders = [];
-  String _lastFetchedLang = '';
+  final _orders = const OrderRepository();
 
+  bool isLoading = true;
+  List<Order> orders = [];
+  String? _error;
 
   late final TabController _tabController;
-  String userName = "";
-  String userEmail = "";
-  String userId = "";
-
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    fetchUserData();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final activeLang = Provider.of<LanguageProvider>(context).currentLanguage;
-    if (_lastFetchedLang != activeLang) {
-      _lastFetchedLang = activeLang;
-      if (userId.isNotEmpty) {
-        fetchOrders(userId);
-      }
-    }
+    fetchOrders();
   }
 
   @override
@@ -57,66 +39,47 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
     super.dispose();
   }
 
-
-  Future<void> fetchUserData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? email = prefs.getString('user_email');
-    if (email != null) {
-      setState(() => userEmail = email);
-      await fetchUserDetails(email);
+  /// The old screen resolved an email from SharedPreferences, exchanged it for a numeric
+  /// user id, then posted that id to get_order_by_user.php -- so changing the number
+  /// returned somebody else's order history. There is no id in this request at all:
+  /// the session identifies the caller and RLS scopes the rows.
+  Future<void> fetchOrders() async {
+    if (!Db.isSignedIn) {
+      if (!mounted) return;
+      setState(() {
+        orders = [];
+        isLoading = false;
+        _error = 'Please sign in to see your orders.';
+      });
+      return;
     }
-  }
 
-  Future<void> fetchUserDetails(String email) async {
-    final url = Uri.parse(ApiConstants.BASE_URL + "auth/get_user.php?email=$email");
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data["status"] == "success") {
-          setState(() {
-            userName = data["user"]["name"];
-            userId = data["user"]["id"];
-            fetchOrders(userId);
-
-          });
-        }
-
-      }
-    } catch (e) {
-      debugPrint("Error fetching user details: $e");
-    }
-  }
-
-  Future<void> fetchOrders(String userid) async {
-    try {
-      final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-      final response = await http.post(
-        Uri.parse(ApiConstants.GET_ORDER_BY_USER),
-        body: {
-          "user_id": userId.toString(),
-          "lang": lang,
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        setState(() {
-          orders = (data["orders"] ?? []) as List;
-          isLoading = false;
-        });
-      } else {
-        throw Exception("Failed to load orders");
-      }
+      final history = await _orders.history();
+      if (!mounted) return;
+      setState(() {
+        orders = history;
+        isLoading = false;
+        _error = null;
+      });
+    } on DataException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+        _error = e.message;
+      });
     } catch (e) {
       debugPrint("Error: $e");
-      setState(() => isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+        _error = 'Could not load your orders.';
+      });
     }
   }
 
-  bool _isCompleteStatus(String? statusRaw) {
-    final status = (statusRaw ?? '').toLowerCase();
+  bool _isCompleteStatus(String statusRaw) {
+    final status = statusRaw.toLowerCase();
     return status.contains('delivered') ||
         status.contains('completed') ||
         status.contains('cancelled') ||
@@ -258,15 +221,17 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
       bgColor = const Color(0xFFFFEBEE); // Light red
       textColor = const Color(0xFFD32F2F);
       label = "CANCELLED";
-    } else if (lowerStatus.contains('placed')) {
+    } else if (lowerStatus.contains('placed') || lowerStatus.contains('pending')) {
       bgColor = const Color(0xFFFFF3E0); // Light orange
       textColor = const Color(0xFFF57C00);
       label = "ORDER PLACED";
-    } else if (lowerStatus.contains('preparing') || lowerStatus.contains('packing')) {
+    } else if (lowerStatus.contains('preparing') ||
+        lowerStatus.contains('packing') ||
+        lowerStatus.contains('packed')) {
       bgColor = const Color(0xFFE0F7FA); // Light cyan
       textColor = const Color(0xFF00838F);
       label = "PREPARING";
-    } else if (lowerStatus.contains('out')) {
+    } else if (lowerStatus.contains('out') || lowerStatus.contains('way')) {
       bgColor = const Color(0xFFE3F2FD); // Light blue
       textColor = const Color(0xFF1976D2);
       label = "OUT FOR DELIVERY";
@@ -295,8 +260,8 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
 
   @override
   Widget build(BuildContext context) {
-    final activeOrders = orders.where((o) => !_isCompleteStatus((o["order"]?["status"]).toString())).toList();
-    final completeOrders = orders.where((o) => _isCompleteStatus((o["order"]?["status"]).toString())).toList();
+    final activeOrders = orders.where((o) => !_isCompleteStatus(o.status)).toList();
+    final completeOrders = orders.where((o) => _isCompleteStatus(o.status)).toList();
 
     return Scaffold(
       backgroundColor: AppColors.neutral100,
@@ -364,12 +329,14 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
               children: [
                 _OrderList(
                   orders: activeOrders,
-                  emptyText: "No active orders",
+                  emptyText: _error ?? "No active orders",
+                  onRefresh: fetchOrders,
                   buildCard: _buildActiveOrderCard,
                 ),
                 _OrderList(
                   orders: completeOrders,
-                  emptyText: "No completed orders",
+                  emptyText: _error ?? "No completed orders",
+                  onRefresh: fetchOrders,
                   buildCard: _buildCompletedOrderCard,
                 ),
               ],
@@ -380,51 +347,50 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
     );
   }
 
-  Widget _buildActiveOrderCard(Map orderMap) {
-    final orderData = orderMap["order"] ?? {};
-    final orderItems = (orderMap["items"] ?? []) as List;
+  /// Item count, thumbnails and the "X + N more" line, all from the order graph.
+  _OrderCardData _cardData(Order order) {
+    final itemCount = order.items.fold<int>(0, (sum, it) => sum + it.quantity);
+    final images = order.items
+        .map((it) => it.imageUrl)
+        .where((u) => u.isNotEmpty)
+        .toList();
 
-    final finalAmount = orderData['final_amount'] ?? orderData['grand_total'] ?? orderData['amount'] ?? '';
-    final orderId = orderData['id']?.toString() ?? orderData['order_id']?.toString() ?? '';
-    final createdAt = orderData['order_datetime']?.toString() ?? orderData['order_date']?.toString() ?? '';
-    final status = orderData['status']?.toString() ?? '';
-    final itemCount = orderItems.fold<int>(0, (sum, it) => sum + (int.tryParse(it['quantity']?.toString() ?? '0') ?? 0));
-    final images = orderItems.map<String>((it) => (it['image_url'] ?? it['image'] ?? '').toString()).where((u) => u.isNotEmpty).toList();
-
-    final showImages = images.take(2).toList();
-    final extraCount = images.length > 3 ? images.length - 2 : (images.length == 3 ? 1 : 0);
-
-    // Date formatting
-    String dateText = '';
-    String timeText = '';
-    try {
-      DateTime parsedDate = DateFormat("dd-MM-yyyy hh:mm a").parse(createdAt);
-      dateText = DateFormat("dd MMM yyyy").format(parsedDate);
-      timeText = DateFormat("hh:mm a").format(parsedDate);
-    } catch (e) {
-      debugPrint("Date parsing error: $e");
-    }
-
-    // Build product summary text
     String itemSummaryText = "";
-    if (orderItems.isNotEmpty) {
-      final firstItem = orderItems[0];
-      final firstItemName = firstItem['name'] ?? '';
-      final firstItemQuantity = int.tryParse(firstItem['quantity']?.toString() ?? '1') ?? 1;
-      final otherItemsCount = itemCount - firstItemQuantity;
+    if (order.items.isNotEmpty) {
+      final firstItem = order.items.first;
+      final otherItemsCount = itemCount - firstItem.quantity;
       if (otherItemsCount > 0) {
-        itemSummaryText = "$firstItemName + $otherItemsCount more item${otherItemsCount > 1 ? 's' : ''}";
+        itemSummaryText =
+            "${firstItem.productName} + $otherItemsCount more item${otherItemsCount > 1 ? 's' : ''}";
       } else {
-        itemSummaryText = firstItemName;
+        itemSummaryText = firstItem.productName;
       }
     }
+
+    return _OrderCardData(
+      itemCount: itemCount,
+      images: images,
+      itemSummaryText: itemSummaryText,
+      // order_datetime is a real timestamptz now, already converted to local time by the
+      // model, so there is no string date to hand-parse and fail on.
+      dateText: DateFormat("dd MMM yyyy").format(order.orderedAt),
+      timeText: DateFormat("hh:mm a").format(order.orderedAt),
+    );
+  }
+
+  Widget _buildActiveOrderCard(Order order) {
+    final data = _cardData(order);
+    final showImages = data.images.take(2).toList();
+    final extraCount = data.images.length > 3
+        ? data.images.length - 2
+        : (data.images.length == 3 ? 1 : 0);
 
     return InkWell(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => OrderSummary(orderMap: orderMap),
+            builder: (context) => OrderSummary(order: order),
           ),
         );
       },
@@ -463,7 +429,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 ),
                 SizedBox(width: 8.w),
                 Text(
-                  "Order #000$orderId",
+                  "Order #000${order.id}",
                   style: TextStyle(
                     fontSize: 13.sp,
                     fontWeight: FontWeight.bold,
@@ -471,7 +437,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                   ),
                 ),
                 const Spacer(),
-                _buildStatusBadge(status),
+                _buildStatusBadge(order.status),
               ],
             ),
             SizedBox(height: 12.h),
@@ -480,7 +446,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
             Row(
               children: [
                 Text(
-                  '₹${(double.tryParse(finalAmount) ?? 0).toStringAsFixed(0)}',
+                  '₹${order.finalAmount.toStringAsFixed(0)}',
                   style: TextStyle(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.bold,
@@ -491,7 +457,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 Text("•", style: TextStyle(color: AppColors.neutral400, fontSize: 12.sp)),
                 SizedBox(width: 6.w),
                 Text(
-                  "$itemCount Item${itemCount > 1 ? 's' : ''}",
+                  "${data.itemCount} Item${data.itemCount > 1 ? 's' : ''}",
                   style: TextStyle(
                     fontSize: 11.sp,
                     color: AppColors.neutral600,
@@ -502,7 +468,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 Text("•", style: TextStyle(color: AppColors.neutral400, fontSize: 12.sp)),
                 SizedBox(width: 6.w),
                 Text(
-                  "$dateText, $timeText",
+                  "${data.dateText}, ${data.timeText}",
                   style: TextStyle(
                     fontSize: 11.sp,
                     color: AppColors.neutral500,
@@ -510,15 +476,15 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 ),
               ],
             ),
-            
+
             SizedBox(height: 10.h),
             Divider(height: 1.h, color: AppColors.borderColor.withOpacity(0.5)),
             SizedBox(height: 10.h),
 
             // Item Summary Name Text
-            if (itemSummaryText.isNotEmpty) ...[
+            if (data.itemSummaryText.isNotEmpty) ...[
               Text(
-                itemSummaryText,
+                data.itemSummaryText,
                 style: TextStyle(
                   fontSize: 12.sp,
                   color: AppColors.neutral700,
@@ -534,8 +500,11 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
             Row(
               children: [
                 ...showImages.map((url) => _Thumb(url: url)),
-                if (images.length >= 3)
-                  _ThirdThumbWithOverlay(url: images[2], overlayText: extraCount > 0 ? "+$extraCount" : null),
+                if (data.images.length >= 3)
+                  _ThirdThumbWithOverlay(
+                    url: data.images[2],
+                    overlayText: extraCount > 0 ? "+$extraCount" : null,
+                  ),
                 const Spacer(),
 
                 InkWell(
@@ -543,7 +512,8 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => TrackOrder(status: status),
+                        builder: (context) =>
+                            TrackOrder(orderId: order.id, status: order.status),
                       ),
                     );
                   },
@@ -578,51 +548,19 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
     );
   }
 
-  Widget _buildCompletedOrderCard(Map orderMap) {
-    final orderData = orderMap["order"] ?? {};
-    final orderItems = (orderMap["items"] ?? []) as List;
-
-    final finalAmount = orderData['final_amount'] ?? orderData['grand_total'] ?? orderData['amount'] ?? '';
-    final orderId = orderData['id']?.toString() ?? orderData['order_id']?.toString() ?? '';
-    final createdAt = orderData['order_datetime']?.toString() ?? orderData['order_date']?.toString() ?? '';
-    final status = orderData['status']?.toString() ?? '';
-    final itemCount = orderItems.fold<int>(0, (sum, it) => sum + (int.tryParse(it['quantity']?.toString() ?? '0') ?? 0));
-    final images = orderItems.map<String>((it) => (it['image_url'] ?? it['image'] ?? '').toString()).where((u) => u.isNotEmpty).toList();
-
-    final showImages = images.take(2).toList();
-    final extraCount = images.length > 3 ? images.length - 2 : (images.length == 3 ? 1 : 0);
-
-    // Date formatting
-    String dateText = '';
-    String timeText = '';
-    try {
-      DateTime parsedDate = DateFormat("dd-MM-yyyy hh:mm a").parse(createdAt);
-      dateText = DateFormat("dd MMM yyyy").format(parsedDate);
-      timeText = DateFormat("hh:mm a").format(parsedDate);
-    } catch (e) {
-      debugPrint("Date parsing error: $e");
-    }
-
-    // Build product summary text
-    String itemSummaryText = "";
-    if (orderItems.isNotEmpty) {
-      final firstItem = orderItems[0];
-      final firstItemName = firstItem['name'] ?? '';
-      final firstItemQuantity = int.tryParse(firstItem['quantity']?.toString() ?? '1') ?? 1;
-      final otherItemsCount = itemCount - firstItemQuantity;
-      if (otherItemsCount > 0) {
-        itemSummaryText = "$firstItemName + $otherItemsCount more item${otherItemsCount > 1 ? 's' : ''}";
-      } else {
-        itemSummaryText = firstItemName;
-      }
-    }
+  Widget _buildCompletedOrderCard(Order order) {
+    final data = _cardData(order);
+    final showImages = data.images.take(2).toList();
+    final extraCount = data.images.length > 3
+        ? data.images.length - 2
+        : (data.images.length == 3 ? 1 : 0);
 
     return InkWell(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => OrderSummary(orderMap: orderMap),
+            builder: (context) => OrderSummary(order: order),
           ),
         );
       },
@@ -661,7 +599,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 ),
                 SizedBox(width: 8.w),
                 Text(
-                  "Order #000$orderId",
+                  "Order #000${order.id}",
                   style: TextStyle(
                     fontSize: 13.sp,
                     fontWeight: FontWeight.bold,
@@ -669,7 +607,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                   ),
                 ),
                 const Spacer(),
-                _buildStatusBadge(status),
+                _buildStatusBadge(order.status),
               ],
             ),
             SizedBox(height: 12.h),
@@ -678,7 +616,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
             Row(
               children: [
                 Text(
-                  '₹${(double.tryParse(finalAmount) ?? 0).toStringAsFixed(0)}',
+                  '₹${order.finalAmount.toStringAsFixed(0)}',
                   style: TextStyle(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.bold,
@@ -689,7 +627,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 Text("•", style: TextStyle(color: AppColors.neutral400, fontSize: 12.sp)),
                 SizedBox(width: 6.w),
                 Text(
-                  "$itemCount Item${itemCount > 1 ? 's' : ''}",
+                  "${data.itemCount} Item${data.itemCount > 1 ? 's' : ''}",
                   style: TextStyle(
                     fontSize: 11.sp,
                     color: AppColors.neutral600,
@@ -700,7 +638,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 Text("•", style: TextStyle(color: AppColors.neutral400, fontSize: 12.sp)),
                 SizedBox(width: 6.w),
                 Text(
-                  "$dateText, $timeText",
+                  "${data.dateText}, ${data.timeText}",
                   style: TextStyle(
                     fontSize: 11.sp,
                     color: AppColors.neutral500,
@@ -708,15 +646,15 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                 ),
               ],
             ),
-            
+
             SizedBox(height: 10.h),
             Divider(height: 1.h, color: AppColors.borderColor.withOpacity(0.5)),
             SizedBox(height: 10.h),
 
             // Item Summary Name Text
-            if (itemSummaryText.isNotEmpty) ...[
+            if (data.itemSummaryText.isNotEmpty) ...[
               Text(
-                itemSummaryText,
+                data.itemSummaryText,
                 style: TextStyle(
                   fontSize: 12.sp,
                   color: AppColors.neutral700,
@@ -732,12 +670,15 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
             Row(
               children: [
                 ...showImages.map((url) => _Thumb(url: url)),
-                if (images.length >= 3)
-                  _ThirdThumbWithOverlay(url: images[2], overlayText: extraCount > 0 ? "+$extraCount" : null),
+                if (data.images.length >= 3)
+                  _ThirdThumbWithOverlay(
+                    url: data.images[2],
+                    overlayText: extraCount > 0 ? "+$extraCount" : null,
+                  ),
                 const Spacer(),
 
                 InkWell(
-                  onTap: () => _showRatingBottomSheet(orderId),
+                  onTap: () => _showRatingBottomSheet('${order.id}'),
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 8.h),
                     decoration: BoxDecoration(
@@ -767,6 +708,23 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
 }
 
 // ================== SMALL WIDGETS ===================
+
+/// Everything a card needs that is derived rather than stored.
+class _OrderCardData {
+  const _OrderCardData({
+    required this.itemCount,
+    required this.images,
+    required this.itemSummaryText,
+    required this.dateText,
+    required this.timeText,
+  });
+
+  final int itemCount;
+  final List<String> images;
+  final String itemSummaryText;
+  final String dateText;
+  final String timeText;
+}
 
 class _Tabs extends StatelessWidget {
   const _Tabs({required this.tabController});
@@ -816,11 +774,17 @@ class _Tabs extends StatelessWidget {
 }
 
 class _OrderList extends StatelessWidget {
-  const _OrderList({required this.orders, required this.emptyText, required this.buildCard});
+  const _OrderList({
+    required this.orders,
+    required this.emptyText,
+    required this.buildCard,
+    required this.onRefresh,
+  });
 
-  final List orders;
+  final List<Order> orders;
   final String emptyText;
-  final Widget Function(Map order) buildCard;
+  final Widget Function(Order order) buildCard;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -849,11 +813,13 @@ class _OrderList extends StatelessWidget {
       );
     }
     return RefreshIndicator(
-      onRefresh: () async => await Future.delayed(const Duration(milliseconds: 400)),
+      // Actually re-reads from the server now, rather than waiting 400ms and showing
+      // the same list back.
+      onRefresh: onRefresh,
       child: ListView.builder(
         padding: EdgeInsets.only(top: 8.h, bottom: 20.h),
         itemCount: orders.length,
-        itemBuilder: (_, i) => buildCard(orders[i] as Map),
+        itemBuilder: (_, i) => buildCard(orders[i]),
       ),
     );
   }

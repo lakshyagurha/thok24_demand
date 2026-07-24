@@ -1,14 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../../CategoryViewScreen/categoryViewScreen.dart';
-import '../../utils/api_constants.dart';
+import '../../core/supabase.dart';
+import '../../data/catalog_repository.dart';
+import '../../data/models.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
-import '../bottomNavScreen.dart';
 
 class CategoryScreen extends StatefulWidget {
   const CategoryScreen({super.key});
@@ -18,79 +16,44 @@ class CategoryScreen extends StatefulWidget {
 }
 
 class _CategoryScreenState extends State<CategoryScreen> {
-  List _categoryList = [];
+  final CatalogRepository _catalog = const CatalogRepository();
+
+  List<Category> _categoryList = [];
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
-  String _lastFetchedLang = '';
-
-  String shopId = "";
-  String shopName = "";
 
   @override
   void initState() {
     super.initState();
-    // initState will trigger didChangeDependencies and fetchCategories
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final activeLang = Provider.of<LanguageProvider>(context).currentLanguage;
-    if (_lastFetchedLang != activeLang) {
-      _lastFetchedLang = activeLang;
-      _fetchCategories();
-    }
+    // Names are localized from the model at render time, so one fetch covers every
+    // language instead of one round trip per language switch.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchCategories());
   }
 
   Future<void> _fetchCategories() async {
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    _lastFetchedLang = lang;
-
     setState(() {
       _isLoading = true;
       _hasError = false;
     });
 
     try {
-      String url = "${ApiConstants.MAIN_VIEW_CATEGORY}?lang=$lang";
-
-
-      final response = await http.get(Uri.parse(url));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        // HomeScreen की तरह ही response handle करें
-        if (data is List) {
-          setState(() {
-            _categoryList = data;
-            _isLoading = false;
-          });
-        } else if (data is Map && data.containsKey('success') && !data['success']) {
-          _showSnackBar("Error: ${data['message']}", AppColors.errorColor);
-          setState(() {
-            _isLoading = false;
-            _hasError = true;
-            _errorMessage = data['message'] ?? "Failed to load categories";
-          });
-        } else {
-          _showSnackBar("Unexpected response format", AppColors.errorColor);
-          setState(() {
-            _isLoading = false;
-            _hasError = true;
-            _errorMessage = "Unexpected response format";
-          });
-        }
-      } else {
-        _showSnackBar("Error fetching categories: ${response.statusCode}", AppColors.errorColor);
-        setState(() {
-          _isLoading = false;
-          _hasError = true;
-          _errorMessage = "Server error: ${response.statusCode}";
-        });
-      }
+      final categories = await _catalog.categories();
+      if (!mounted) return;
+      setState(() {
+        _categoryList = categories;
+        _isLoading = false;
+      });
+    } on DataException catch (e) {
+      if (!mounted) return;
+      _showSnackBar("Error: ${e.message}", AppColors.errorColor);
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = e.message;
+      });
     } catch (e) {
+      if (!mounted) return;
       _showSnackBar("Connection error: $e", AppColors.errorColor);
       setState(() {
         _isLoading = false;
@@ -100,14 +63,15 @@ class _CategoryScreenState extends State<CategoryScreen> {
     }
   }
 
-  void _onCategoryTap(Map<String, dynamic> category) {
+  void _onCategoryTap(Category category) {
     // Category tap पर CategoryViewScreen में navigate करें
+    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => CategoryViewScreen(
-          categoryId: int.tryParse(category['id'].toString()) ?? 0,
-          categoryName: category['name']?.toString() ?? 'Category',
+          categoryId: category.id,
+          categoryName: category.localizedName(lang),
         ),
       ),
     );
@@ -190,10 +154,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
         itemCount: _categoryList.length,
         itemBuilder: (context, index) {
           final category = _categoryList[index];
-          final categoryName = category['name']?.toString() ?? 'Category';
-          final imageUrl = category['image'] != null
-              ? ApiConstants.BASE_URL + "main_category/${category['image']}"
-              : '';
+          final categoryName = category.localizedName(
+            Provider.of<LanguageProvider>(context).currentLanguage,
+          );
+          final imageUrl = category.imageUrl;
 
           return GestureDetector(
             onTap: () => _onCategoryTap(category),

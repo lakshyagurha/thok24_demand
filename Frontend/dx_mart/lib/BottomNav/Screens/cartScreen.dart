@@ -1449,16 +1449,14 @@ class _CartScreenState extends State<CartScreen> {
                               Navigator.push(
                                 context,
                                           MaterialPageRoute(
+                                            // Checkout no longer receives identity or any
+                                            // amount from here. It reads the cart itself and
+                                            // the server recomputes every monetary figure, so
+                                            // this screen's arithmetic can never become the
+                                            // price the customer is charged.
                                             builder: (context) => CheckoutScreen(
-                                              saveAmount: saveAmount,
-                                              finalWithCharge: finalWithCharge,
-                                              userId: userId,
-                                              userEmail: userEmail.toString(),
-                                              userName: userName.toString(),
                                               giftName: "noGift",
-                                              deliveyCharge: actualDeliveryCharge,
-                                              handlingCharge: handling_charge,
-                                              coupon_code_name: selectedCodeName.toString(),
+                                              couponCode: selectedCodeName?.toString() ?? '',
                                             ),
                                           ),
                                         );
