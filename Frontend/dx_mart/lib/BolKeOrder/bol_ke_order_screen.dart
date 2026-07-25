@@ -288,39 +288,48 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     );
   }
 
-  // Update quantities directly from the parchi card
-  Future<void> _updateQuantityDirectly(int cartItemId, int newQty) async {
-    setState(() {
-      _avatarState = RamuBhaiState.thinking;
-    });
-
-    // The row id alone is enough: the UPDATE policy makes another user's cart row
-    // invisible, so a tampered id affects nothing rather than the wrong cart.
-    await _cart.setQuantity(cartItemId: cartItemId, quantity: newQty);
-
-    if (!mounted) return;
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    await cartProvider.refreshCartData();
-
-    // Simulate re-trigger of bill summary
-    await _sendMessage("bill dikhao");
+  /// Shared body for the parchi card's quantity controls.
+  ///
+  /// Both of these used to have no try/catch at all: a failed write — the likely case on
+  /// a patchy connection — threw out of the callback and left Ramu Bhai stuck in the
+  /// "thinking" pose forever with nothing shown to the user.
+  Future<void> _mutateCart(Future<void> Function() action) async {
+    setState(() => _avatarState = RamuBhaiState.thinking);
+    try {
+      await action();
+      if (!mounted) return;
+      await Provider.of<CartProvider>(context, listen: false).refreshCartData();
+      if (!mounted) return;
+      // Re-trigger the bill summary.
+      await _sendMessage("bill dikhao");
+    } catch (e) {
+      debugPrint('parchi cart update failed: $e');
+      if (!mounted) return;
+      setState(() {
+        _avatarState = RamuBhaiState.idle;
+        _messages.add(
+          ChatMessage(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            sender: MessageSender.bot,
+            text: 'Maaf karna Bhai, cart update nahi ho paya. Phir se try karein.',
+            timestamp: DateTime.now(),
+          ),
+        );
+      });
+      _scrollToBottom();
+    }
   }
 
-  // Remove items directly from the parchi card
-  Future<void> _removeItemDirectly(int cartItemId) async {
-    setState(() {
-      _avatarState = RamuBhaiState.thinking;
-    });
+  // Update quantities directly from the parchi card.
+  //
+  // The row id alone is enough: the UPDATE policy makes another user's cart row
+  // invisible, so a tampered id affects nothing rather than the wrong cart.
+  Future<void> _updateQuantityDirectly(int cartItemId, int newQty) =>
+      _mutateCart(() => _cart.setQuantity(cartItemId: cartItemId, quantity: newQty));
 
-    await _cart.remove(cartItemId);
-
-    if (!mounted) return;
-    final cartProvider = Provider.of<CartProvider>(context, listen: false);
-    await cartProvider.refreshCartData();
-
-    // Simulate re-trigger of bill summary
-    await _sendMessage("bill dikhao");
-  }
+  // Remove items directly from the parchi card.
+  Future<void> _removeItemDirectly(int cartItemId) =>
+      _mutateCart(() => _cart.remove(cartItemId));
 
   Future<void> _openProductDetails(int productId) async {
     if (productId <= 0) return;

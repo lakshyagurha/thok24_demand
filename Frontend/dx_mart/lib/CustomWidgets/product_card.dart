@@ -1,4 +1,3 @@
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -116,140 +115,88 @@ class _ProductCardState extends State<ProductCard> {
   /// [imagePath] is the STORED path (e.g. `uploads/x.png`), not a built URL. The old
   /// backend wrote a full URL with the serving host baked in, which is why existing rows
   /// contain localhost and 192.168.31.10.
-  Future<void> addToCart(int variantId, String imagePath) async {
+  /// Applies a relative change to this product's line.
+  ///
+  /// All three of add / increment / decrement funnel through
+  /// [CartProvider.changeQuantity], which serializes writes per line and resyncs from the
+  /// server on any disagreement. The previous code computed an absolute target from an
+  /// unrefreshed snapshot with no in-flight guard, so three quick `+` taps all sent
+  /// `quantity = 2`.
+  Future<void> _changeBy(int variantId, int delta, {String imagePath = ''}) async {
     if (!Db.isSignedIn) {
       _showToastMessage('Please sign in to add items to your cart.');
       return;
     }
 
-    setState(() => isLoading = true);
-    try {
-      await const CartRepository().add(
-        productId: _productId,
-        variantId: variantId,
-        quantity: 1,
-        imagePath: imagePath,
-      );
+    final cart = context.read<CartProvider>();
+    final productId = widget.product['id'].toString();
 
-      if (!mounted) return;
-      // Re-read from the server rather than guessing the new row id locally.
-      await context.read<CartProvider>().refreshCartData();
-      widget.onCartUpdated?.call();
-      if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint('Error adding to cart: $e');
-      Fluttertoast.showToast(
-        msg: e is DataException ? e.message : "Something went wrong!",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-    } finally {
-      if (mounted) setState(() => isLoading = false);
-    }
-  }
-
-
-  // didChangeDependencies removed to optimize performance and prevent duplicate parallel API requests
-
-
-  Future<void> updateQuantity(int variantId, int newQuantity) async {
-    setState(() {
-      isLoading = true;
-    });
-
-    try {
-      // Variant stock check
-      final variants = widget.product['variants'] as List;
-      final variant = variants.firstWhere(
-            (v) => int.tryParse(v['id']?.toString() ?? '0') == variantId,
+    // Stock guard, only when going up. Advisory: this reads the catalog snapshot the
+    // list was built from, so place-order re-checks it against live stock.
+    if (delta > 0) {
+      final variants = widget.product['variants'] as List?;
+      final variant = variants?.firstWhere(
+        (v) => int.tryParse(v['id']?.toString() ?? '0') == variantId,
         orElse: () => null,
       );
-
       if (variant != null) {
         final stock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
-        if (newQuantity > stock) {
-          final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-          String msg = lang == 'hi' 
-              ? 'स्टॉक में केवल $stock आइटम उपलब्ध हैं' 
-              : lang == 'hn' 
-                  ? 'Stock me bas $stock items available hain' 
-                  : 'Only $stock items available in stock';
-          _showToastMessage(msg);
-          return;
-        }
-      }
-
-      final cartProvider = context.read<CartProvider>();
-      final productId = widget.product['id'].toString();
-
-      var cartId = cartProvider.getCartId('', productId, variantId.toString());
-
-      // The local mirror can be stale (e.g. the row was added on another screen), so
-      // re-sync from the server before giving up. The old code hit a second endpoint
-      // with a user_id in the query string to do this.
-      if (cartId == 0) {
-        await cartProvider.refreshCartData();
-        cartId = cartProvider.getCartId('', productId, variantId.toString());
-
-        if (cartId == 0) {
-          Fluttertoast.showToast(
-            msg: "Cart item not found. Please add it again.",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.red,
-            textColor: Colors.white,
+        final current = cart.getQuantity('', productId, variantId.toString());
+        if (current + delta > stock) {
+          final lang =
+              Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
+          _showToastMessage(
+            lang == 'hi'
+                ? 'स्टॉक में केवल $stock आइटम उपलब्ध हैं'
+                : lang == 'hn'
+                    ? 'Stock me bas $stock items available hain'
+                    : 'Only $stock items available in stock',
           );
           return;
         }
       }
-
-      await const CartRepository()
-          .setQuantity(cartItemId: cartId, quantity: newQuantity);
-
-      if (!mounted) return;
-      await cartProvider.refreshCartData();
-      widget.onCartUpdated?.call();
-      if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint('Error updating quantity: $e');
-      Fluttertoast.showToast(
-        msg: e is DataException ? e.message : "Network error. Please try again.",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-    } finally {
-      if (mounted) setState(() => isLoading = false);
     }
+
+    final result = await cart.changeQuantity(
+      productId: _productId,
+      variantId: variantId,
+      delta: delta,
+      // The STORED path (e.g. `uploads/x.png`), not a built URL. The old backend wrote a
+      // full URL with the serving host baked in, which is why existing rows contain
+      // localhost and 192.168.31.10.
+      imagePath: imagePath,
+    );
+
+    if (!mounted) return;
+    switch (result) {
+      case CartMutation.ok:
+        widget.onCartUpdated?.call();
+      case CartMutation.busy:
+        break; // a write for this line is already running; ignore the extra tap
+      case CartMutation.stale:
+        widget.onCartUpdated?.call();
+        _showToastMessage('Your cart changed elsewhere — refreshed.');
+      case CartMutation.failed:
+        widget.onCartUpdated?.call();
+        _showToastMessage('Network error. Please try again.');
+    }
+    if (mounted) setState(() {});
   }
 
+  Future<void> addToCart(int variantId, String imagePath) =>
+      _changeBy(variantId, 1, imagePath: imagePath);
+
+  Future<void> updateQuantityBy(int variantId, int delta) =>
+      _changeBy(variantId, delta);
+
   Future<void> removeFromCart(int variantId) async {
-    setState(() => isLoading = true);
-    try {
-      final cartProvider = context.read<CartProvider>();
-      final cartId = cartProvider.getCartId(
-        '',
-        widget.product['id'].toString(),
-        variantId.toString(),
-      );
-      if (cartId == 0) return;
-
-      // RLS makes another user's cart row invisible, so this can only ever delete
-      // the caller's own row -- the old endpoint deleted by raw id with no check.
-      await const CartRepository().remove(cartId);
-
-      if (!mounted) return;
-      cartProvider.removeCartItem('', widget.product['id'].toString(), variantId.toString());
-      widget.onCartUpdated?.call();
-      if (mounted) setState(() {});
-    } catch (e) {
-      debugPrint('Error removing from cart: $e');
-    } finally {
-      if (mounted) setState(() => isLoading = false);
-    }
+    final quantity = context.read<CartProvider>().getQuantity(
+          '',
+          widget.product['id'].toString(),
+          variantId.toString(),
+        );
+    if (quantity <= 0) return;
+    await _changeBy(variantId, -quantity);
   }
 
   void _showVariantBottomSheet(List variants) {
@@ -279,8 +226,8 @@ class _ProductCardState extends State<ProductCard> {
                 setModalState(() {});
               }
 
-              void _localUpdateQuantity(int variantId, int newQty) async {
-                await updateQuantity(variantId, newQty);
+              void _localUpdateQuantity(int variantId, int delta) async {
+                await updateQuantityBy(variantId, delta);
                 setModalState(() {});
               }
 
@@ -557,6 +504,8 @@ class _ProductCardState extends State<ProductCard> {
   }
 
   // Helper method to build the cart control to avoid code duplication
+  /// [updateQuantity] takes a *delta* (+1 / -1), not an absolute target — see
+  /// [CartProvider.changeQuantity] for why.
   Widget _buildCartControl(int quantity, int variantId, int stock, Function(int) removeFromCart, Function(int, int) updateQuantity, Function(int) addToCart) {
     // Use a common decoration for both states to avoid code duplication
     final decoration = BoxDecoration(
@@ -593,7 +542,7 @@ class _ProductCardState extends State<ProductCard> {
                       if (quantity == 1) {
                         removeFromCart(variantId);
                       } else {
-                        updateQuantity(variantId, quantity - 1);
+                        updateQuantity(variantId, -1);
                       }
                     },
                   ),
@@ -617,7 +566,7 @@ class _ProductCardState extends State<ProductCard> {
                                 : 'Only $stock items available in stock';
                         _showToastMessage(msg);
                       } else {
-                        updateQuantity(variantId, quantity + 1);
+                        updateQuantity(variantId, 1);
                       }
                     },
                   ),
@@ -931,7 +880,7 @@ class _ProductCardState extends State<ProductCard> {
                             .getQuantity('', widget.product['id'].toString(), variantId.toString());
 
                         if (quantity > 0) {
-                          updateQuantity(variantId, quantity - 1);
+                          updateQuantityBy(variantId, -1);
                           break;
                         }
                       }
@@ -977,7 +926,7 @@ class _ProductCardState extends State<ProductCard> {
                                   : 'Only $variantStock items available in stock';
                           _showToastMessage(msg);
                         } else {
-                          updateQuantity(variantId, quantity + 1);
+                          updateQuantityBy(variantId, 1);
                         }
                         break;
                       }

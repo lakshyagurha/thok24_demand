@@ -13,7 +13,6 @@ import '../CustomWidgets/product_card.dart';
 import '../SearchProduct/search_product.dart';
 import '../SimilarProducts/similar_product.dart';
 import '../core/supabase.dart';
-import '../data/cart_repository.dart';
 import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import '../utils/language_provider.dart';
@@ -107,174 +106,87 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     }
   }
 
-  Future<void> addToCart() async {
-    final variant = _localProduct['variants'][selectedVariantIndex];
-    final int stock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
+  /// Applies a relative change to the selected variant's cart line.
+  ///
+  /// Single entry point for add / increment / decrement / remove, all going through
+  /// [CartProvider.changeQuantity] so writes for one line are serialized and local state
+  /// is resynced from the server whenever the two disagree.
+  Future<void> changeQuantityBy(int delta) async {
+    final variants = _localProduct['variants'];
+    if (variants is! List || selectedVariantIndex >= variants.length) return;
+    final variant = variants[selectedVariantIndex];
 
-    // 🛑 Stock check
-    if (stock <= 0) {
-      Fluttertoast.showToast(
-        msg: Provider.of<LanguageProvider>(context, listen: false).translate('product_out_of_stock_msg'),
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-      return;
+    final productId = int.tryParse(_localProduct['id'].toString());
+    if (productId == null) return;
+    final variantId = int.tryParse(variant['id']?.toString() ?? '');
+
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
+
+    if (delta > 0) {
+      final stock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
+      final current = Provider.of<CartProvider>(context, listen: false)
+          .getQuantity('', '$productId', '$variantId');
+      if (stock <= 0) {
+        _toast(lang.translate('product_out_of_stock_msg'));
+        return;
+      }
+      if (current + delta > stock) {
+        _toast("Only $stock items available in stock");
+        return;
+      }
     }
 
-    setState(() {
-      isLoading = true;
-    });
-
+    setState(() => isLoading = true);
     try {
-      final variantId = variant['id'].toString();
-      final productId = _localProduct['id'].toString();
-
       // The stored PATH, not a built URL: the host is applied at render time.
-      final imagePath = (_localProduct['images'] != null &&
-              (_localProduct['images'] as List).isNotEmpty)
-          ? '${_localProduct['images'][0]}'
-          : '';
+      final images = _localProduct['images'];
+      final imagePath =
+          (images is List && images.isNotEmpty) ? '${images[0]}' : '';
 
-      await const CartRepository().add(
-        productId: int.tryParse(productId) ?? 0,
-        variantId: int.tryParse(variantId),
-        quantity: 1,
+      final result =
+          await Provider.of<CartProvider>(context, listen: false).changeQuantity(
+        productId: productId,
+        variantId: variantId,
+        delta: delta,
         imagePath: imagePath,
       );
 
       if (!mounted) return;
-      // Re-read rather than guessing the new row id locally.
-      await Provider.of<CartProvider>(context, listen: false).refreshCartData();
-
-    } catch (e) {
-      debugPrint("Error adding to cart: $e");
-      Fluttertoast.showToast(
-        msg: "Something went wrong!",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
+      if (result == CartMutation.failed) {
+        _toast("Network error. Please try again.");
+      } else if (result == CartMutation.stale) {
+        _toast("Your cart changed elsewhere — refreshed.");
+      }
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      // Guarded: this screen is reachable from a bottom sheet the user can dismiss
+      // mid-request, and an unguarded setState there throws.
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
-  Future<void> updateQuantity(int newQuantity) async {
-    final variant = _localProduct['variants'][selectedVariantIndex];
-    final variantId = variant['id'].toString();
-    final productId = _localProduct['id'].toString();
-
-    setState(() {
-      isLoading = true;
-    });
-
-    try {
-      // 🟢 Stock check
-      final stock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
-      if (newQuantity > stock) {
-        Fluttertoast.showToast(
-          msg: "Only $stock items available in stock",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-          backgroundColor: AppColors.errorColor,
-          textColor: Colors.white,
-        );
-        return;
-      }
-
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      int cartId = cartProvider.getCartId('', productId, variantId);
-
-      // If cartId is 0, try to find it by making a direct API call
-      if (cartId == 0) {
-        cartId = await _findCartIdDirectly('', productId, variantId);
-
-        if (cartId == 0) {
-          print("⚠️ Cart item not found in server either");
-          Fluttertoast.showToast(
-            msg: "Cart item not found. Please add it again.",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.red,
-            textColor: Colors.white,
-          );
-          return;
-        }
-      }
-
-      // RLS makes another user's row invisible, so this can only affect the caller's.
-      await const CartRepository()
-          .setQuantity(cartItemId: cartId, quantity: newQuantity);
-
-      if (mounted) {
-        cartProvider.updateCartQuantities(
-          '',
-          productId,
-          variantId,
-          newQuantity,
-          cartId,
-        );
-      }
-    } catch (e) {
-      debugPrint('Error updating quantity: $e');
-      Fluttertoast.showToast(
-        msg: "Network error. Please try again.",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-      );
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
-  }
-
-  /// Re-syncs from the server and returns the row id, if any. The old version hit a
-  /// second endpoint with user_id in the query string to do this.
-  Future<int> _findCartIdDirectly(
-      String _, String productId, String variantId) async {
-    try {
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      await cartProvider.refreshCartData();
-      return cartProvider.getCartId('', productId, variantId);
-    } catch (e) {
-      debugPrint('Error resolving cart id: $e');
-      return 0;
-    }
-  }
-
-
+  Future<void> addToCart() => changeQuantityBy(1);
 
   Future<void> removeFromCart() async {
-    final variant = _localProduct['variants'][selectedVariantIndex];
-    final variantId = variant['id'].toString();
-    final productId = _localProduct['id'].toString();
+    final variants = _localProduct['variants'];
+    if (variants is! List || selectedVariantIndex >= variants.length) return;
+    final variant = variants[selectedVariantIndex];
+    final quantity = Provider.of<CartProvider>(context, listen: false).getQuantity(
+      '',
+      _localProduct['id'].toString(),
+      variant['id'].toString(),
+    );
+    if (quantity <= 0) return;
+    await changeQuantityBy(-quantity);
+  }
 
-    setState(() {
-      isLoading = true;
-    });
-
-    try {
-      final cartProvider = Provider.of<CartProvider>(context, listen: false);
-      final cartId = cartProvider.getCartId('', productId, variantId);
-      if (cartId == 0) return;
-
-      await const CartRepository().remove(cartId);
-      if (mounted) cartProvider.removeCartItem('', productId, variantId);
-    } catch (e) {
-      debugPrint('Error removing from cart: $e');
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
-    }
+  void _toast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: AppColors.errorColor,
+      textColor: Colors.white,
+    );
   }
 
   Future<void> fetchAllProductsFromCategory() async {
@@ -1462,7 +1374,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               ),
                               onPressed: () {
                                 if (currentQuantity > 1) {
-                                  updateQuantity(currentQuantity - 1);
+                                  changeQuantityBy(-1);
                                 } else {
                                   removeFromCart();
                                 }
@@ -1484,7 +1396,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                 color: Colors.white,
                               ),
                               onPressed: () {
-                                updateQuantity(currentQuantity + 1);
+                                changeQuantityBy(1);
                               },
                             ),
                           ],

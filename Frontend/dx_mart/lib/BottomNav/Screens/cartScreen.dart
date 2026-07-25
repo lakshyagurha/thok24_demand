@@ -343,52 +343,48 @@ class _CartScreenState extends State<CartScreen> {
   }
 
 
-  Future<void> updateQuantity(int cartItemId, int newQuantity) async {
-    if (newQuantity < 1) return;
+  /// Applies a relative change to one cart line.
+  ///
+  /// Takes a delta rather than an absolute quantity, and routes through
+  /// [CartProvider.changeQuantity], which is the only writer and serializes per line.
+  /// This method used to send an absolute `newQuantity` computed from the row snapshot
+  /// captured in `itemBuilder`, then — worse — re-apply that same optimistic number to
+  /// the provider *after* `fetchCartItems()` had already synced the real one.
+  Future<void> changeQuantityBy(int cartItemId, int delta) async {
+    // Not firstWhere(orElse: () => null): `cartItems` holds Map<String, dynamic>, so a
+    // null orElse is a type error at runtime rather than a miss. That threw straight out
+    // of the tap handler and the stepper appeared to do nothing at all.
+    final item = _cartItemById(cartItemId);
+    if (item == null) return;
 
-    try {
-      // 🟢 Find item from cart
-      final item = cartItems.firstWhere(
-            (item) => item['id'] == cartItemId,
-        orElse: () => null,
-      );
+    final productId = int.tryParse(item['product_id']?.toString() ?? '');
+    final variantId = int.tryParse(item['variant_id']?.toString() ?? '');
+    if (productId == null) return;
 
-      if (item != null) {
-        final stock = item['stock'] != null ? int.parse(item['stock'].toString()) : 0;
-        final currentQuantity = int.tryParse(item['quantity']?.toString() ?? '0') ?? 0;
-
-        // 🟢 Stock check only when increasing
-        if (newQuantity > currentQuantity && newQuantity > stock) {
-          Fluttertoast.showToast(
-            msg: "Only $stock items available in stock",
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-            backgroundColor: Colors.red,
-            textColor: Colors.white,
-          );
-          return; // ❌ Stop execution if trying to exceed stock
-        }
-      }
-
-      // RLS makes another user's cart row invisible, so this can only ever affect the
-      // caller's own row -- the old endpoint updated by raw id with no ownership check.
-      await const CartRepository()
-          .setQuantity(cartItemId: cartItemId, quantity: newQuantity);
-
-      if (!mounted) return;
-      await fetchCartItems();
-
-      if (item != null && mounted) {
-        Provider.of<CartProvider>(context, listen: false).updateCartQuantities(
-          '',
-          item['product_id']?.toString() ?? '',
-          item['variant_id']?.toString() ?? '',
-          newQuantity,
-          cartItemId,
+    if (delta > 0) {
+      final stock = int.tryParse(item['stock']?.toString() ?? '0') ?? 0;
+      final current = int.tryParse(item['quantity']?.toString() ?? '0') ?? 0;
+      if (current + delta > stock) {
+        Fluttertoast.showToast(
+          msg: "Only $stock items available in stock",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
         );
+        return;
       }
-    } catch (e) {
-      debugPrint('Error updating quantity: $e');
+    }
+
+    final result = await context.read<CartProvider>().changeQuantity(
+          productId: productId,
+          variantId: variantId,
+          delta: delta,
+        );
+
+    if (!mounted) return;
+    if (result == CartMutation.busy) return; // an earlier tap is still running
+    if (result == CartMutation.failed) {
       Fluttertoast.showToast(
         msg: "Network error. Please try again.",
         toastLength: Toast.LENGTH_SHORT,
@@ -397,34 +393,25 @@ class _CartScreenState extends State<CartScreen> {
         textColor: Colors.white,
       );
     }
+    // Re-read the line details (price, stock, name) this screen renders. The provider
+    // holds only quantities and row ids.
+    await fetchCartItems();
   }
 
-
+  /// The cart line with this row id, or null. See the note in [changeQuantityBy].
+  Map<String, dynamic>? _cartItemById(int cartItemId) {
+    for (final item in cartItems) {
+      if (item is Map<String, dynamic> && item['id'] == cartItemId) return item;
+    }
+    return null;
+  }
 
   Future<void> removeItem(int cartItemId) async {
-    try {
-      final item = cartItems.firstWhere(
-            (item) => item['id'] == cartItemId,
-        orElse: () => null,
-      );
-
-      if (item == null) return;
-
-      final productId = item['product_id']?.toString() ?? '';
-      final variantId = item['variant_id']?.toString() ?? '';
-
-      // Deleting by raw id was safe only because the old endpoint never checked
-      // ownership; RLS now makes another user's row invisible to this delete.
-      await const CartRepository().remove(cartItemId);
-
-      if (!mounted) return;
-      Provider.of<CartProvider>(context, listen: false)
-          .removeCartItem('', productId, variantId);
-
-      await fetchCartItems();
-    } catch (e) {
-      debugPrint('Error removing item: $e');
-    }
+    final item = _cartItemById(cartItemId);
+    if (item == null) return;
+    final quantity = int.tryParse(item['quantity']?.toString() ?? '0') ?? 0;
+    if (quantity <= 0) return;
+    await changeQuantityBy(cartItemId, -quantity);
   }
 
 
@@ -874,7 +861,7 @@ class _CartScreenState extends State<CartScreen> {
                                                           GestureDetector(
                                                             onTap: () {
                                                               if (quantity > 1) {
-                                                                updateQuantity(cartItemId, quantity - 1);
+                                                                changeQuantityBy(cartItemId, -1);
                                                               } else {
                                                                 removeItem(cartItemId);
                                                               }
@@ -898,7 +885,7 @@ class _CartScreenState extends State<CartScreen> {
                                                           ),
                                                           GestureDetector(
                                                             onTap: () {
-                                                              updateQuantity(cartItemId, quantity + 1);
+                                                              changeQuantityBy(cartItemId, 1);
                                                             },
                                                             child: Padding(
                                                               padding: EdgeInsets.symmetric(horizontal: 8.w),
