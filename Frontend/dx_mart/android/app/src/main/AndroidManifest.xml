@@ -5,6 +5,12 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- For the "use current location" step on first sign-in. COARSE is requested first;
+         FINE is only needed if we later want delivery-radius precision, not for the
+         display-only district/area name shown today. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
     <application
         android:label="DxMart"
         android:name="${applicationName}"

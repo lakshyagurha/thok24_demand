@@ -125,18 +125,6 @@ class CatalogRepository {
     return rows.map((r) => Coupon.fromMap(r)).toList();
   }
 
-  Future<List<Map<String, dynamic>>> districts() async => await Db.client
-      .from('district')
-      .select('id, district_name')
-      .order('district_name');
-
-  Future<List<Map<String, dynamic>>> cities(int districtId) async =>
-      await Db.client
-          .from('city')
-          .select('id, district_id, city_name')
-          .eq('district_id', districtId)
-          .order('city_name');
-
   /// Delivery charges, minimum order value and the help contact numbers, which used to
   /// be nine separate single-row tables and nine endpoints.
   Future<Map<String, String>> settings() async {
