@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'CustomWidgets/cart_provider.dart';
@@ -8,7 +7,10 @@ import 'CustomWidgets/wishlist_provider.dart';
 import 'SplashScreen/splashScreen.dart';
 import 'core/session.dart';
 import 'core/supabase.dart';
-import 'utils/colors.dart';
+import 'design/app_colors.dart';
+import 'design/app_space.dart';
+import 'design/app_theme.dart';
+import 'design/app_type.dart';
 import 'utils/language_provider.dart';
 
 void main() async {
@@ -36,37 +38,50 @@ class _StartupFailureApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
-                const SizedBox(height: 16),
-                const Text(
-                  'DxMart could not start',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Please close the app and open it again. If this keeps happening, '
-                  'contact support.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
-                ),
-                const SizedBox(height: 16),
-                // Only useful to whoever is debugging a build; harmless to a shopper.
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, color: Colors.grey),
-                ),
-              ],
+    // Wrapped in ScreenUtilInit and given the real theme: this used to be a
+    // second, themeless MaterialApp, so the one screen a user sees when the app
+    // is broken was also the one screen that looked like a different app.
+    return ScreenUtilInit(
+      designSize: const Size(360, 690),
+      minTextAdapt: true,
+      builder: (context, child) => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'DxMart',
+        theme: AppTheme.light,
+        home: Scaffold(
+          body: Padding(
+            padding: AppSpace.all(AppSpace.xl),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off_rounded,
+                    size: 48,
+                    color: AppColors.iconMuted,
+                  ),
+                  AppSpace.gapH(AppSpace.base),
+                  Text(
+                    'DxMart could not start',
+                    textAlign: TextAlign.center,
+                    style: AppText.h2(),
+                  ),
+                  AppSpace.gapH(AppSpace.sm),
+                  Text(
+                    'Please close the app and open it again. If this keeps happening, '
+                    'contact support.',
+                    textAlign: TextAlign.center,
+                    style: AppText.bodyM(color: AppColors.textSecondary),
+                  ),
+                  AppSpace.gapH(AppSpace.base),
+                  // Only useful to whoever is debugging a build; harmless to a shopper.
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: AppText.caption(),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -96,18 +111,8 @@ class MyApp extends StatelessWidget {
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
             navigatorKey: appNavigatorKey,
-            title: 'Dx Mart',
-            theme: ThemeData(
-              colorScheme: ColorScheme.fromSeed(
-                seedColor: AppColors.primaryColor,
-                primary: AppColors.primaryColor,
-                secondary: AppColors.secondaryColor,
-              ),
-              textTheme: GoogleFonts.poppinsTextTheme(
-                Theme.of(context).textTheme,
-              ),
-              useMaterial3: true,
-            ),
+            title: 'DxMart',
+            theme: AppTheme.light,
             // Sits above every route so an expiring or revoked session is noticed
             // wherever the user happens to be, not only on the Profile screen.
             home: SessionWatcher(child: SplashScreen()),

@@ -1,66 +1,97 @@
 import 'package:flutter/material.dart';
 
+import '../design/brand_palette.dart';
+
+/// **Deprecated compatibility shim. Do not add to this file.**
+///
+/// New code imports `design/app_colors.dart` and uses semantic roles
+/// (`AppColors.primary`, `AppColors.textSecondary`, …).
+///
+/// This class survives only because ~525 references to it are spread across
+/// screens that have not been migrated yet. Every member below is now an alias
+/// onto [BrandPalette], so the brand colours supplied on 2026-07-26
+/// (`#2E6F40` primary, `#24425E` secondary) take effect across the entire app
+/// immediately, without editing forty screens at once. Screens migrate off this
+/// file one at a time, and it is deleted when the last one does.
+///
+/// ## Two things this shim deliberately does *not* fix
+///
+/// 1. [primaryTextColor] and [iconColor] were both literally `#000000`, and a
+///    dozen screens use them as the foreground **on the green brand colour** —
+///    roughly 3.2:1, well under the 4.5:1 floor. Repointing them here cannot fix
+///    that, because the same two tokens are also used as ordinary text on white,
+///    where they are correct. Those call sites need `AppColors.onPrimary`, which
+///    is a per-screen change.
+///
+/// 2. The duplicate pairs below (`lineColor` == `borderColor`, `gray` ==
+///    `neutral50`, `DisountPriceColor` == `hintTextColor`, `searchBorderHome` ==
+///    `primaryColor`) are preserved as duplicates on purpose. Collapsing them
+///    here would change which screens compile; they disappear with the file.
 class AppColors {
-  // Base Colors
-  static const Color backgroundColor = Color(0xFFFFFFFF);
-  static const Color primaryColor = Color(0xFF1B6E4A); // Brand Green
-  static const Color secondaryColor = Color(0xFFFFC63A); // Accent Yellow
+  // Base
+  static const Color backgroundColor = BrandPalette.white;
+  static const Color primaryColor = BrandPalette.green500;
 
-  // Text colors
-  static const Color primaryTextColor = Color(0xFF000000);
-  static const Color secondaryTextColor = Color(0xFFFFFFFF);
+  /// Was the accent yellow that no screen ever referenced; now the derived
+  /// amber that carries discounts and savings.
+  static const Color secondaryColor = BrandPalette.amber500;
 
-  // UI Accents
-  static const Color ratingColor = Color(0xFFF5B30E);
-  static const Color iconColor = Color(0xFF000000);
-  static const Color hintTextColor = Color(0xFF6B7280); // Neutral 500
-  static const Color borderColor = Color(0xFFE5E7EB); // Neutral 200
-  static const Color gray = Color(0xFFF9FAFB); // Neutral 50
+  /// The brand secondary navy. Newly available to unmigrated screens.
+  static const Color navyColor = BrandPalette.navy700;
 
-  // Legacy mappings for compatibility
-  static const Color searchBorderHome = Color(0xFF1B6E4A); // Use brand green
-  static const Color errorColor = Color(0xFFD32F2F); 
-  static const Color DisountPriceColor = Color(0xFF6B7280); 
-  static const Color lineColor = Color(0xFFE5E7EB); 
-  static const Color successColor = Color(0xFF2E7D32); 
-  static const Color warningColor = Color(0xFFF57C00); 
+  // Text
+  static const Color primaryTextColor = BrandPalette.neutral900;
+  static const Color secondaryTextColor = BrandPalette.white;
 
-  // Primary Green Shades
-  static const Color primary50 = Color(0xFFE8F1EC);
-  static const Color primary100 = Color(0xFFD1E3D9);
-  static const Color primary200 = Color(0xFFA3C7B3);
-  static const Color primary300 = Color(0xFF75AB8D);
-  static const Color primary400 = Color(0xFF488F68);
-  static const Color primary500 = Color(0xFF1B6E4A); // Base
-  static const Color primary600 = Color(0xFF155539);
-  static const Color primary700 = Color(0xFF10422C);
-  static const Color primary800 = Color(0xFF0A2C1D);
-  static const Color primary900 = Color(0xFF05160F);
+  // UI accents
+  static const Color ratingColor = BrandPalette.amber500;
+  static const Color iconColor = BrandPalette.neutral700;
+  static const Color hintTextColor = BrandPalette.neutral500;
+  static const Color borderColor = BrandPalette.neutral200;
+  static const Color gray = BrandPalette.neutral50;
 
-  // Neutral / Grey Shades
-  static const Color neutral50 = Color(0xFFF9FAFB);
-  static const Color neutral100 = Color(0xFFF3F4F6);
-  static const Color neutral200 = Color(0xFFE5E7EB);
-  static const Color neutral300 = Color(0xFFD1D5DB);
-  static const Color neutral400 = Color(0xFF9CA3AF);
-  static const Color neutral500 = Color(0xFF6B7280);
-  static const Color neutral600 = Color(0xFF4B5563);
-  static const Color neutral700 = Color(0xFF374151);
-  static const Color neutral800 = Color(0xFF1F2937);
-  static const Color neutral900 = Color(0xFF111827);
+  // Legacy aliases
+  static const Color searchBorderHome = BrandPalette.green500;
+  static const Color errorColor = BrandPalette.dangerBase;
+  static const Color DisountPriceColor = BrandPalette.neutral500;
+  static const Color lineColor = BrandPalette.neutral200;
+  static const Color successColor = BrandPalette.successBase;
+  static const Color warningColor = BrandPalette.warningBase;
 
-  // Success Shades
-  static const Color success50 = Color(0xFFE8F5E9);
-  static const Color success100 = Color(0xFFC8E6C9);
-  static const Color success500 = Color(0xFF2E7D32);
+  // Primary ramp
+  static const Color primary50 = BrandPalette.green50;
+  static const Color primary100 = BrandPalette.green100;
+  static const Color primary200 = BrandPalette.green200;
+  static const Color primary300 = BrandPalette.green300;
+  static const Color primary400 = BrandPalette.green400;
+  static const Color primary500 = BrandPalette.green500;
+  static const Color primary600 = BrandPalette.green600;
+  static const Color primary700 = BrandPalette.green700;
+  static const Color primary800 = BrandPalette.green800;
+  static const Color primary900 = BrandPalette.green900;
 
-  // Error Shades
-  static const Color error50 = Color(0xFFFFEBEE);
-  static const Color error100 = Color(0xFFFFCDD2);
-  static const Color error500 = Color(0xFFD32F2F);
+  // Neutral ramp
+  static const Color neutral50 = BrandPalette.neutral50;
+  static const Color neutral100 = BrandPalette.neutral100;
+  static const Color neutral200 = BrandPalette.neutral200;
+  static const Color neutral300 = BrandPalette.neutral300;
+  static const Color neutral400 = BrandPalette.neutral400;
+  static const Color neutral500 = BrandPalette.neutral500;
+  static const Color neutral600 = BrandPalette.neutral600;
+  static const Color neutral700 = BrandPalette.neutral700;
+  static const Color neutral800 = BrandPalette.neutral800;
+  static const Color neutral900 = BrandPalette.neutral900;
 
-  // Warning Shades
-  static const Color warning50 = Color(0xFFFFF3E0);
-  static const Color warning100 = Color(0xFFFFE0B2);
-  static const Color warning500 = Color(0xFFF57C00);
+  // Status
+  static const Color success50 = BrandPalette.successSurface;
+  static const Color success100 = BrandPalette.successBorder;
+  static const Color success500 = BrandPalette.successBase;
+
+  static const Color error50 = BrandPalette.dangerSurface;
+  static const Color error100 = BrandPalette.dangerBorder;
+  static const Color error500 = BrandPalette.dangerBase;
+
+  static const Color warning50 = BrandPalette.warningSurface;
+  static const Color warning100 = BrandPalette.warningBorder;
+  static const Color warning500 = BrandPalette.warningBase;
 }
