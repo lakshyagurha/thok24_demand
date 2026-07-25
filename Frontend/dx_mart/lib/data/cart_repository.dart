@@ -1,3 +1,5 @@
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
+
 import '../core/supabase.dart';
 import 'models.dart';
 
@@ -37,15 +39,56 @@ class CartRepository {
   }
 
   /// Adds [quantity], or increments if the product/variant is already in the cart.
+  ///
+  /// Goes through the `cart_add` RPC, which does the whole thing in a single
+  /// `insert ... on conflict do update set quantity = quantity + excluded.quantity`
+  /// against the `(user_id, product_id, variant_id)` unique index. The old read-then-write
+  /// here could interleave with itself: two concurrent adds both saw no existing row and
+  /// both inserted, and from then on `maybeSingle()` raised PGRST116 on every subsequent
+  /// add, making that variant permanently unaddable.
+  ///
+  /// The RPC is SECURITY INVOKER, so RLS still decides whose cart is written.
   Future<void> add({
     required int productId,
     required int? variantId,
     int quantity = 1,
     String imagePath = '',
   }) async {
+    try {
+      await Db.client.rpc('cart_add', params: {
+        'p_product_id': productId,
+        'p_variant_id': variantId,
+        'p_quantity': quantity,
+        'p_image_url': imagePath,
+      });
+    } on PostgrestException catch (e) {
+      // PGRST202 / 42883 = the function is not in the schema cache yet, i.e. migration
+      // 20260725000003 has not been applied to this project. Fall back to the old
+      // read-then-write so the app still works, and delete this branch once the
+      // migration has landed everywhere.
+      if (e.code == 'PGRST202' || e.code == '42883') {
+        await _addWithoutRpc(
+          productId: productId,
+          variantId: variantId,
+          quantity: quantity,
+          imagePath: imagePath,
+        );
+        return;
+      }
+      rethrow;
+    }
+  }
+
+  /// Pre-migration fallback for [add]. Not race-safe — see the note there.
+  Future<void> _addWithoutRpc({
+    required int productId,
+    required int? variantId,
+    required int quantity,
+    required String imagePath,
+  }) async {
     // `variant_id` is nullable in the schema and this parameter is `int?`, so the filter
-    // has to branch. The previous `variantId as Object` threw a TypeError for any product
-    // without a numeric variant, which surfaced as a generic "Something went wrong!".
+    // has to branch. `variantId as Object` threw a TypeError for any product without a
+    // numeric variant, which surfaced as a generic "Something went wrong!".
     final match = Db.client
         .from('cart_items')
         .select('id, quantity')
@@ -78,16 +121,28 @@ class CartRepository {
 
   /// Sets an absolute quantity. Zero or less removes the line, since the database has a
   /// CHECK (quantity > 0) and a "0 quantity" row is meaningless anyway.
-  Future<void> setQuantity({required int cartItemId, required int quantity}) async {
+  ///
+  /// Returns false when the row was not there — a PATCH matching zero rows is a 200 with
+  /// an empty body, so without checking the result the caller cannot tell "updated" from
+  /// "that line was already deleted by a racing tap".
+  Future<bool> setQuantity({required int cartItemId, required int quantity}) async {
     if (quantity <= 0) return remove(cartItemId);
-    await Db.client
+    final rows = await Db.client
         .from('cart_items')
         .update({'quantity': quantity})
-        .eq('id', cartItemId);
+        .eq('id', cartItemId)
+        .select('id');
+    return rows.isNotEmpty;
   }
 
-  Future<void> remove(int cartItemId) async {
-    await Db.client.from('cart_items').delete().eq('id', cartItemId);
+  /// Returns false when the row was already gone.
+  Future<bool> remove(int cartItemId) async {
+    final rows = await Db.client
+        .from('cart_items')
+        .delete()
+        .eq('id', cartItemId)
+        .select('id');
+    return rows.isNotEmpty;
   }
 
   /// Empties the cart. Scoped by RLS to the caller's own rows.

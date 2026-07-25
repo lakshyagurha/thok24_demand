@@ -76,24 +76,40 @@ class OrderRepository {
   /// `final_amount` from the request body, so a client could name its own price.
   ///
   /// Returns the server's authoritative totals.
+  ///
+  /// [idempotencyKey] must be generated once per checkout attempt and reused on every
+  /// retry of that attempt. On a patchy connection the response can be lost after the
+  /// order has already committed; without the key the customer's retry produces a second
+  /// real order. With it, the server returns the original.
   Future<Order> place({
     required int deliveryAddressId,
+    required String idempotencyKey,
     DateTime? deliveryDate,
     String? deliveryTimeWindow,
     String paymentMethod = 'COD',
     String? couponCode,
     String? gift,
   }) async {
-    final res = await Db.client.functions.invoke('place-order', body: {
-      'delivery_address_id': deliveryAddressId,
-      'delivery_date': deliveryDate?.toIso8601String().split('T').first,
-      'delivery_time_window': deliveryTimeWindow,
-      'payment_method': paymentMethod,
-      'coupon_code': couponCode,
-      'gift': gift,
-    });
+    final Object? data;
+    try {
+      final res = await Db.client.functions.invoke('place-order', body: {
+        'delivery_address_id': deliveryAddressId,
+        'delivery_date': deliveryDate?.toIso8601String().split('T').first,
+        'delivery_time_window': deliveryTimeWindow,
+        'payment_method': paymentMethod,
+        'coupon_code': couponCode,
+        'gift': gift,
+        'idempotency_key': idempotencyKey,
+      });
+      data = res.data;
+    } catch (e) {
+      // Every deliberate rejection from place-order — expired coupon, below minimum,
+      // an item that just went out of stock — arrives as a 4xx, which `invoke` raises
+      // as a FunctionException. Unwrap it so the customer sees why, not a generic
+      // "please try again".
+      rethrowFunctionError(e, 'Could not place the order.');
+    }
 
-    final data = res.data;
     if (data is! Map || data['success'] != true) {
       throw DataException(
         (data is Map ? data['message'] as String? : null) ??

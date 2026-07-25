@@ -20,9 +20,27 @@ type Body = {
   payment_method?: string;
   coupon_code?: string | null;
   gift?: string | null;
+  /**
+   * One value per checkout attempt, reused on retry. Without it a dropped response --
+   * routine on the mobile networks this app targets -- makes the client show "could not
+   * place the order", and the customer's retry creates a second real order.
+   */
+  idempotency_key?: string | null;
 };
 
 const ALLOWED_PAYMENT = new Set(["COD", "RAZORPAY"]);
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * `%` and `_` are wildcards to ILIKE. The coupon box is free text, so without escaping
+ * them a customer could type `DAS%` and match -- and redeem -- a status='Private' coupon
+ * they were never given, which is exactly what RLS hiding those rows is meant to prevent.
+ * Escaping leaves the lookup case-insensitive (matching the unique index on
+ * lower(code_name)) while making it an exact match on the literal text.
+ */
+const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 /**
  * An online payment is only honestly offerable if the webhook that confirms it can
@@ -77,21 +95,66 @@ Deno.serve(async (req) => {
     );
   }
 
+  const idempotencyKey = body.idempotency_key?.trim() || null;
+  if (idempotencyKey && !UUID_RE.test(idempotencyKey)) {
+    return json(
+      { success: false, message: "Invalid idempotency key" },
+      400,
+      req,
+    );
+  }
+
+  /** Shapes an already-committed order row into this function's success response. */
+  // deno-lint-ignore no-explicit-any
+  const existingOrderResponse = (o: any) =>
+    json(
+      {
+        success: true,
+        order_id: o.id,
+        order_datetime: o.order_datetime,
+        total_amount: Number(o.total_amount),
+        discount_amount: Number(o.discount_amount),
+        delivery_charge: Number(o.delivery_charge),
+        handling_charge: Number(o.handling_charge),
+        final_amount: Number(o.final_amount),
+        idempotent_replay: true,
+      },
+      200,
+      req,
+    );
+
+  const ORDER_COLS =
+    "id, order_datetime, total_amount, discount_amount, delivery_charge, handling_charge, final_amount";
+
   try {
+    // --- 0. Idempotency: has this exact attempt already succeeded? ----------
+    if (idempotencyKey) {
+      const { data: prior } = await serviceClient()
+        .from("orders")
+        .select(ORDER_COLS)
+        .eq("user_id", userId)
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (prior) return existingOrderResponse(prior);
+    }
+
     // --- 1. Cart, read through the caller's own RLS context ----------------
     // Prices come from product_variants here, never from the request.
     type CartRow = {
+      id: number;
       product_id: number;
       variant_id: number | null;
       quantity: number;
       image_url: string | null;
-      product_variants: { selling_price: number } | null;
+      product_variants: { selling_price: number; stock: number; name: string } | null;
+      products: { name: string } | null;
     };
 
     const { data: cart, error: cartErr } = await db
       .from("cart_items")
       .select(
-        "product_id, variant_id, quantity, image_url, product_variants!inner(selling_price)",
+        "id, product_id, variant_id, quantity, image_url, " +
+          "product_variants!inner(selling_price, stock, name), products!inner(name)",
       )
       .returns<CartRow[]>();
     if (cartErr) throw cartErr;
@@ -112,6 +175,29 @@ Deno.serve(async (req) => {
       };
     });
     subtotal = money(subtotal);
+
+    // A cheap read-only pass purely so the customer gets a message naming the item that
+    // is short. It is NOT the safety check -- reserve_stock below is, because only the
+    // conditional UPDATE inside it is atomic against a concurrent order.
+    const short = cart.find((r) =>
+      r.product_variants != null &&
+      Number(r.product_variants.stock) < Number(r.quantity)
+    );
+    if (short) {
+      const label = [short.products?.name, short.product_variants?.name]
+        .filter(Boolean).join(" ");
+      const available = Number(short.product_variants?.stock ?? 0);
+      return json(
+        {
+          success: false,
+          message: available <= 0
+            ? `${label || "An item in your cart"} is out of stock. Please remove it to continue.`
+            : `Only ${available} left of ${label || "an item in your cart"}. Please reduce the quantity.`,
+        },
+        409,
+        req,
+      );
+    }
 
     // --- 2. Address must belong to the caller ------------------------------
     // Selected through the caller's client, so RLS makes someone else's address
@@ -163,14 +249,28 @@ Deno.serve(async (req) => {
     // still redeem. The code is checked against the table, never trusted from input.
     let discountAmount = 0;
     let appliedCoupon: string | null = null;
+    let appliedCouponId: number | null = null;
     const requestedCode = body.coupon_code?.trim();
     if (requestedCode) {
+      if (requestedCode.length > 64) {
+        return json(
+          { success: false, message: "Invalid coupon code" },
+          400,
+          req,
+        );
+      }
       const admin = serviceClient();
-      const { data: coupon } = await admin
+      const { data: coupon, error: couponErr } = await admin
         .from("coupon")
-        .select("code_name, discount, min_amount, expiry_date, status")
-        .ilike("code_name", requestedCode)
+        .select(
+          "id, code_name, discount, min_amount, expiry_date, status, usage_limit, per_user_limit",
+        )
+        .ilike("code_name", escapeLike(requestedCode))
         .maybeSingle();
+
+      // Previously discarded. A malformed query or a multi-row match used to be
+      // indistinguishable from "no such coupon", which hid real faults.
+      if (couponErr) throw couponErr;
 
       if (!coupon) {
         return json(
@@ -196,11 +296,45 @@ Deno.serve(async (req) => {
           req,
         );
       }
+
+      // Redemption limits. Both columns are nullable and null means unlimited, so every
+      // pre-existing coupon behaves exactly as it did before.
+      if (coupon.usage_limit != null) {
+        const { count, error } = await admin
+          .from("coupon_redemptions")
+          .select("id", { count: "exact", head: true })
+          .eq("coupon_id", coupon.id);
+        if (error) throw error;
+        if ((count ?? 0) >= Number(coupon.usage_limit)) {
+          return json(
+            { success: false, message: "This coupon has been fully redeemed" },
+            400,
+            req,
+          );
+        }
+      }
+      if (coupon.per_user_limit != null) {
+        const { count, error } = await admin
+          .from("coupon_redemptions")
+          .select("id", { count: "exact", head: true })
+          .eq("coupon_id", coupon.id)
+          .eq("user_id", userId);
+        if (error) throw error;
+        if ((count ?? 0) >= Number(coupon.per_user_limit)) {
+          return json(
+            { success: false, message: "You have already used this coupon" },
+            400,
+            req,
+          );
+        }
+      }
+
       // `discount` is a percentage in the source data; never let it exceed the subtotal.
       discountAmount = money(
         Math.min(subtotal * (Number(coupon.discount) / 100), subtotal),
       );
       appliedCoupon = coupon.code_name;
+      appliedCouponId = coupon.id;
     }
 
     const finalAmount = money(
@@ -211,6 +345,45 @@ Deno.serve(async (req) => {
     // Service role, because `orders` intentionally has no INSERT policy. user_id is the
     // verified JWT subject, so this cannot be pointed at another account.
     const admin = serviceClient();
+
+    // Decrement stock first, atomically. The whole RPC is one transaction and each
+    // UPDATE carries `stock >= quantity` in its WHERE clause, so two concurrent orders
+    // for the last unit cannot both succeed -- the loser matches zero rows and raises.
+    const stockItems = lines
+      .filter((l) => l.variant_id != null)
+      .map((l) => ({ variant_id: l.variant_id, quantity: l.quantity }));
+    if (stockItems.length > 0) {
+      const { error: stockErr } = await admin.rpc("reserve_stock", {
+        p_items: stockItems,
+      });
+      if (stockErr) {
+        if (String(stockErr.message ?? "").includes("INSUFFICIENT_STOCK")) {
+          return json(
+            {
+              success: false,
+              message:
+                "Someone just took the last of one of your items. Please review your cart.",
+            },
+            409,
+            req,
+          );
+        }
+        throw stockErr;
+      }
+    }
+
+    /** Puts back everything reserve_stock took, for any failure after reservation. */
+    const releaseStock = async () => {
+      if (stockItems.length === 0) return;
+      const { error } = await admin.rpc("release_stock", { p_items: stockItems });
+      if (error) {
+        console.error(
+          "release_stock failed; stock may be understated:",
+          error.message,
+        );
+      }
+    };
+
     const { data: order, error: orderErr } = await admin
       .from("orders")
       .insert({
@@ -227,10 +400,26 @@ Deno.serve(async (req) => {
         delivery_time_window: body.delivery_time_window ?? null,
         delivery_address_id: deliveryAddressId,
         gift: body.gift ?? null,
+        idempotency_key: idempotencyKey,
       })
-      .select("id, order_datetime")
+      .select(ORDER_COLS)
       .single();
-    if (orderErr) throw orderErr;
+
+    if (orderErr) {
+      await releaseStock();
+      // 23505 on (user_id, idempotency_key) means a concurrent retry of this same
+      // attempt won the race. That is a success, not a failure -- return its order.
+      if (orderErr.code === "23505" && idempotencyKey) {
+        const { data: winner } = await admin
+          .from("orders")
+          .select(ORDER_COLS)
+          .eq("user_id", userId)
+          .eq("idempotency_key", idempotencyKey)
+          .maybeSingle();
+        if (winner) return existingOrderResponse(winner);
+      }
+      throw orderErr;
+    }
 
     const { error: itemsErr } = await admin
       .from("order_items")
@@ -239,7 +428,26 @@ Deno.serve(async (req) => {
       // No transaction spans these two inserts, so an orphaned order would otherwise
       // linger and be billable. Remove it; order_items cascades.
       await admin.from("orders").delete().eq("id", order.id);
+      await releaseStock();
       throw itemsErr;
+    }
+
+    // Record the redemption so usage_limit / per_user_limit can be counted. Unique on
+    // order_id, so an idempotent replay can never double-count against a limit.
+    if (appliedCouponId != null) {
+      const { error: redemptionErr } = await admin
+        .from("coupon_redemptions")
+        .insert({
+          coupon_id: appliedCouponId,
+          user_id: userId,
+          order_id: order.id,
+        });
+      if (redemptionErr) {
+        console.error(
+          `coupon redemption not recorded for order ${order.id}:`,
+          redemptionErr.message,
+        );
+      }
     }
 
     // --- 5. Repeat-order memory + clear the cart ---------------------------
@@ -276,8 +484,14 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Through the caller's client, so it can only ever empty their own cart.
-      await db.from("cart_items").delete().neq("id", -1);
+      // Only the rows this order actually consumed. The previous `.neq("id", -1)` swept
+      // the whole cart, including anything added between the read above and this line --
+      // silently discarding items the customer had not ordered yet. Still through the
+      // caller's client, so RLS keeps it to their own rows.
+      await db
+        .from("cart_items")
+        .delete()
+        .in("id", cart.map((r) => r.id));
     } catch (e) {
       console.error(
         `post-order housekeeping failed for order ${order.id} (order still placed):`,

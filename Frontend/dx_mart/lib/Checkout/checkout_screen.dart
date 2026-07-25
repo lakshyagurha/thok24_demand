@@ -61,12 +61,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String selectedUpiApp = ''; // For storing selected UPI app
   bool _isPlacingOrder = false; // Track if order is being placed
 
+  /// One key per checkout attempt, reused across retries of that attempt so a lost
+  /// response cannot become a second order. Rotated only after an order succeeds.
+  String _idempotencyKey = newUuidV4();
+
   // ---- Local PREVIEW only. Never sent anywhere. --------------------------------
   double _subtotal = 0;
   double _itemSavings = 0;
   double _deliveryCharge = 0;
   double _handlingCharge = 0;
   double _couponDiscount = 0;
+
+  /// False until [_loadPreview] has actually produced numbers. Without this the screen
+  /// rendered a confident "Place Order: ₹0" whenever the preview request failed, and the
+  /// button stayed tappable — the customer would be shown ₹0 and charged the real total.
+  bool _previewReady = false;
+  String? _previewError;
 
   double get _previewTotal =>
       _subtotal - _couponDiscount + _deliveryCharge + _handlingCharge;
@@ -211,9 +221,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _deliveryCharge = delivery;
         _handlingCharge = handling;
         _couponDiscount = discount;
+        _previewReady = true;
+        _previewError = null;
       });
     } catch (e) {
       debugPrint("Error building order preview: $e");
+      if (!mounted) return;
+      setState(() {
+        _previewReady = false;
+        _previewError = 'Could not load your bill. Check your connection.';
+      });
     }
   }
 
@@ -265,6 +282,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       return;
     }
 
+    // Refuse to submit against a bill we could not compute. The button is already
+    // disabled in this state; this is the belt to that braces.
+    if (!_previewReady) {
+      _showError(_previewError ?? 'Could not load your bill. Please try again.');
+      _loadPreview();
+      return;
+    }
+
     setState(() {
       _isPlacingOrder = true; // Show progress indicator
     });
@@ -272,6 +297,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     try {
       final Order order = await _orderRepo.place(
         deliveryAddressId: address.id,
+        // Constant across retries of this attempt: if the response to a previous try was
+        // lost after the server had already committed, this returns that same order
+        // instead of creating a second one.
+        idempotencyKey: _idempotencyKey,
         deliveryDate: selectedDate ?? DateTime.now(),
         deliveryTimeWindow: selectedTimeSlot,
         // 'COD' and 'RAZORPAY' are the only values the server accepts. Razorpay
@@ -281,10 +310,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         gift: _gift,
       );
 
+      // This attempt is finished, so the next one is a genuinely new order.
+      _idempotencyKey = newUuidV4();
+
       if (!mounted) return;
-      setState(() {
-        _isPlacingOrder = false; // Hide progress indicator
-      });
 
       // The server already emptied the cart; this just resyncs the local badge/state.
       await context.read<CartProvider>().refreshCartData();
@@ -293,15 +322,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _showSuccessDialog(order);
     } on DataException catch (e) {
       // Bad, expired or below-minimum coupons land here with a message meant for the
-      // user, as do empty carts and addresses that are not theirs.
+      // user, as do empty carts, out-of-stock items and addresses that are not theirs.
       if (!mounted) return;
-      setState(() => _isPlacingOrder = false);
       _showError(e.message);
+      // Stock and coupon rejections change what the bill should say, so re-derive it.
+      _loadPreview();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _isPlacingOrder = false);
       debugPrint("Error placing order: $e");
       _showError('Could not place the order. Please try again.');
+    } finally {
+      // In a finally rather than repeated on each exit path: a future `return` added
+      // anywhere in the try block would otherwise leave the button disabled forever.
+      if (mounted) setState(() => _isPlacingOrder = false);
     }
   }
 
@@ -1269,14 +1302,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   child: Container(
                     height: 48.h,
                     decoration: BoxDecoration(
-                      color: _selectedAddress == null ? Colors.grey : AppColors.primaryColor,
+                      // Also greyed out while the bill is unknown, so we never invite a
+                      // tap on a total we could not compute.
+                      color: (_selectedAddress == null || !_previewReady)
+                          ? Colors.grey
+                          : AppColors.primaryColor,
                       borderRadius: BorderRadius.circular(12.r),
                     ),
                     child: Center(
                       child: Text(
                         _isPlacingOrder
                             ? Provider.of<LanguageProvider>(context).translate('placing_order')
-                            : '${Provider.of<LanguageProvider>(context).translate('place_order_btn')}: ₹${_previewTotal.toStringAsFixed(0)} →',
+                            : !_previewReady
+                                ? (_previewError ?? 'Loading your bill…')
+                                : '${Provider.of<LanguageProvider>(context).translate('place_order_btn')}: ₹${_previewTotal.toStringAsFixed(0)} →',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 16.sp,

@@ -461,10 +461,17 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     // Check if cart meets minimum amount requirement
+    // Compared against the item subtotal, NOT the bill total. place-order checks
+    // `subtotal < coupon.min_amount`, and this used to compare `finalWithCharge`, which
+    // includes handling and delivery and is therefore larger. A coupon could be accepted
+    // here, shown as a discount, and then rejected by the server at place-order —
+    // failing the whole order rather than merely dropping the discount. The greyed-out
+    // state further down this file already used the subtotal, so the file disagreed
+    // with itself too.
     final minAmount = double.tryParse(coupon['min_amount']?.toString() ?? '0') ?? 0.0;
-    if (finalWithCharge < minAmount) {
+    if (totalSellingAmount < minAmount) {
       Fluttertoast.showToast(
-        msg: "Add products worth ₹${(minAmount - finalWithCharge).toStringAsFixed(0)} more to apply this coupon",
+        msg: "Add products worth ₹${(minAmount - totalSellingAmount).toStringAsFixed(0)} more to apply this coupon",
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
         backgroundColor: Colors.red,
