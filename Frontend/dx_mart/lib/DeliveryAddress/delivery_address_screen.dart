@@ -131,6 +131,8 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
       if (selectedAddressId == addressId.toString()) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('selected_address_id');
+        // Also drop the legacy key on any device that still has one written by an
+        // older build.
         await prefs.remove('selected_address_full');
         if (!mounted) return;
         setState(() {
@@ -293,9 +295,12 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
 
                 return GestureDetector(
                   onTap: () async {
+                    // Only the id. `selected_address_full` used to be written here too —
+                    // the user's full street address on disk, never read back by
+                    // anything, and never cleared on sign-out. The id is enough: it is
+                    // validated against an RLS-scoped address list wherever it is used.
                     final prefs = await SharedPreferences.getInstance();
                     await prefs.setString('selected_address_id', address.id.toString());
-                    await prefs.setString('selected_address_full', address.fullAddress);
 
                     if (!mounted) return;
                     setState(() {

@@ -19,6 +19,9 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  /// Held so it can be cancelled: an uncancelled Timer keeps this State alive after the
+  /// route is gone.
+  Timer? _splashTimer;
 
   @override
   void initState() {
@@ -32,14 +35,13 @@ class _SplashScreenState extends State<SplashScreen> {
       systemNavigationBarIconBrightness: Brightness.dark,
     ));
 
+    _splashTimer = Timer(const Duration(seconds: 1), checkLogin);
+  }
 
-
-    Timer(Duration (seconds: 1), (){
-      //
-      checkLogin();
-
-    });
-
+  @override
+  void dispose() {
+    _splashTimer?.cancel();
+    super.dispose();
   }
 
   /// `Db.init()` has already run in main(), so a persisted Supabase session is restored

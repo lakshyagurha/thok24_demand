@@ -12,6 +12,7 @@ import '../../ProfileScreen/privacy_policy.dart';
 import '../../ProfileScreen/return_policy.dart';
 import '../../ProfileScreen/terms_condition.dart';
 import '../../CustomWidgets/cart_provider.dart';
+import '../../core/session.dart';
 import '../../data/auth_repository.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
@@ -55,13 +56,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> logoutUser() async {
     // Ends the Supabase session and clears the stored tokens. The old code removed a
     // 'user_email' preference, which nothing writes any more — so it logged nobody out.
+    //
+    // Everything after the signOut is also done by SessionWatcher, which reacts to the
+    // resulting signedOut event. Doing it here too means the screen does not depend on
+    // the stream having been delivered before the user looks at the next route.
     final cart = context.read<CartProvider>();
     await _auth.signOut();
-    // Drop the in-memory cart too, so the next user to sign in on this device does not
-    // inherit the previous one's quantities.
-    cart.clearCart();
+
+    // The in-memory cart plus the previous user's cached delivery address, so the next
+    // person to sign in on this device inherits neither.
+    await clearLocalSessionState(cart);
+
     if (!mounted) return;
-    Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => LoginScreen()));
+    // pushAndRemoveUntil, not pushReplacement. ProfileScreen is pushed on top of
+    // BottomNavScreen, so replacing only this route left the whole authenticated shell
+    // alive underneath — Android back returned the signed-out user straight to it,
+    // showing a stale profile, wishlist and order list.
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => LoginScreen()),
+      (route) => false,
+    );
   }
 
   void showLogoutDialog() {

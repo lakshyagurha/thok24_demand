@@ -25,8 +25,18 @@ class AuthRepository {
     return '$countryCode$digits';
   }
 
-  static bool isValidIndianMobile(String input) =>
-      RegExp(r'^[6-9]\d{9}$').hasMatch(input.replaceAll(RegExp(r'\D'), ''));
+  /// Accepts the same inputs [normalisePhone] knows how to handle.
+  ///
+  /// The two used to disagree: this stripped every non-digit and demanded exactly ten,
+  /// so `+919876543210` was rejected at the form even though `normalisePhone` handles
+  /// that exact string.
+  static bool isValidIndianMobile(String input) {
+    var digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 12 && digits.startsWith('91')) {
+      digits = digits.substring(2);
+    }
+    return RegExp(r'^[6-9]\d{9}$').hasMatch(digits);
+  }
 
   /// Sends a login OTP. The same call signs in an existing user and registers a new one,
   /// so there is no separate signup endpoint to keep in step.
@@ -100,6 +110,23 @@ class AuthRepository {
             : null,
       );
       return res.session != null;
+    } on AuthException catch (e) {
+      throw DataException(e.message);
+    }
+  }
+
+  /// Sends a password reset email.
+  ///
+  /// The PHP backend had `forget_password.php` and `reset_password.php`; the migration
+  /// deleted both without a replacement, so an email user who forgot their password was
+  /// permanently locked out. (The phone path has no equivalent problem — you just request
+  /// another OTP.)
+  ///
+  /// Deliberately does not report whether the address exists: that would turn this into
+  /// an account-enumeration oracle. The caller always shows the same message.
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await _db.auth.resetPasswordForEmail(email.trim());
     } on AuthException catch (e) {
       throw DataException(e.message);
     }

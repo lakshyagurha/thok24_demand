@@ -47,6 +47,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   void showError(String message) {
+    // See the note in loginScreen: this runs after an await, so the element may be gone.
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: TextStyle()),

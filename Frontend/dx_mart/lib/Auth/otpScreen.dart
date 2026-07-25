@@ -6,7 +6,9 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../CustomWidgets/customButton.dart';
 import '../CustomWidgets/customTextFiledWidgets.dart';
 import '../CustomWidgets/custom_text.dart';
+import '../BottomNav/bottomNavScreen.dart';
 import '../LocationScreen/locationScreen.dart';
+import '../core/session.dart';
 import '../core/supabase.dart';
 import '../data/auth_repository.dart';
 import '../utils/colors.dart';
@@ -91,8 +93,10 @@ class _OtpScreenState extends State<OtpScreen> {
 
   Future<void> verify() async {
     final code = otpController.text.trim();
-    if (code.isEmpty) {
-      showError("Please Enter OTP");
+    // The field is labelled "6 digit OTP" but only emptiness was checked, so a partial
+    // code was sent to the server and came back as a generic failure.
+    if (!RegExp(r'^\d{6}$').hasMatch(code)) {
+      showError("Please enter the 6 digit OTP");
       return;
     }
 
@@ -107,11 +111,18 @@ class _OtpScreenState extends State<OtpScreen> {
         name: widget.name,
       );
 
-      if (!mounted) return;
       otpController.clear();
+      // Skip the location picker if this device has already chosen a delivery area —
+      // splash already did this, so signing in used to be the only path that forced a
+      // returning user back through GPS.
+      final needsLocation = !await hasChosenDeliveryArea();
+      if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => LocationScreen()),
+        MaterialPageRoute(
+          builder: (context) =>
+              needsLocation ? LocationScreen() : BottomNavScreen(),
+        ),
         (route) => false,
       );
     } on DataException catch (e) {

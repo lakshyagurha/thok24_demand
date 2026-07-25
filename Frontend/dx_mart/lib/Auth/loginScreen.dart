@@ -43,6 +43,10 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void showError(String message) {
+    // Called from catch blocks after an await; without this, backing out during the
+    // network call throws on a defunct element. otpScreen and emailAuthScreen already
+    // guarded theirs.
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: TextStyle()),
