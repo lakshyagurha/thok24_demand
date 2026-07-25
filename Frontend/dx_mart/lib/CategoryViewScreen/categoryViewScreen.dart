@@ -17,6 +17,9 @@ import '../CustomWidgets/cart_provider.dart';
 Map<String, dynamic> _productCardData(Product p, String lang) => {
       'id': p.id,
       'name': p.localizedName(lang),
+      // See the note in `homeScreen.dart`: the product page needs this to populate
+      // its "similar products" section.
+      'main_category_id': p.mainCategoryId,
       'images': p.images,
       'variants': [
         for (final v in p.variants)

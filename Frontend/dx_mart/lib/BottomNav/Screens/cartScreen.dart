@@ -4,8 +4,6 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:provider/provider.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../Checkout/checkout_screen.dart';
 import '../../CustomWidgets/cart_provider.dart';
 import '../../CustomWidgets/product_card.dart';
@@ -431,22 +429,20 @@ class _CartScreenState extends State<CartScreen> {
 
 
 
-  // Check if coupon is expired
-  bool _isCouponExpired(String expiryDate) {
-    try {
-      final parts = expiryDate.split('-');
-      if (parts.length == 3) {
-        final day = int.tryParse(parts[0]) ?? 0;
-        final month = int.tryParse(parts[1]) ?? 0;
-        final year = int.tryParse(parts[2]) ?? 0;
-
-        final expiry = DateTime(year, month, day);
-        return DateTime.now().isAfter(expiry);
-      }
-      return true;
-    } catch (e) {
-      return true;
-    }
+  // Check if coupon is expired.
+  //
+  // `coupon.expiry_date` is a Postgres `date` and reaches here as ISO `YYYY-MM-DD`
+  // (see `_fetchCoupons`). The previous implementation split on '-' and read it as the
+  // old PHP `DD-MM-YYYY` varchar, so "2026-12-31" parsed as day=2026/month=12/year=31 —
+  // year 31 AD — and every coupon in the app reported as expired.
+  //
+  // The column is nullable, and a coupon with no expiry date does not expire. That also
+  // matches `place-order`, which only checks expiry `if (coupon.expiry_date)`.
+  bool _isCouponExpired(String? expiryDate) {
+    if (expiryDate == null || expiryDate.isEmpty) return false;
+    final expiry = DateTime.tryParse(expiryDate);
+    if (expiry == null) return true;
+    return DateTime.now().isAfter(expiry);
   }
 
   // Apply coupon with validation
@@ -1295,8 +1291,6 @@ class _CartScreenState extends State<CartScreen> {
                                 );
                                 return;
                               }
-
-                              double actualDeliveryCharge = totalSellingAmount >= freeDelivery ? 0.0 : deliveryCharge;
 
                               Navigator.push(
                                 context,

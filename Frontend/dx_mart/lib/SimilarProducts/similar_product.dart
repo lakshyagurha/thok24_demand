@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../BottomNav/Screens/cartScreen.dart';
 import '../CustomWidgets/product_card.dart';
 import '../SearchProduct/search_product.dart';
@@ -26,7 +25,6 @@ class SimilarProduct extends StatefulWidget {
 
 class _SimilarProductState extends State<SimilarProduct> {
   List products = [];
-  bool _isLoadingProducts = false;
   List<Map<String, dynamic>> cartList = [];
 
 
@@ -55,10 +53,7 @@ class _SimilarProductState extends State<SimilarProduct> {
   /// Products fetch. Localisation is applied in the widgets via the model's
   /// localizedName(), so the language no longer travels to the server as a query param.
   Future<void> fetchAllProductsFromCategory(String id) async {
-    setState(() {
-      _isLoadingProducts = true;
-      products = [];
-    });
+    setState(() => products = []);
 
     try {
       final categoryId = int.tryParse(id) ?? 0;
@@ -67,8 +62,6 @@ class _SimilarProductState extends State<SimilarProduct> {
       setState(() => products = result.map((p) => p.toCardMap()).toList());
     } catch (e) {
       if (mounted) setState(() => products = []);
-    } finally {
-      if (mounted) setState(() => _isLoadingProducts = false);
     }
   }
 
@@ -88,6 +81,9 @@ class _SimilarProductState extends State<SimilarProduct> {
               SizedBox(height: 20.h),
 
               // ✅ Products Grid
+              // TODO(tranche-F): no loading or empty branch here — while the fetch is in
+              // flight, and on any error, the user sees a blank white screen. Needs a
+              // spinner, an empty state and a retry affordance.
               if (products.isNotEmpty)
                 Expanded(child: buildSection(products)),
             ],

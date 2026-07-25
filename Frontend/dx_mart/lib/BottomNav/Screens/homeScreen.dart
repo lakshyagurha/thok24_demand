@@ -27,6 +27,9 @@ import '../../utils/language_provider.dart';
 Map<String, dynamic> _productCardData(Product p, String lang) => {
       'id': p.id,
       'name': p.localizedName(lang),
+      // Without this the product page's CATEGORY_ID stays empty and its
+      // "similar products" section is always blank when opened from here.
+      'main_category_id': p.mainCategoryId,
       'images': p.images,
       'variants': [
         for (final v in p.variants)

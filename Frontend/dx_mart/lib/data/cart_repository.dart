@@ -43,11 +43,16 @@ class CartRepository {
     int quantity = 1,
     String imagePath = '',
   }) async {
-    final existing = await Db.client
+    // `variant_id` is nullable in the schema and this parameter is `int?`, so the filter
+    // has to branch. The previous `variantId as Object` threw a TypeError for any product
+    // without a numeric variant, which surfaced as a generic "Something went wrong!".
+    final match = Db.client
         .from('cart_items')
         .select('id, quantity')
-        .eq('product_id', productId)
-        .eq('variant_id', variantId as Object)
+        .eq('product_id', productId);
+    final existing = await (variantId == null
+            ? match.isFilter('variant_id', null)
+            : match.eq('variant_id', variantId))
         .maybeSingle();
 
     if (existing != null) {

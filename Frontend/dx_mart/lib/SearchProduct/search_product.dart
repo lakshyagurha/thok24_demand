@@ -1,7 +1,6 @@
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../BottomNav/Screens/cartScreen.dart';
@@ -28,7 +27,6 @@ class _SearchProductState extends State<SearchProduct> {
   String currentSearchTerm = "";
   bool hasSearched = false;
 
-  bool _isLoadingProducts = false;
   List<Map<String, dynamic>> cartList = [];
 
 

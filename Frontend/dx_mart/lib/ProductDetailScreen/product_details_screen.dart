@@ -1,11 +1,9 @@
-import 'dart:convert';
 import 'package:dotted_line/dotted_line.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 import 'package:provider/provider.dart';
 import '../BottomNav/Screens/cartScreen.dart';
@@ -52,7 +50,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     super.initState();
     _localProduct = Map<String, dynamic>.from(widget.product);
     fetchCartQuantities();
-    CATEGORY_ID = widget.product['main_category_id'] ?? '';
+    // Coerce rather than cast: callers supply this key as an int (`Product.toCardMap`,
+    // the voice bot) and as a String elsewhere, and an implicit int -> String cast here
+    // threw in initState, killing the whole screen.
+    CATEGORY_ID = widget.product['main_category_id']?.toString() ?? '';
     fetchDeliveryTime();
     _fetchCoupons();
     fetchAllProductsFromCategory();
@@ -1229,7 +1230,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                           padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 2.h),
                                           child: Center(
                                             child: Text(
-                                              'Valid ${coupon['expri_date']}',
+                                              'Valid ${coupon['expiry_date']}',
                                               style: TextStyle(
                                                 fontSize: 10.sp,
                                                 fontWeight: FontWeight.w500,
