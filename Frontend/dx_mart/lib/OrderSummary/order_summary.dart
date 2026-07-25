@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../core/supabase.dart';
 import '../data/models.dart';
 import '../utils/colors.dart';
+import '../CustomWidgets/product_image.dart';
 
 /// Read-only view of one order.
 ///
@@ -266,16 +267,12 @@ class _OrderSummaryState extends State<OrderSummary> {
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(8.r),
                                       child: Center(
-                                        child: Image.network(
-                                          item.imageUrl,
+                                        child: ProductImage(
+                                          path: item.imageUrl,
                                           width: 44.w,
                                           height: 44.h,
-                                          fit: BoxFit.contain,
-                                          errorBuilder: (context, error, stackTrace) => Icon(
-                                            Icons.image_not_supported_outlined,
-                                            size: 20.sp,
-                                            color: AppColors.neutral400,
-                                          ),
+                                          errorIcon:
+                                              Icons.image_not_supported_outlined,
                                         ),
                                       ),
                                     ),

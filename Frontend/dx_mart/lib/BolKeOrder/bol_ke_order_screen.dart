@@ -18,6 +18,7 @@ import 'widgets/bahi_khata_bill.dart';
 import 'widgets/ramu_bhai_avatar.dart';
 import '../ProductDetailScreen/product_details_screen.dart';
 import '../Checkout/checkout_screen.dart';
+import '../CustomWidgets/product_image.dart';
 
 class BolKeOrderScreen extends StatefulWidget {
   const BolKeOrderScreen({Key? key}) : super(key: key);
@@ -645,19 +646,12 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                                         ClipRRect(
                                           borderRadius: BorderRadius.circular(6.r),
                                           child: imageUrl.isNotEmpty
-                                              ? Image.network(
-                                                  imageUrl,
+                                              ? ProductImage(
+                                                  path: imageUrl,
                                                   width: 36.w,
                                                   height: 36.w,
                                                   fit: BoxFit.cover,
-                                                  errorBuilder: (context, error, stackTrace) {
-                                                    return Container(
-                                                      width: 36.w,
-                                                      height: 36.w,
-                                                      color: Colors.grey.shade200,
-                                                      child: Icon(Icons.shopping_basket, size: 18.sp, color: Colors.grey),
-                                                    );
-                                                  },
+                                                  errorIcon: Icons.shopping_basket,
                                                 )
                                               : Container(
                                                   width: 36.w,

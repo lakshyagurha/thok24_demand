@@ -4,11 +4,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../ProductDetailScreen/product_details_screen.dart';
 import '../core/supabase.dart';
-import '../data/cart_repository.dart';
 import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import '../utils/responsive_helper.dart';
 import 'cart_provider.dart';
+import 'product_image.dart';
+import 'wishlist_provider.dart';
 import '../utils/language_provider.dart';
 
 class ProductCard extends StatefulWidget {
@@ -40,48 +41,36 @@ class ProductCard extends StatefulWidget {
 class _ProductCardState extends State<ProductCard> {
   String deliveryTime = '17 MIN';
   bool isLoading = false;
-  bool isWishlisted = false;
   bool isWishlistLoading = false;
 
   @override
   void initState() {
     super.initState();
+    // Both of these used to be a network round trip PER CARD — a 30-product grid opened
+    // with ~60 requests. `settings()` is now memoized process-wide and the wishlist is
+    // one shared set, so a whole grid costs at most one of each.
     fetchDeliveryTime();
-    checkWishlistStatus();
+    context.read<WishlistProvider>().ensureLoaded();
   }
 
   int get _productId => int.tryParse('${widget.product['id']}') ?? 0;
 
-  Future<void> checkWishlistStatus() async {
-    if (!Db.isSignedIn) return;
-
-    setState(() => isWishlistLoading = true);
-    try {
-      // No user_id in the query: RLS scopes the lookup to the signed-in user.
-      final inList = await const WishlistRepository().contains(_productId);
-      if (!mounted) return;
-      setState(() => isWishlisted = inList);
-    } catch (e) {
-      debugPrint('Error checking wishlist status: $e');
-    } finally {
-      if (mounted) setState(() => isWishlistLoading = false);
-    }
-  }
+  bool get isWishlisted => context.watch<WishlistProvider>().contains(_productId);
 
   Future<void> toggleWishlist() async {
     if (!Db.isSignedIn) {
       _showToastMessage('Please sign in to use your wishlist.');
       return;
     }
+    if (isWishlistLoading) return;
 
     setState(() => isWishlistLoading = true);
     try {
-      final nowWishlisted = await const WishlistRepository().toggle(_productId);
-      if (!mounted) return;
-      setState(() => isWishlisted = nowWishlisted);
+      await context.read<WishlistProvider>().toggle(_productId);
       widget.onWishlistUpdated?.call();
     } catch (e) {
       debugPrint('Error toggling wishlist: $e');
+      _showToastMessage('Could not update your wishlist. Please try again.');
     } finally {
       if (mounted) setState(() => isWishlistLoading = false);
     }
@@ -89,7 +78,8 @@ class _ProductCardState extends State<ProductCard> {
 
   Future<void> fetchDeliveryTime() async {
     try {
-      // Was its own endpoint and its own single-row table; now one app_settings key.
+      // Was its own endpoint and its own single-row table; now one app_settings key,
+      // served from CatalogRepository's process-wide cache.
       final settings = await const CatalogRepository().settings();
       final time = settings['delivery_time'];
       if (!mounted) return;
@@ -112,9 +102,6 @@ class _ProductCardState extends State<ProductCard> {
     );
   }
 
-  /// [imagePath] is the STORED path (e.g. `uploads/x.png`), not a built URL. The old
-  /// backend wrote a full URL with the serving host baked in, which is why existing rows
-  /// contain localhost and 192.168.31.10.
   /// Applies a relative change to this product's line.
   ///
   /// All three of add / increment / decrement funnel through
@@ -311,30 +298,22 @@ class _ProductCardState extends State<ProductCard> {
                                               color: AppColors.backgroundColor,
                                               borderRadius: BorderRadius.circular(10.r),
                                             ),
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(12.r),
-                                              child: Center(
-                                                child: Image.network(
-                                                  Db.imageUrl(
-                                                      '${widget.product['images'][0]}'),
-                                                  width: ResponsiveHelper.getResponsiveWidth(context,
-                                                    mobile: 40.w,
-                                                    tablet: 50.w,
-                                                    desktop: 60.w,
-                                                  ),
-                                                  height: ResponsiveHelper.getResponsiveHeight(context,
-                                                    mobile: 40.h,
-                                                    tablet: 50.h,
-                                                    desktop: 60.h,
-                                                  ),
-                                                  fit: BoxFit.contain,
-                                                  errorBuilder: (_, __, ___) =>
-                                                      Icon(Icons.image, size: ResponsiveHelper.getResponsiveFontSize(context,
-                                                        mobile: 24.sp,
-                                                        tablet: 28.sp,
-                                                        desktop: 32.sp,
-                                                      )),
+                                            child: Center(
+                                              child: ProductImage(
+                                                path:
+                                                    '${widget.product['images'][0]}',
+                                                width: ResponsiveHelper.getResponsiveWidth(context,
+                                                  mobile: 40.w,
+                                                  tablet: 50.w,
+                                                  desktop: 60.w,
                                                 ),
+                                                height: ResponsiveHelper.getResponsiveHeight(context,
+                                                  mobile: 40.h,
+                                                  tablet: 50.h,
+                                                  desktop: 60.h,
+                                                ),
+                                                borderRadius:
+                                                    BorderRadius.circular(12.r),
                                               ),
                                             ),
                                           ),
@@ -679,13 +658,12 @@ class _ProductCardState extends State<ProductCard> {
                             child: Padding(
                               padding: EdgeInsets.all(8.w),
                               child: Center(
-                                child: Image.network(
-                                  Db.imageUrl(productImage),
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) => Image.asset(
-                                    "assets/images/placeholder_product_card.png",
-                                    fit: BoxFit.contain,
-                                  ),
+                                // Bounded to the card width so a 1500px source photo is
+                                // not decoded at full resolution for a thumbnail.
+                                child: ProductImage(
+                                  path: productImage,
+                                  width: (widget.height ?? 216.w),
+                                  height: (widget.height ?? 216.w),
                                 ),
                               ),
                             ),

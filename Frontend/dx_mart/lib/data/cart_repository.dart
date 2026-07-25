@@ -185,6 +185,16 @@ class WishlistRepository {
     return row != null;
   }
 
+  /// Every wishlisted product id in one request.
+  ///
+  /// [contains] called per product card meant one round trip per card — 30 requests to
+  /// draw one category grid. This is the whole set in a single query; a wishlist is a
+  /// handful of ids, so it costs nothing to hold.
+  Future<Set<int>> productIds() async {
+    final rows = await Db.client.from('wishlist').select('product_id');
+    return rows.map((r) => r['product_id'] as int).toSet();
+  }
+
   Future<void> add(int productId) async {
     // UNIQUE (user_id, product_id) makes a double-tap a no-op rather than a duplicate.
     await Db.client.from('wishlist').upsert(

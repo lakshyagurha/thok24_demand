@@ -7,6 +7,7 @@ import '../../data/catalog_repository.dart';
 import '../../data/models.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
+import '../../CustomWidgets/product_image.dart';
 
 class CategoryScreen extends StatefulWidget {
   const CategoryScreen({super.key});
@@ -173,23 +174,13 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(10.r),
                     child: imageUrl.isNotEmpty
-                        ? Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          Icon(Icons.category, size: 30.sp, color: AppColors.primaryColor),
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Center(
-                          child: CircularProgressIndicator(
-                            value: loadingProgress.expectedTotalBytes != null
-                                ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                                : null,
-                            color: AppColors.primaryColor,
-                          ),
-                        );
-                      },
-                    )
+                        ? ProductImage(
+                            path: imageUrl,
+                            width: 60.w,
+                            height: 60.w,
+                            fit: BoxFit.cover,
+                            errorIcon: Icons.category,
+                          )
                         : Icon(Icons.category, size: 30.sp, color: AppColors.primaryColor),
                   ),
                 ),

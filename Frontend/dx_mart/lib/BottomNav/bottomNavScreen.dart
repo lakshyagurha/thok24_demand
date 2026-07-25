@@ -20,13 +20,25 @@ class BottomNavScreen extends StatefulWidget {
 class _BottomNavScreenState extends State<BottomNavScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = [
-    HomeScreen(),
-    CategoryScreen(),
-    const BolKeOrderScreen(), // Central Voice tab
-    OrderScreen(),
-    WishlistScreen(),
-  ];
+  /// Tabs are built the first time they are opened, not at launch.
+  ///
+  /// `IndexedStack` builds **every** child immediately, so a cold start used to fire
+  /// HomeScreen's six-way `Future.wait`, CategoryScreen's fetch, BolKeOrder's history,
+  /// OrderScreen's order list and WishlistScreen's load all at once — a dozen-plus
+  /// requests before the user had touched anything, on the connection where it matters
+  /// most, and five subtrees resident forever on a 1 GB device.
+  ///
+  /// IndexedStack is still what renders them, so a tab that HAS been visited keeps its
+  /// scroll position and state; unvisited ones are just an empty box until first use.
+  final Set<int> _visited = {0};
+
+  Widget _screenAt(int index) => switch (index) {
+        0 => HomeScreen(),
+        1 => CategoryScreen(),
+        2 => const BolKeOrderScreen(), // Central Voice tab
+        3 => OrderScreen(),
+        _ => WishlistScreen(),
+      };
 
   final List<String> _iconPaths = [
     'assets/svg/home.svg',
@@ -85,7 +97,12 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
       backgroundColor: AppColors.backgroundColor,
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: List.generate(
+          5,
+          (i) => _visited.contains(i)
+              ? _screenAt(i)
+              : const SizedBox.shrink(),
+        ),
       ),
       bottomNavigationBar: Stack(
         children: [
@@ -147,6 +164,7 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
       child: GestureDetector(
         onTap: () {
           setState(() {
+            _visited.add(index);
             _currentIndex = index;
           });
         },

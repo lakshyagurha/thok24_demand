@@ -9,6 +9,7 @@ import '../../data/models.dart';
 import '../../data/order_repository.dart';
 import '../../utils/colors.dart';
 import '../bottomNavScreen.dart';
+import '../../CustomWidgets/product_image.dart';
 
 class OrderScreen extends StatefulWidget {
   const OrderScreen({super.key});
@@ -88,8 +89,9 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
 
   void _showRatingBottomSheet(String orderId) {
     int rating = 0;
-    TextEditingController commentController = TextEditingController();
+    final commentController = TextEditingController();
 
+    // Created per sheet, so it has to be disposed when the sheet closes.
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -204,7 +206,7 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
           },
         );
       },
-    );
+    ).whenComplete(commentController.dispose);
   }
 
   Widget _buildStatusBadge(String status) {
@@ -850,7 +852,7 @@ class _Thumb extends StatelessWidget {
           ? const Icon(Icons.image_not_supported_outlined)
           : Padding(
         padding: const EdgeInsets.all(8.0),
-        child: Image.network(url, fit: BoxFit.contain, errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined)),
+        child: ProductImage(path: url, width: 40.w, height: 40.w),
       ),
     );
   }

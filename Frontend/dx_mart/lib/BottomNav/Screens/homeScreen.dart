@@ -18,6 +18,7 @@ import 'profileScreen.dart';
 import 'package:provider/provider.dart';
 import '../../CustomWidgets/cart_provider.dart';
 import '../../utils/language_provider.dart';
+import '../../CustomWidgets/product_image.dart';
 
 /// Shapes a [Product] into the map [ProductCard] still reads.
 ///
@@ -491,15 +492,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                         ),
                                         child: ClipRRect(
                                           borderRadius: BorderRadius.circular(16.r),
-                                          child: Image.network(
-                                            Db.imageUrl(item['banner_image'] as String?),
+                                          child: ProductImage(
+                                            path: item['banner_image'] as String?,
                                             fit: BoxFit.cover,
                                             width: double.infinity,
                                             height: 130.h,
-                                            errorBuilder: (context, error, stackTrace) => Container(
-                                              color: Colors.grey.shade200,
-                                              child: Icon(Icons.error, color: Colors.grey),
-                                            ),
                                           ),
                                         ),
                                       ),
@@ -625,10 +622,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 padding: EdgeInsets.all(6.w),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(10.r),
-                                  child: Image.network(
-                                    item.imageUrl,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (_, __, ___) => Icon(Icons.image_not_supported, color: Color(0xFF1B6E4A)),
+                                  child: ProductImage(
+                                    path: item.imageUrl,
+                                    width: 64.w,
+                                    height: 64.w,
+                                    errorIcon: Icons.image_not_supported,
                                   ),
                                 ),
                               ),

@@ -11,6 +11,7 @@ import '../utils/colors.dart';
 import 'package:provider/provider.dart';
 import '../utils/language_provider.dart';
 import '../CustomWidgets/cart_provider.dart';
+import '../CustomWidgets/product_image.dart';
 
 /// Shapes a [Product] into the map [ProductCard] still reads. Transitional — see the
 /// identical note in `homeScreen.dart`.
@@ -149,12 +150,10 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
 
   Widget _buildCategoryImage(String? imageUrl) {
     if (imageUrl != null && imageUrl.isNotEmpty) {
-      return Image.network(
-        imageUrl,
+      return ProductImage(
+        path: imageUrl,
         width: 45.w,
         height: 45.h,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _buildDefaultImage(),
       );
     } else {
       return _buildDefaultImage();

@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../Auth/loginScreen.dart';
 import '../CustomWidgets/cart_provider.dart';
+import '../CustomWidgets/wishlist_provider.dart';
+import '../data/catalog_repository.dart';
 import 'supabase.dart';
 
 /// Set on [MaterialApp] so the session watcher can route from outside the widget tree.
@@ -27,8 +29,15 @@ const _userScopedPrefKeys = <String>[
 /// Sign-out used to clear only the Supabase session and the in-memory cart, and only
 /// from the Profile screen — so a session that expired, was revoked, or failed to refresh
 /// left all of this behind.
-Future<void> clearLocalSessionState(CartProvider? cart) async {
+Future<void> clearLocalSessionState(
+  CartProvider? cart, [
+  WishlistProvider? wishlist,
+]) async {
   cart?.clearCart();
+  wishlist?.clear();
+  // Global settings are not user-scoped, but dropping them costs one request and avoids
+  // any chance of a stale value outliving a session.
+  CatalogRepository.invalidateSettings();
   final prefs = await SharedPreferences.getInstance();
   for (final key in _userScopedPrefKeys) {
     await prefs.remove(key);
@@ -94,6 +103,7 @@ class _SessionWatcherState extends State<SessionWatcher> {
           // quantities and row ids are the old user's until something reloads them.
           _redirecting = false;
           context.read<CartProvider>().clearCart();
+          context.read<WishlistProvider>().clear();
         default:
           break;
       }
@@ -112,6 +122,7 @@ class _SessionWatcherState extends State<SessionWatcher> {
 
     await clearLocalSessionState(
       mounted ? context.read<CartProvider>() : null,
+      mounted ? context.read<WishlistProvider>() : null,
     );
 
     // pushAndRemoveUntil, not pushReplacement: the authenticated shell must not stay on

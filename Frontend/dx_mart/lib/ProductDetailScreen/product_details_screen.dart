@@ -16,6 +16,7 @@ import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
 import '../utils/colors.dart';
 import '../utils/language_provider.dart';
+import '../CustomWidgets/product_image.dart';
 
 class ProductDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> product;
@@ -56,6 +57,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     fetchDeliveryTime();
     _fetchCoupons();
     fetchAllProductsFromCategory();
+  }
+
+  @override
+  void dispose() {
+    // This file had no dispose() at all, so every product page visit leaked a
+    // PageController and its ticker.
+    _pageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -191,10 +200,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
   Future<void> fetchAllProductsFromCategory() async {
     setState(() => products = []);
+    final categoryId = int.tryParse(CATEGORY_ID) ?? 0;
+    if (categoryId == 0) return;
     try {
-      final categoryId = int.tryParse(CATEGORY_ID) ?? 0;
-      final result =
-          await const CatalogRepository().productsByCategory(categoryId);
+      // `similarProducts` rather than the unbounded `productsByCategory`: it is limited
+      // to 10 and excludes the product already on screen. It existed and had no callers,
+      // while this screen pulled the whole category to render six cards.
+      final result = await const CatalogRepository()
+          .similarProducts(int.tryParse('${_localProduct['id']}') ?? 0, categoryId);
       if (!mounted) return;
       setState(() => products = result.map((p) => p.toCardMap()).toList());
     } catch (e) {
@@ -243,8 +256,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cartProvider = Provider.of<CartProvider>(context);
-
     final productId = _localProduct['id'].toString();
     final List variants = _localProduct['variants'] ?? [];
     // Guard: ensure selectedVariantIndex is in bounds after language re-fetch
@@ -254,11 +265,17 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     final variantId = variants.isNotEmpty
         ? variants[selectedVariantIndex]['id'].toString()
         : '';
-    final currentQuantity = cartProvider.getQuantity(
-      '',
-      productId,
-      variantId,
+
+    // `Provider.of<CartProvider>(context)` used to sit at the top of this 1300-line
+    // build, so ANY cart change anywhere — including from the six ProductCards embedded
+    // further down — rebuilt the entire page: the PageView, the variant list, the coupon
+    // carousel and the similar-products grid. These two selects depend on the two
+    // numbers actually rendered, so the page rebuilds only when one of them moves.
+    final currentQuantity = context.select<CartProvider, int>(
+      (c) => c.getQuantity('', productId, variantId),
     );
+    final cartItemCount =
+        context.select<CartProvider, int>((c) => c.getUniqueItemsCount());
 
     final List images = _localProduct['images'] ?? [];
     final String productName = _localProduct['name'] ?? '';
@@ -309,30 +326,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           controller: _pageController,
                           itemCount: images.length,
                           itemBuilder: (context, index) {
-                            return Image.network(
-                              Db.imageUrl('${images[index]}'),
-                              fit: BoxFit.contain,
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) return child;
-                                return Center(
-                                  child: CircularProgressIndicator(
-                                    value: loadingProgress.expectedTotalBytes != null
-                                        ? loadingProgress.cumulativeBytesLoaded /
-                                            loadingProgress.expectedTotalBytes!
-                                        : null,
-                                  ),
-                                );
-                              },
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  color: Colors.grey.shade100,
-                                  child: Icon(
-                                    Icons.broken_image,
-                                    size: 50.sp,
-                                    color: Colors.grey.shade400,
-                                  ),
-                                );
-                              },
+                            return ProductImage(
+                              path: '${images[index]}',
+                              width: double.infinity,
+                              height: 330.h,
                             );
                           },
                         ),
@@ -968,14 +965,11 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(8.r),
                               child: Center(
-                                child: Image.network(
-                                  Db.imageUrl(
-                                      '${_localProduct['images'][0]}'),
+                                child: ProductImage(
+                                  path: '${_localProduct['images'][0]}',
                                   width: 30.w,
                                   height: 30.h,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (_, __, ___) =>
-                                      Icon(Icons.store, size: 20.sp, color: Colors.grey),
+                                  errorIcon: Icons.store,
                                 ),
                               ),
                             ),
@@ -1464,16 +1458,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
           ),
 
           // Floating View Cart Banner (sitting just above checkout bar)
-          if (cartProvider.getUniqueItemsCount() > 0)
+          if (cartItemCount > 0)
             AnimatedPositioned(
               duration: const Duration(milliseconds: 300),
               curve: Curves.slowMiddle,
-              bottom: cartProvider.getUniqueItemsCount() > 0 ? 80.h : -100.h,
+              bottom: cartItemCount > 0 ? 80.h : -100.h,
               left: 80.w,
               right: 80.w,
               child: AnimatedOpacity(
                 duration: const Duration(milliseconds: 300),
-                opacity: cartProvider.getUniqueItemsCount() > 0 ? 1.0 : 0.0,
+                opacity: cartItemCount > 0 ? 1.0 : 0.0,
                 child: InkWell(
                   onTap: () async {
                     await Navigator.push(context, MaterialPageRoute(builder: (context) => CartScreen()));
@@ -1507,7 +1501,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             ),
                             child: Center(
                               child: Text(
-                                cartProvider.getUniqueItemsCount().toString(),
+                                cartItemCount.toString(),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12.sp,

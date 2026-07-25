@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'CustomWidgets/cart_provider.dart';
+import 'CustomWidgets/wishlist_provider.dart';
 import 'SplashScreen/splashScreen.dart';
 import 'core/session.dart';
 import 'core/supabase.dart';
@@ -87,6 +88,9 @@ class MyApp extends StatelessWidget {
         return MultiProvider(
           providers: [
             ChangeNotifierProvider(create: (_) => CartProvider()),
+            // One shared set of wishlisted product ids. ProductCard used to query
+            // membership per card, so a grid cost one request per product.
+            ChangeNotifierProvider(create: (_) => WishlistProvider()),
             ChangeNotifierProvider(create: (_) => LanguageProvider()),
           ],
           child: MaterialApp(

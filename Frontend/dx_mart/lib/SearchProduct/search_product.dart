@@ -151,6 +151,7 @@ class _SearchProductState extends State<SearchProduct> {
   @override
   void dispose() {
     _speech.stop();
+    searchController.dispose();
     super.dispose();
   }
 

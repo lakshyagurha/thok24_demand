@@ -13,6 +13,7 @@ import '../../data/cart_repository.dart';
 import '../../data/catalog_repository.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
+import '../../CustomWidgets/product_image.dart';
 
 class CartScreen extends StatefulWidget {
   @override
@@ -35,7 +36,7 @@ class _CartScreenState extends State<CartScreen> {
   List everydayEssentialsList = [];
   List<Map<String, dynamic>> _couponList = [];
 
-  TextEditingController _couponController = TextEditingController();
+  final TextEditingController _couponController = TextEditingController();
   bool _isApplyingCoupon = false;
 
 
@@ -97,6 +98,12 @@ class _CartScreenState extends State<CartScreen> {
     fetchChargeSettings();
     fetchProductsByType('Everyday Essentials');
     _fetchCoupons();
+  }
+
+  @override
+  void dispose() {
+    _couponController.dispose();
+    super.dispose();
   }
 
   @override
@@ -770,14 +777,11 @@ class _CartScreenState extends State<CartScreen> {
                                                         borderRadius: BorderRadius.circular(9.r),
                                                         child: Padding(
                                                           padding: EdgeInsets.all(4.w),
-                                                          child: Image.network(
-                                                            imageUlr,
-                                                            fit: BoxFit.contain,
-                                                            errorBuilder: (_, __, ___) => Icon(
-                                                              Icons.image,
-                                                              size: 24.sp,
-                                                              color: AppColors.neutral400,
-                                                            ),
+                                                          child: ProductImage(
+                                                            path: imageUlr,
+                                                            width: 55.h,
+                                                            height: 55.h,
+                                                            errorIcon: Icons.image,
                                                           ),
                                                         ),
                                                       ),
@@ -1211,14 +1215,11 @@ class _CartScreenState extends State<CartScreen> {
                                                           ),
                                                           child: Padding(
                                                             padding: const EdgeInsets.all(4.0),
-                                                            child: Image.network(
-                                                              Db.imageUrl('${product['images'][0]}'),
-                                                              fit: BoxFit.contain,
-                                                              errorBuilder: (_, __, ___) => Icon(
-                                                                Icons.image,
-                                                                size: 16.sp,
-                                                                color: AppColors.neutral400,
-                                                              ),
+                                                            child: ProductImage(
+                                                              path: '${product['images'][0]}',
+                                                              width: 40.w,
+                                                              height: 40.w,
+                                                              errorIcon: Icons.image,
                                                             ),
                                                           ),
                                                         ),
