@@ -56,6 +56,12 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
   List<Product> products = [];
   bool _isLoadingProducts = false;
   bool _isLoadingCategories = true;
+
+  /// Whether the last load FAILED, as distinct from returning nothing. Both catches here
+  /// used to just set the list to [] with no logging, so a dropped connection was shown
+  /// to the shopper as "no products found" — telling them the shop is empty when it is
+  /// their network that died, and giving them no reason to retry.
+  bool _productsFailed = false;
   List<Map<String, dynamic>> cartList = [];
 
   @override
@@ -120,6 +126,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
         _isLoadingCategories = false;
       });
     } catch (e) {
+      debugPrint('categories load failed: $e');
       if (!mounted) return;
       setState(() {
         categories = [];
@@ -131,6 +138,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
   Future<void> fetchProductsByCategory(int categoryId) async {
     setState(() {
       _isLoadingProducts = true;
+      _productsFailed = false;
       products = [];
     });
 
@@ -139,8 +147,12 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
       if (!mounted) return;
       setState(() => products = rows);
     } catch (e) {
+      debugPrint('category products load failed: $e');
       if (!mounted) return;
-      setState(() => products = []);
+      setState(() {
+        products = [];
+        _productsFailed = true;
+      });
     } finally {
       if (mounted) {
         setState(() => _isLoadingProducts = false);
@@ -365,12 +377,36 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.inventory_2_outlined, size: 50.sp, color: Colors.grey),
-                                  SizedBox(height: 10.h),
-                                  Text(
-                                    Provider.of<LanguageProvider>(context).translate('no_products_found'),
-                                    style: TextStyle(fontSize: 14.sp),
+                                  Icon(
+                                    _productsFailed
+                                        ? Icons.wifi_off_rounded
+                                        : Icons.inventory_2_outlined,
+                                    size: 50.sp,
+                                    color: Colors.grey,
                                   ),
+                                  SizedBox(height: 10.h),
+                                  Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 24.w),
+                                    child: Text(
+                                      Provider.of<LanguageProvider>(context).translate(
+                                        _productsFailed
+                                            ? 'network_error_retry'
+                                            : 'no_products_found',
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(fontSize: 14.sp),
+                                    ),
+                                  ),
+                                  if (_productsFailed)
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          fetchProductsByCategory(selectedCategoryId),
+                                      icon: const Icon(Icons.refresh),
+                                      label: Text(
+                                        Provider.of<LanguageProvider>(context)
+                                            .translate('retry'),
+                                      ),
+                                    ),
                                 ],
                               ),
                             )

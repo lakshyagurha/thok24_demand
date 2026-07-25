@@ -683,7 +683,16 @@ class _HomeScreenState extends State<HomeScreen> {
             left: 0,
             right: 0,
             child: Container(
-              padding: EdgeInsets.only(left: 16.w,right: 16.w,top: 35.h,bottom: 16.w),
+              // Real status bar inset, not a hardcoded 35.h. The fixed value put the
+              // sticky search bar under the system clock on this emulator (and on any
+              // device with a taller status bar or a notch); categoryScreen and
+              // categoryViewScreen already did this correctly.
+              padding: EdgeInsets.only(
+                left: 16.w,
+                right: 16.w,
+                top: MediaQuery.of(context).padding.top + 8.h,
+                bottom: 16.w,
+              ),
               decoration: BoxDecoration(
                 color: Color(0xFFD2E5DC), // matching our calming sage green header
                 borderRadius: BorderRadius.only(

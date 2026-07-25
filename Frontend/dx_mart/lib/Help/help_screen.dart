@@ -110,7 +110,7 @@ class _HelpScreenState extends State<HelpScreen> {
       backgroundColor: AppColors.backgroundColor,
       body: Column(
         children: [
-          SizedBox(height: 17.h),
+          SizedBox(height: MediaQuery.of(context).padding.top),
           // Header
           Container(
             width: double.infinity,

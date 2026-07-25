@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -8,6 +9,7 @@ import '../BottomNav/bottomNavScreen.dart';
 import '../CustomWidgets/customButton.dart';
 import '../CustomWidgets/customTextFiledWidgets.dart';
 import '../utils/colors.dart';
+import '../utils/language_provider.dart';
 
 /// First-run "where are you" step.
 ///
@@ -60,6 +62,20 @@ class _LocationScreenState extends State<LocationScreen> {
     );
   }
 
+  /// Shows a recoverable problem and reveals the manual entry fields.
+  ///
+  /// Guarded, because everything that calls it runs after an await — and
+  /// `Geolocator.getCurrentPosition` has a 15-SECOND time limit, which is a long window
+  /// for the user to have backed out of this screen. Every one of these setState calls
+  /// was previously unguarded.
+  void _failSoftly(String message) {
+    if (!mounted) return;
+    setState(() {
+      errorMessage = message;
+      showManualEntry = true;
+    });
+  }
+
   Future<void> useCurrentLocation() async {
     setState(() {
       isLoading = true;
@@ -68,11 +84,8 @@ class _LocationScreenState extends State<LocationScreen> {
 
     try {
       if (!await Geolocator.isLocationServiceEnabled()) {
-        setState(() {
-          errorMessage = 'Location is turned off. Enable it in your phone settings, '
-              'or enter your area manually below.';
-          showManualEntry = true;
-        });
+        _failSoftly('Location is turned off. Enable it in your phone settings, '
+            'or enter your area manually below.');
         return;
       }
 
@@ -82,13 +95,10 @@ class _LocationScreenState extends State<LocationScreen> {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        setState(() {
-          errorMessage = permission == LocationPermission.deniedForever
-              ? 'Location permission is blocked. Enable it from app settings, '
-                  'or enter your area manually below.'
-              : 'Location permission was denied. Enter your area manually below.';
-          showManualEntry = true;
-        });
+        _failSoftly(permission == LocationPermission.deniedForever
+            ? 'Location permission is blocked. Enable it from app settings, '
+                'or enter your area manually below.'
+            : 'Location permission was denied. Enter your area manually below.');
         return;
       }
 
@@ -104,11 +114,8 @@ class _LocationScreenState extends State<LocationScreen> {
         position.longitude,
       );
       if (placemarks.isEmpty) {
-        setState(() {
-          errorMessage = "Couldn't work out your area from GPS. "
-              'Enter it manually below.';
-          showManualEntry = true;
-        });
+        _failSoftly("Couldn't work out your area from GPS. "
+            'Enter it manually below.');
         return;
       }
 
@@ -125,11 +132,8 @@ class _LocationScreenState extends State<LocationScreen> {
           : (p.administrativeArea ?? '');
 
       if (city.isEmpty && district.isEmpty) {
-        setState(() {
-          errorMessage = "Couldn't work out your area from GPS. "
-              'Enter it manually below.';
-          showManualEntry = true;
-        });
+        _failSoftly("Couldn't work out your area from GPS. "
+            'Enter it manually below.');
         return;
       }
 
@@ -139,11 +143,8 @@ class _LocationScreenState extends State<LocationScreen> {
       );
     } catch (e) {
       debugPrint('Location detection failed: $e');
-      setState(() {
-        errorMessage = 'Something went wrong getting your location. '
-            'Enter your area manually below.';
-        showManualEntry = true;
-      });
+      _failSoftly('Something went wrong getting your location. '
+          'Enter your area manually below.');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -164,6 +165,9 @@ class _LocationScreenState extends State<LocationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // This is the FIRST screen a new user sees and it was 100% hardcoded English, in an
+    // app whose whole premise is Hindi-first.
+    final lang = Provider.of<LanguageProvider>(context);
     return Scaffold(
       backgroundColor: Colors.white,
       body: Padding(
@@ -184,7 +188,7 @@ class _LocationScreenState extends State<LocationScreen> {
               SizedBox(height: 20.h),
               Center(
                 child: Text(
-                  'Select Your Location',
+                  lang.translate('select_your_location'),
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 20.sp,
@@ -195,7 +199,7 @@ class _LocationScreenState extends State<LocationScreen> {
               SizedBox(height: 10.h),
               Center(
                 child: Text(
-                  'Switch on your location to stay in tune with\nwhat’s happening in your area',
+                  lang.translate('location_subtitle'),
                   style: TextStyle(
                     color: Colors.grey.shade600,
                     fontSize: 12.sp,
@@ -207,7 +211,9 @@ class _LocationScreenState extends State<LocationScreen> {
               SizedBox(height: 36.h),
 
               CustomButton(
-                text: isLoading ? 'Detecting...' : 'Use My Current Location',
+                text: isLoading
+                    ? lang.translate('detecting_location')
+                    : lang.translate('use_current_location'),
                 onPressed: () {
                   if (isLoading) return;
                   useCurrentLocation();
@@ -230,7 +236,7 @@ class _LocationScreenState extends State<LocationScreen> {
                         ? null
                         : () => setState(() => showManualEntry = true),
                     child: Text(
-                      'Enter location manually instead',
+                      lang.translate('enter_location_manually'),
                       style: TextStyle(
                         color: AppColors.primaryColor,
                         fontWeight: FontWeight.w600,
@@ -244,7 +250,7 @@ class _LocationScreenState extends State<LocationScreen> {
               if (showManualEntry) ...[
                 SizedBox(height: 24.h),
                 Text(
-                  'City / Town',
+                  lang.translate('city_town'),
                   style: TextStyle(
                     fontWeight: FontWeight.w500,
                     fontSize: 14.sp,
@@ -259,7 +265,7 @@ class _LocationScreenState extends State<LocationScreen> {
                 ),
                 SizedBox(height: 16.h),
                 Text(
-                  'District (optional)',
+                  lang.translate('district_optional'),
                   style: TextStyle(
                     fontWeight: FontWeight.w500,
                     fontSize: 14.sp,
@@ -274,7 +280,7 @@ class _LocationScreenState extends State<LocationScreen> {
                 ),
                 SizedBox(height: 20.h),
                 CustomButton(
-                  text: 'Continue',
+                  text: lang.translate('continue_btn'),
                   onPressed: () {
                     if (isLoading) return;
                     submitManual();

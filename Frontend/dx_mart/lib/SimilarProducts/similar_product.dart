@@ -26,6 +26,8 @@ class SimilarProduct extends StatefulWidget {
 class _SimilarProductState extends State<SimilarProduct> {
   List products = [];
   List<Map<String, dynamic>> cartList = [];
+  bool _loading = true;
+  bool _failed = false;
 
 
   @override
@@ -53,15 +55,31 @@ class _SimilarProductState extends State<SimilarProduct> {
   /// Products fetch. Localisation is applied in the widgets via the model's
   /// localizedName(), so the language no longer travels to the server as a query param.
   Future<void> fetchAllProductsFromCategory(String id) async {
-    setState(() => products = []);
+    setState(() {
+      products = [];
+      _loading = true;
+      _failed = false;
+    });
 
     try {
       final categoryId = int.tryParse(id) ?? 0;
       final result = await const CatalogRepository().productsByCategory(categoryId);
       if (!mounted) return;
-      setState(() => products = result.map((p) => p.toCardMap()).toList());
+      setState(() {
+        products = result.map((p) => p.toCardMap()).toList();
+        _loading = false;
+      });
     } catch (e) {
-      if (mounted) setState(() => products = []);
+      debugPrint('similar products load failed: $e');
+      if (!mounted) return;
+      // Distinguished from "this category is empty": the previous code set products = []
+      // on failure and the build had no else branch at all, so a network error and an
+      // empty category both rendered as a blank white screen.
+      setState(() {
+        products = [];
+        _loading = false;
+        _failed = true;
+      });
     }
   }
 
@@ -81,11 +99,18 @@ class _SimilarProductState extends State<SimilarProduct> {
               SizedBox(height: 20.h),
 
               // ✅ Products Grid
-              // TODO(tranche-F): no loading or empty branch here — while the fetch is in
-              // flight, and on any error, the user sees a blank white screen. Needs a
-              // spinner, an empty state and a retry affordance.
-              if (products.isNotEmpty)
-                Expanded(child: buildSection(products)),
+              if (_loading)
+                const Expanded(child: Center(child: CircularProgressIndicator()))
+              else if (products.isNotEmpty)
+                Expanded(child: buildSection(products))
+              else
+                Expanded(
+                  child: _EmptyOrError(
+                    failed: _failed,
+                    onRetry: () =>
+                        fetchAllProductsFromCategory(widget.category_id),
+                  ),
+                ),
             ],
           ),
 
@@ -273,6 +298,54 @@ class _SimilarProductState extends State<SimilarProduct> {
             onCartUpdated: _refreshCart,
           );
         },
+      ),
+    );
+  }
+}
+
+/// Distinguishes "nothing here" from "we could not load it".
+///
+/// Getting this wrong is not cosmetic for this app's users: a network failure rendered
+/// as "no products" tells a shopper the shop is empty when actually their connection
+/// dropped, and gives them no reason to try again.
+class _EmptyOrError extends StatelessWidget {
+  const _EmptyOrError({required this.failed, required this.onRetry});
+
+  final bool failed;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            failed ? Icons.wifi_off_rounded : Icons.inventory_2_outlined,
+            size: 44.sp,
+            color: Colors.grey,
+          ),
+          SizedBox(height: 12.h),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 32.w),
+            child: Text(
+              failed
+                  ? lang.translate('network_error_retry')
+                  : lang.translate('no_products_found'),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14.sp, color: Colors.grey.shade700),
+            ),
+          ),
+          if (failed) ...[
+            SizedBox(height: 8.h),
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh),
+              label: Text(lang.translate('retry')),
+            ),
+          ],
+        ],
       ),
     );
   }

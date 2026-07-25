@@ -10,6 +10,8 @@ import '../../data/order_repository.dart';
 import '../../utils/colors.dart';
 import '../bottomNavScreen.dart';
 import '../../CustomWidgets/product_image.dart';
+import 'package:provider/provider.dart';
+import '../../utils/language_provider.dart';
 
 class OrderScreen extends StatefulWidget {
   const OrderScreen({super.key});
@@ -178,14 +180,20 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
                         ),
                         padding: EdgeInsets.symmetric(vertical: 14.h),
                       ),
+                      // TODO(ratings): there is no ratings table and no endpoint, so
+                      // this cannot store anything yet. It previously printed to the
+                      // debug console and then told the user "Thank you for your
+                      // rating!" — a dead end that lied about having saved it. Kept
+                      // visible but honest until a ratings backend exists.
                       onPressed: () {
-                        // Handle submit rating
                         debugPrint('Rating: $rating');
                         debugPrint('Comment: ${commentController.text}');
                         Navigator.pop(context);
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Thank you for your rating!'),
+                          const SnackBar(
+                            content: Text(
+                              'Ratings are coming soon — we could not save this yet.',
+                            ),
                           ),
                         );
                       },
@@ -214,29 +222,32 @@ class _OrderScreenState extends State<OrderScreen> with TickerProviderStateMixin
     Color textColor;
     String label = status.toUpperCase();
 
+    // Localised: this badge is the thing a shopper checks most often, and it was
+    // hardcoded English in a Hindi-first app.
+    final lang = Provider.of<LanguageProvider>(context);
     final lowerStatus = status.toLowerCase();
     if (lowerStatus.contains('delivered') || lowerStatus.contains('completed')) {
       bgColor = const Color(0xFFE8F5E9); // Light green
       textColor = const Color(0xFF2E7D32);
-      label = "DELIVERED";
+      label = lang.translate('status_delivered');
     } else if (lowerStatus.contains('cancelled') || lowerStatus.contains('canceled')) {
       bgColor = const Color(0xFFFFEBEE); // Light red
       textColor = const Color(0xFFD32F2F);
-      label = "CANCELLED";
+      label = lang.translate('status_cancelled');
     } else if (lowerStatus.contains('placed') || lowerStatus.contains('pending')) {
       bgColor = const Color(0xFFFFF3E0); // Light orange
       textColor = const Color(0xFFF57C00);
-      label = "ORDER PLACED";
+      label = lang.translate('status_placed');
     } else if (lowerStatus.contains('preparing') ||
         lowerStatus.contains('packing') ||
         lowerStatus.contains('packed')) {
       bgColor = const Color(0xFFE0F7FA); // Light cyan
       textColor = const Color(0xFF00838F);
-      label = "PREPARING";
+      label = lang.translate('status_preparing');
     } else if (lowerStatus.contains('out') || lowerStatus.contains('way')) {
       bgColor = const Color(0xFFE3F2FD); // Light blue
       textColor = const Color(0xFF1976D2);
-      label = "OUT FOR DELIVERY";
+      label = lang.translate('status_out_for_delivery');
     } else {
       bgColor = const Color(0xFFF5F5F5); // Grey
       textColor = const Color(0xFF616161);
@@ -791,11 +802,15 @@ class _OrderList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (orders.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
+      // Wrapped in a RefreshIndicator + scrollable, which it previously was NOT: on an
+      // error `orders` is empty, so this branch ran, and it returned a bare Center with
+      // no way to retry. A user whose order history failed to load had to kill the app.
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
+            SizedBox(height: 120.h),
             Icon(
               Icons.shopping_bag_outlined,
               size: 48.sp,
@@ -804,10 +819,22 @@ class _OrderList extends StatelessWidget {
             SizedBox(height: 12.h),
             Text(
               emptyText,
+              textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14.sp,
                 fontWeight: FontWeight.w500,
                 color: AppColors.neutral500,
+              ),
+            ),
+            SizedBox(height: 12.h),
+            Center(
+              child: TextButton.icon(
+                onPressed: onRefresh,
+                icon: const Icon(Icons.refresh),
+                label: Text(
+                  'Retry',
+                  style: TextStyle(fontSize: 14.sp),
+                ),
               ),
             ),
           ],

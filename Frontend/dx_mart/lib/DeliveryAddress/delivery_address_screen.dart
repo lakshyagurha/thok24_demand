@@ -242,7 +242,7 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
       backgroundColor: AppColors.backgroundColor,
       body: Column(
         children: [
-          SizedBox(height: 17.h),
+          SizedBox(height: MediaQuery.of(context).padding.top),
           _buildAppBar(),
           SizedBox(height: 17.h),
 

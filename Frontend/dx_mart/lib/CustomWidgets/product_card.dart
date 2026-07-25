@@ -502,7 +502,7 @@ class _ProductCardState extends State<ProductCard> {
     if (quantity > 0) {
       return Container(
         decoration: decoration,
-        height: 28.h, // Increased for better tap target
+        height: 36.h, // >= Material minimum-ish; the icons inside are IconButtons
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SizedBox(
@@ -567,7 +567,7 @@ class _ProductCardState extends State<ProductCard> {
         },
         child: Container(
           decoration: decoration,
-          height: 28.h, // Increased for better tap target
+          height: 36.h, // >= Material minimum-ish; the icons inside are IconButtons
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 12.w),
             child: Center(
@@ -826,8 +826,13 @@ class _ProductCardState extends State<ProductCard> {
 
         if (productQuantity > 0) {
           return Container(
-            width: 60.w,
-            height: 24.w,
+            // The stepper needs more width than the plain ADD button because it holds
+            // three controls. It only appears once the item is in the cart, by which
+            // point the shopper has already read the pack size.
+            width: 78.w,
+            // Was 24 tall — under half the 48dp Material minimum on the two controls
+            // this app exists to have people tap.
+            height: 34.w,
             decoration: BoxDecoration(
               color: AppColors.primaryColor,
               borderRadius: BorderRadius.circular(6.r),
@@ -865,8 +870,12 @@ class _ProductCardState extends State<ProductCard> {
                     }
                   },
                   child: Container(
-                    width: 18.w,
-                    height: 24.w,
+                    // Was 18x24. These are the most-tapped controls in a grocery app
+                    // and were less than half the 48dp Material minimum, which on a
+                    // cheap phone with a cracked screen is a real mis-tap generator.
+                    // The visual size is unchanged — the padding grows the hit area.
+                    width: 34.w,
+                    height: 34.w,
                     alignment: Alignment.center,
                     child: Icon(
                       productQuantity == 1 ? Icons.delete : Icons.remove,
@@ -911,8 +920,12 @@ class _ProductCardState extends State<ProductCard> {
                     }
                   },
                   child: Container(
-                    width: 18.w,
-                    height: 24.w,
+                    // Was 18x24. These are the most-tapped controls in a grocery app
+                    // and were less than half the 48dp Material minimum, which on a
+                    // cheap phone with a cracked screen is a real mis-tap generator.
+                    // The visual size is unchanged — the padding grows the hit area.
+                    width: 34.w,
+                    height: 34.w,
                     alignment: Alignment.center,
                     child: Icon(
                       Icons.add,
@@ -938,8 +951,12 @@ class _ProductCardState extends State<ProductCard> {
               }
             },
             child: Container(
+              // Width stays at the original 60: this sits beside the pack-size chip in a
+              // ~100dp grid cell, and widening it squeezed "1 kg" down to an unreadable
+              // sliver. Only the HEIGHT grows (24 -> 34), which is the dimension that was
+              // actually failing the tap-target minimum.
               width: 60.w,
-              height: 24.w,
+              height: 34.w,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(6.r),

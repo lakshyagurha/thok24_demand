@@ -490,6 +490,86 @@ class LocalizationService {
       'hi': 'पुनः प्रयास करें',
       'hn': 'Retry karein',
     },
+    // Deliberately distinct from 'no_products_found'. Several screens used to render a
+    // network failure as "no products", telling a shopper the shop was empty when it was
+    // their connection that dropped.
+    'network_error_retry': {
+      'en': 'Could not load this. Check your connection and try again.',
+      'hi': 'लोड नहीं हो सका। कनेक्शन जाँचें और फिर कोशिश करें।',
+      'hn': 'Load nahi ho paya. Connection check karke phir try karein.',
+    },
+    // Order status badges. These are the single thing a shopper looks at most in the
+    // whole app and they were hardcoded English in a Hindi-first product.
+    'status_delivered': {
+      'en': 'DELIVERED',
+      'hi': 'डिलीवर हो गया',
+      'hn': 'DELIVER HO GAYA',
+    },
+    'status_cancelled': {
+      'en': 'CANCELLED',
+      'hi': 'रद्द',
+      'hn': 'CANCEL',
+    },
+    'status_placed': {
+      'en': 'ORDER PLACED',
+      'hi': 'ऑर्डर हो गया',
+      'hn': 'ORDER HO GAYA',
+    },
+    'status_preparing': {
+      'en': 'PREPARING',
+      'hi': 'तैयार हो रहा है',
+      'hn': 'TAIYAR HO RAHA HAI',
+    },
+    'status_out_for_delivery': {
+      'en': 'OUT FOR DELIVERY',
+      'hi': 'रास्ते में',
+      'hn': 'RASTE MEIN',
+    },
+    'offline_banner': {
+      'en': 'No internet connection',
+      'hi': 'इंटरनेट कनेक्शन नहीं है',
+      'hn': 'Internet connection nahi hai',
+    },
+    'select_your_location': {
+      'en': 'Select Your Location',
+      'hi': 'अपना स्थान चुनें',
+      'hn': 'Apna location chunein',
+    },
+    'location_subtitle': {
+      'en': 'Switch on your location to stay in tune with what’s happening near you',
+      'hi': 'अपने आस-पास की जानकारी पाने के लिए लोकेशन चालू करें',
+      'hn': 'Aas-paas ki jaankari ke liye location on karein',
+    },
+    'use_current_location': {
+      'en': 'Use My Current Location',
+      'hi': 'मेरी वर्तमान लोकेशन इस्तेमाल करें',
+      'hn': 'Meri current location use karein',
+    },
+    'detecting_location': {
+      'en': 'Detecting...',
+      'hi': 'पता लगाया जा रहा है...',
+      'hn': 'Detect ho raha hai...',
+    },
+    'enter_location_manually': {
+      'en': 'Enter location manually instead',
+      'hi': 'इसके बजाय लोकेशन खुद भरें',
+      'hn': 'Ya phir location khud bharein',
+    },
+    'city_town': {
+      'en': 'City / Town',
+      'hi': 'शहर / कस्बा',
+      'hn': 'Sheher / Town',
+    },
+    'district_optional': {
+      'en': 'District (optional)',
+      'hi': 'जिला (वैकल्पिक)',
+      'hn': 'District (optional)',
+    },
+    'continue_btn': {
+      'en': 'Continue',
+      'hi': 'आगे बढ़ें',
+      'hn': 'Aage badhein',
+    },
     'refresh': {
       'en': 'Refresh',
       'hi': 'ताज़ा करें',

@@ -17,7 +17,7 @@ class _TermsConditionState extends State<TermsCondition> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SizedBox(height: 17.h),
+          SizedBox(height: MediaQuery.of(context).padding.top),
 
           // Header
           Container(
