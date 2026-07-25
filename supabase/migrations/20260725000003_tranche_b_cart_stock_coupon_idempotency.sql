@@ -82,6 +82,12 @@ end;
 $$;
 
 revoke all on function public.cart_add(bigint, bigint, int, text) from public;
+-- `revoke ... from public` does NOT remove the explicit EXECUTE that Supabase's default
+-- privileges hand to anon on every new function in this schema, so revoke it by name.
+-- (Verified: without this line the ACL comes back as `anon=X/postgres`.) An anonymous
+-- caller would fail anyway — auth.uid() is null, so the insert violates both NOT NULL and
+-- the RLS WITH CHECK — but there is no reason to leave it callable.
+revoke execute on function public.cart_add(bigint, bigint, int, text) from anon;
 grant execute on function public.cart_add(bigint, bigint, int, text) to authenticated;
 
 -- ---------------------------------------------------------------------------
