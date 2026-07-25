@@ -61,6 +61,50 @@ class AuthRepository {
     }
   }
 
+  /// Email + password sign in. Interim path alongside phone/OTP: while the SMS provider
+  /// (MSG91, via the Send SMS auth hook) is being configured, this lets the app be tested
+  /// end to end without an SMS round trip. Phone/OTP remains the primary flow — this does
+  /// not replace it, and both create the same kind of Supabase Auth session.
+  Future<void> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final res = await _db.auth.signInWithPassword(
+        email: email.trim(),
+        password: password,
+      );
+      if (res.session == null) throw DataException('Could not sign in.');
+    } on AuthException catch (e) {
+      throw DataException(e.message);
+    }
+  }
+
+  /// Returns true if a session was created immediately. Returns false if the project
+  /// requires email confirmation and a link was sent instead — the caller should tell the
+  /// user to check their inbox and then sign in. [name] goes straight into signUp's user
+  /// metadata, which handle_new_user picks up when it creates the profile row, so no
+  /// separate updateProfile call is needed here (unlike the phone flow, where verifyOTP
+  /// has no metadata parameter).
+  Future<bool> signUpWithEmail({
+    required String email,
+    required String password,
+    String? name,
+  }) async {
+    try {
+      final res = await _db.auth.signUp(
+        email: email.trim(),
+        password: password,
+        data: (name != null && name.trim().isNotEmpty)
+            ? {'name': name.trim()}
+            : null,
+      );
+      return res.session != null;
+    } on AuthException catch (e) {
+      throw DataException(e.message);
+    }
+  }
+
   Future<void> signOut() => _db.auth.signOut();
 
   bool get isSignedIn => Db.isSignedIn;

@@ -7,6 +7,7 @@ import '../CustomWidgets/custom_text.dart';
 import '../core/supabase.dart';
 import '../data/auth_repository.dart';
 import '../utils/colors.dart';
+import 'emailAuthScreen.dart';
 import 'otpScreen.dart';
 import 'signUpScreen.dart';
 
@@ -190,9 +191,22 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
 
                   ],
-                )
+                ),
 
-
+                SizedBox(height: 12.h,),
+                Center(
+                  child: InkWell(
+                    child: CustomText(
+                      text: 'Or continue with email',
+                      color: AppColors.neutral500,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13.sp,
+                    ),
+                    onTap: (){
+                      Navigator.push(context, MaterialPageRoute(builder: (context)=>const EmailAuthScreen()));
+                    },
+                  ),
+                ),
 
               ],
             ),
