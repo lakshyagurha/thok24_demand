@@ -9,7 +9,12 @@ import '../Auth/loginScreen.dart';
 import '../BottomNav/bottomNavScreen.dart';
 import '../LocationScreen/locationScreen.dart';
 import '../core/supabase.dart';
-import '../utils/colors.dart';
+import '../design/app_colors.dart';
+import '../design/app_gradients.dart';
+import '../design/app_space.dart';
+import '../design/app_theme.dart';
+import '../design/app_type.dart';
+import '../design/components/brand_lockup.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -18,7 +23,12 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends State<SplashScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _intro;
+  late final Animation<double> _fade;
+  late final Animation<double> _rise;
+
   /// Held so it can be cancelled: an uncancelled Timer keeps this State alive after the
   /// route is gone.
   Timer? _splashTimer;
@@ -28,19 +38,26 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
 
     // Status Bar & Navigation Bar Settings
-    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
-      statusBarColor: Colors.white,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.white,
-      systemNavigationBarIconBrightness: Brightness.dark,
-    ));
+    SystemChrome.setSystemUIOverlayStyle(AppTheme.lightOverlay);
 
-    _splashTimer = Timer(const Duration(seconds: 1), checkLogin);
+    _intro = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    );
+    _fade = CurvedAnimation(parent: _intro, curve: Curves.easeOut);
+    _rise = Tween<double>(begin: 16, end: 0)
+        .animate(CurvedAnimation(parent: _intro, curve: Curves.easeOutCubic));
+    _intro.forward();
+
+    // 1400ms rather than 1000: the intro runs 650ms, and cutting a motion off
+    // mid-flight reads as a stutter rather than as speed.
+    _splashTimer = Timer(const Duration(milliseconds: 1400), checkLogin);
   }
 
   @override
   void dispose() {
     _splashTimer?.cancel();
+    _intro.dispose();
     super.dispose();
   }
 
@@ -85,18 +102,54 @@ class _SplashScreenState extends State<SplashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Previously: a single `Image.asset` centred inside a `Row` with one child,
+    // on a flat white background, sized `180.w x 180.h` — a square asset given
+    // two different scale axes, so its box was non-square on most devices.
+    // No wordmark, no tagline, no motion, and no indication anything was
+    // happening. It is the first thing every user sees.
     return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: Center(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-
-            Image.asset('assets/images/logo.png',
-              width: 180.w,height: 180.h,),
-
-
-          ],
+      body: DecoratedBox(
+        decoration: const BoxDecoration(gradient: AppGradients.heroSoft),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const Spacer(flex: 3),
+              AnimatedBuilder(
+                animation: _intro,
+                builder: (context, child) => Opacity(
+                  opacity: _fade.value,
+                  child: Transform.translate(
+                    offset: Offset(0, _rise.value),
+                    child: child,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const BrandLockup(
+                      size: BrandLockupSize.lg,
+                      withMark: true,
+                    ),
+                    AppSpace.gapH(AppSpace.md),
+                    Text(
+                      'Rozana ki zaroorat, sabse kam daam par',
+                      textAlign: TextAlign.center,
+                      style: AppText.bodyM(color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(flex: 3),
+              // A quiet progress cue. A splash with no indicator is
+              // indistinguishable from a frozen one on a slow cold start.
+              SizedBox(
+                width: AppSpace.w(28),
+                height: AppSpace.w(28),
+                child: const CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+              AppSpace.gapH(AppSpace.xxl),
+            ],
+          ),
         ),
       ),
     );

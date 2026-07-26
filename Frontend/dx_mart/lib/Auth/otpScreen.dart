@@ -3,15 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../CustomWidgets/customButton.dart';
-import '../CustomWidgets/customTextFiledWidgets.dart';
-import '../CustomWidgets/custom_text.dart';
+import '../design/app_colors.dart';
+import '../design/app_space.dart';
+import '../design/app_type.dart';
+import '../design/components/app_button.dart';
+import '../design/components/app_text_field.dart';
+import '../design/components/auth_scaffold.dart';
 import '../BottomNav/bottomNavScreen.dart';
 import '../LocationScreen/locationScreen.dart';
 import '../core/session.dart';
 import '../core/supabase.dart';
 import '../data/auth_repository.dart';
-import '../utils/colors.dart';
 
 /// OTP entry step shared by login and sign up.
 ///
@@ -83,10 +85,10 @@ class _OtpScreenState extends State<OtpScreen> {
       SnackBar(
         content: Text(
           message,
-          style: TextStyle(color: AppColors.primaryTextColor),
+          style: TextStyle(color: AppColors.textPrimary),
         ),
         duration: const Duration(seconds: 3),
-        backgroundColor: AppColors.primaryColor,
+        backgroundColor: AppColors.primary,
       ),
     );
   }
@@ -153,115 +155,55 @@ class _OtpScreenState extends State<OtpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: Stack(
+    final canResend = _resendIn <= 0;
+
+    return AuthScaffold(
+      title: 'Verify your number',
+      subtitle: 'Enter the 6-digit code we sent to +91 ${widget.phone}.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(height: 80.h),
-
-                Image.asset(
-                  'assets/images/logo.png',
-                  width: 180.w,
-                  height: 110.h,
-                ),
-
-                SizedBox(height: 40.h),
-
-                Padding(
-                  padding: EdgeInsets.only(left: 20.w, right: 20.w),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      CustomText(
-                        text: "Enter the OTP sent to ${widget.phone}",
-                        fontSize: 12.sp,
-                      ),
-                      SizedBox(height: 7.h),
-
-                      CustomTextField(
-                        controller: otpController,
-                        keyboardType: TextInputType.number,
-                        preFixIcon: 'assets/svg/password.svg',
-                        hintText: "6 digit OTP",
-                      ),
-
-                      SizedBox(height: 20.h),
-
-                      CustomButton(
-                        text: 'Verify',
-                        onPressed: () {
-                          if (isLoading) return;
-                          verify();
-                        },
-                      ),
-
-                      SizedBox(height: 10.h),
-
-                      Center(
-                        child: InkWell(
-                          child: CustomText(
-                            text: _resendIn > 0
-                                ? "Resend OTP in ${_resendIn}s"
-                                : "Resend OTP",
-                            color: _resendIn > 0
-                                ? AppColors.neutral500
-                                : AppColors.primaryColor,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 14.sp,
-                          ),
-                          onTap: resend,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                SizedBox(height: 15.h),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Wrong number?',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w500,
-                        fontSize: 14.sp,
-                        color: AppColors.primaryTextColor,
-                      ),
-                    ),
-                    SizedBox(width: 6.w),
-                    InkWell(
-                      child: Text(
-                        'Change',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14.sp,
-                          color: AppColors.primaryColor,
-                        ),
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                      },
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          AppTextField(
+            controller: otpController,
+            label: 'One-time password',
+            hint: '000000',
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            autofocus: true,
+            prefixIcon: Icons.lock_outline_rounded,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => verify(),
           ),
-
-          if (isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.primaryColor),
-              ),
-            ),
+          AppSpace.gapH(AppSpace.lg),
+          AppButton(
+            label: 'Verify & continue',
+            loading: isLoading,
+            onPressed: isLoading ? null : verify,
+          ),
+          AppSpace.gapH(AppSpace.base),
+          // The countdown is stated rather than implied. Previously the resend
+          // control simply sat there inert until the timer elapsed, with no
+          // indication of why it was not working.
+          Center(
+            child: canResend
+                ? TextButton(
+                    onPressed: isLoading ? null : resend,
+                    child: Text(
+                      'Resend code',
+                      style: AppText.label(color: AppColors.primary),
+                    ),
+                  )
+                : Text(
+                    'Resend code in ${_resendIn}s',
+                    style: AppText.bodyS(color: AppColors.textTertiary),
+                  ),
+          ),
         ],
+      ),
+      footer: Text(
+        'Wrong number? Go back to change it.',
+        textAlign: TextAlign.center,
+        style: AppText.caption(),
       ),
     );
   }

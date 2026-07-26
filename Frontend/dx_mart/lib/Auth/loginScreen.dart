@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../CustomWidgets/customButton.dart';
-import '../CustomWidgets/customTextFiledWidgets.dart';
-import '../CustomWidgets/custom_text.dart';
+import '../design/app_colors.dart';
+import '../design/app_space.dart';
+import '../design/app_type.dart';
+import '../design/components/app_button.dart';
+import '../design/components/app_text_field.dart';
+import '../design/components/auth_scaffold.dart';
 import '../core/supabase.dart';
 import '../data/auth_repository.dart';
-import '../utils/colors.dart';
 import 'emailAuthScreen.dart';
 import 'otpScreen.dart';
 import 'signUpScreen.dart';
@@ -76,10 +78,10 @@ class _LoginScreenState extends State<LoginScreen> {
         SnackBar(
           content: Text(
             'OTP sent to ${AuthRepository.normalisePhone(phone)}',
-            style: TextStyle(color: AppColors.primaryTextColor),
+            style: TextStyle(color: AppColors.textPrimary),
           ),
           duration: const Duration(seconds: 3),
-          backgroundColor: AppColors.primaryColor,
+          backgroundColor: AppColors.primary,
         ),
       );
 
@@ -111,123 +113,83 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: Stack(
+    // Was: a bare Column on white — an 80h top gap, a 180x110 logo, a label, a
+    // field, a button, and three separate links, with no card, no title and no
+    // sense of what the screen was asking for. The loading state was a
+    // full-screen black@0.5 scrim over a spinner, which is a lot of ceremony
+    // for "we are sending an SMS".
+    return AuthScaffold(
+      showBack: false,
+      title: 'Welcome back',
+      subtitle: 'Sign in with your mobile number to start ordering.',
+      footer: Column(
         children: [
-          SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children:  [
-
-                SizedBox(height: 80.h,),
-
-                Image.asset('assets/images/logo.png',
-                  width: 180.w,height: 110.h,),
-
-
-
-                SizedBox(height: 40.h,),
-
-                Padding(
-                  padding:  EdgeInsets.only(left: 20.w,right: 20.w),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.start,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-
-
-                      CustomText(text: "Mobile Number",fontSize: 12.sp,),
-                      SizedBox(height: 7.h,),
-
-                      CustomTextField(
-                          controller: phoneController,
-                          keyboardType: TextInputType.phone,
-                          preFixIcon: 'assets/svg/phone.svg',
-                          hintText: "9876543210"),
-
-
-                      SizedBox(height: 20.h,),
-
-                      CustomButton(text: 'Send OTP',  onPressed: (){
-                        if (isLoading) return;
-                        handleSubmit();
-                      }),
-
-                      SizedBox(height: 10.h,),
-
-                      Center(
-                        child: CustomText(
-                          text: "We will send you a one time password on this number",
-                          color: AppColors.neutral500,
-                          fontWeight: FontWeight.w400,
-                          fontSize: 12.sp,
-                        ),
-                      )
-                    ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Don\u2019t have an account?',
+                style: AppText.bodyM(color: AppColors.textSecondary),
+              ),
+              AppSpace.gapW(AppSpace.xs),
+              InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => SignUpScreen()),
+                ),
+                child: Padding(
+                  padding: AppSpace.symmetric(
+                    horizontal: AppSpace.xs,
+                    vertical: AppSpace.xs,
+                  ),
+                  child: Text(
+                    'Sign Up',
+                    style: AppText.label(color: AppColors.primary),
                   ),
                 ),
-
-
-
-
-                SizedBox(height: 15.h,),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text('Don’t have an account?',style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 14.sp,
-                      color: AppColors.primaryTextColor,
-                    ),),
-
-                    SizedBox(width: 6.w,),
-                    InkWell(
-                      child: Text('Sign Up',style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14.sp,
-                        color: AppColors.primaryColor, // High contrast green
-                      ),),
-                      onTap: (){
-                        Navigator.push(context, MaterialPageRoute(builder: (context)=>SignUpScreen()));
-                      },
-                    ),
-
-                  ],
-                ),
-
-                SizedBox(height: 12.h,),
-                Center(
-                  child: InkWell(
-                    child: CustomText(
-                      text: 'Or continue with email',
-                      color: AppColors.neutral500,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13.sp,
-                    ),
-                    onTap: (){
-                      Navigator.push(context, MaterialPageRoute(builder: (context)=>const EmailAuthScreen()));
-                    },
-                  ),
-                ),
-
-              ],
+              ),
+            ],
+          ),
+          AppSpace.gapH(AppSpace.sm),
+          TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const EmailAuthScreen()),
+            ),
+            child: Text(
+              'Or continue with email',
+              style: AppText.label(color: AppColors.textSecondary),
             ),
           ),
-
-          if (isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.primaryColor),
-              ),
-            ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AppTextField(
+            controller: phoneController,
+            label: 'Mobile number',
+            hint: '9876543210',
+            helper: 'We will send a one-time password to this number.',
+            keyboardType: TextInputType.phone,
+            maxLength: 10,
+            prefixIcon: Icons.phone_outlined,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => handleSubmit(),
+          ),
+          AppSpace.gapH(AppSpace.lg),
+          // The button owns its own loading state now, so the screen no longer
+          // throws a full-screen scrim over itself to say "working".
+          AppButton(
+            label: 'Send OTP',
+            loading: isLoading,
+            onPressed: isLoading ? null : handleSubmit,
+          ),
         ],
       ),
     );
-
   }
+
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

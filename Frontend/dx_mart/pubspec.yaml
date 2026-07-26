@@ -57,10 +57,19 @@ dependencies:
   geolocator: ^14.0.3
   geocoding: ^5.0.0
 
+# The launcher icon was the full DxMart wordmark, which is unreadable at the
+# 48dp it is actually drawn at — and Android 12+ reuses the launcher icon for
+# the launch splash, so it was the first thing every user saw. It now uses the
+# cart mark alone, cropped from the logo, with a real adaptive icon so the
+# system can mask it without clipping the glyph.
+#
+# Regenerate with: dart run flutter_launcher_icons
 flutter_launcher_icons:
   android: "launcher_icon"
-  ios: true
-  image_path: "assets/images/dxicon.png"
+  ios: false  # no iOS asset catalog in this checkout; enable when one exists
+  image_path: "assets/icon/app_icon.png"
+  adaptive_icon_background: "#2E6F40"
+  adaptive_icon_foreground: "assets/icon/app_icon_foreground.png"
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
