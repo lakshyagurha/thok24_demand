@@ -470,6 +470,29 @@ class LocalizationService {
       'hi': 'कार्ट देखें',
       'hn': 'Cart dekho',
     },
+    'select_location': {
+      'en': 'Select location',
+      'hi': 'पता चुनें',
+      'hn': 'Location chunein',
+    },
+    // The home trust strip. Each of these is a promise we actually keep today:
+    // COD is the launch payment method and the return policy already ships in
+    // the app. Nothing aspirational goes in this strip.
+    'cod_available': {
+      'en': 'Cash on\nDelivery',
+      'hi': 'डिलीवरी पर\nनकद',
+      'hn': 'Cash on\nDelivery',
+    },
+    'fast_delivery': {
+      'en': 'Fast local\ndelivery',
+      'hi': 'तेज़ लोकल\nडिलीवरी',
+      'hn': 'Fast local\ndelivery',
+    },
+    'easy_returns': {
+      'en': 'Easy\nreturns',
+      'hi': 'आसान\nवापसी',
+      'hn': 'Easy\nreturns',
+    },
     'no_products_found_brand': {
       'en': 'No products found\nfor this brand!',
       'hi': 'इस ब्रांड के लिए कोई\nउत्पाद नहीं मिला!',

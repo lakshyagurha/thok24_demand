@@ -1,24 +1,31 @@
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:google_fonts/google_fonts.dart';
+
 import '../../CategoryViewScreen/categoryViewScreen.dart';
+import '../../CustomWidgets/cart_provider.dart';
 import '../../CustomWidgets/product_card.dart';
+import '../../CustomWidgets/product_image.dart';
 import '../../LocationScreen/locationScreen.dart';
 import '../../SearchProduct/search_product.dart';
 import '../../core/supabase.dart';
 import '../../data/auth_repository.dart';
 import '../../data/catalog_repository.dart';
 import '../../data/models.dart';
-import '../../utils/colors.dart';
+import '../../design/app_colors.dart';
+import '../../design/app_radius.dart';
+import '../../design/app_space.dart';
+import '../../design/app_type.dart';
+import '../../design/components/cart_bar.dart';
+import '../../design/components/category_bar.dart';
+import '../../design/components/section_header.dart';
+import '../../design/components/skeleton.dart';
+import '../../design/components/trust_strip.dart';
+import '../../utils/language_provider.dart';
 import 'cartScreen.dart';
 import 'profileScreen.dart';
-import 'package:provider/provider.dart';
-import '../../CustomWidgets/cart_provider.dart';
-import '../../utils/language_provider.dart';
-import '../../CustomWidgets/product_image.dart';
 
 /// Shapes a [Product] into the map [ProductCard] still reads.
 ///
@@ -132,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ]);
     } catch (e) {
       if (mounted) {
-        _showSnackBar("Error loading data: $e", AppColors.errorColor);
+        _showSnackBar("Error loading data: $e", AppColors.danger);
       }
     } finally {
       if (mounted) {
@@ -260,721 +267,503 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ===========================================================================
+  // Presentation
+  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return Scaffold(
-        backgroundColor: AppColors.backgroundColor,
-        body: Center(
-          child: CircularProgressIndicator(color: AppColors.primaryColor),
-        ),
-      );
-    }
+    final lang = Provider.of<LanguageProvider>(context);
+    final code = lang.currentLanguage;
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: Stack(
+      backgroundColor: AppColors.background,
+      body: RefreshIndicator(
+        onRefresh: _loadAllData,
+        color: AppColors.primary,
+        child: CustomScrollView(
+          controller: _scrollController,
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          slivers: [
+            SliverToBoxAdapter(child: _header(lang)),
+
+            // Pinned, so the fastest route into the catalogue is always one tap
+            // away no matter how far down the page the shopper has scrolled.
+            if (_categoryList.isNotEmpty)
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _PinnedCategoryBar(
+                  child: CategoryBar(
+                    items: [
+                      for (final c in _categoryList.take(12))
+                        CategoryBarItem(
+                          id: c.id,
+                          label: c.localizedName(code),
+                          image: c.imageUrl,
+                        ),
+                    ],
+                    onSelected: (item) => _openCategory(item.id, item.label),
+                  ),
+                ),
+              ),
+
+            if (_isLoading)
+              SliverToBoxAdapter(child: _loadingBody())
+            else ...[
+              SliverToBoxAdapter(child: _trustStrip(lang)),
+              SliverToBoxAdapter(child: _banners()),
+              SliverToBoxAdapter(child: _offerCards()),
+              SliverToBoxAdapter(child: _categoryGrid(lang, code)),
+              ..._rails(lang, code),
+              SliverToBoxAdapter(
+                child: SizedBox(height: AppSpace.h(AppSpace.xl)),
+              ),
+            ],
+          ],
+        ),
+      ),
+      // Docked rather than floating. The old pill was `Positioned` over the
+      // content and covered the product row beneath it.
+      bottomNavigationBar: Consumer<CartProvider>(
+        builder: (context, cart, _) => CartBar(
+          itemCount: cart.getUniqueItemsCount(),
+          label: lang.translate('view_cart'),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => CartScreen()),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openCategory(int id, String name) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CategoryViewScreen(categoryId: id, categoryName: name),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Header
+  // ---------------------------------------------------------------------------
+
+  /// The navy hero.
+  ///
+  /// Previously this was a gradient between two near-white sages
+  /// (`#D2E5DC` → `#EAF2EE`) which, against a white page, read as a faint
+  /// smudge rather than a header — and the loudest thing inside it was the
+  /// delivery time at `18.sp w900`, out-ranking both the brand and the search
+  /// field. Every competitor in this category is pastel; committing to the
+  /// brand navy is the cheapest available point of difference, and white on it
+  /// measures 10.5:1 so nothing is lost in legibility.
+  Widget _header(LanguageProvider lang) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceDark,
+        borderRadius: BorderRadius.vertical(
+          bottom: Radius.circular(AppRadius.lg.r),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            AppSpace.w(AppSpace.gutter),
+            AppSpace.h(AppSpace.md),
+            AppSpace.w(AppSpace.gutter),
+            AppSpace.h(AppSpace.base),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _wordmark(),
+                  const Spacer(),
+                  _deliveryChip(),
+                  AppSpace.gapW(AppSpace.sm),
+                  _avatar(),
+                ],
+              ),
+              AppSpace.gapH(AppSpace.md),
+              _locationRow(lang),
+              AppSpace.gapH(AppSpace.md),
+              _searchField(lang),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The brand, finally present. There was no logo or wordmark anywhere in the
+  /// app after the splash screen.
+  Widget _wordmark() {
+    return RichText(
+      text: TextSpan(
         children: [
-          SingleChildScrollView(
-            controller: _scrollController,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.start,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Shaded Header Section (Calming Sage Green Gradient)
-                Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.only(bottom: 20.h),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Color(0xFFD2E5DC), // Calm Eucalyptus/Sage Green
-                        Color(0xFFEAF2EE), // Soothing Light Sage/Mint
-                      ],
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                    ),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(24.r),
-                      bottomRight: Radius.circular(24.r),
-                    ),
-                  ),
-                  child: SafeArea(
-                    bottom: false,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: EdgeInsets.only(top: 10.h, left: 16.w, right: 16.w),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              // Delivery time with lightning bolt (Zepto style)
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.flash_on,
-                                    color: Color(0xFF0F4E34),
-                                    size: 20.sp,
-                                  ),
-                                  SizedBox(width: 4.w),
-                                  Text(
-                                    deliveryTime,
-                                    style: GoogleFonts.roboto(
-                                      color: Color(0xFF0F4E34),
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 18.sp,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Spacer(),
-
-                              // Profile Icon Button
-                              InkWell(
-                                onTap: (){
-                                  Navigator.push(context, MaterialPageRoute(builder: (context)=>ProfileScreen()));
-                                },
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 6.h),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.6),
-                                    borderRadius: BorderRadius.circular(20.r),
-                                    border: Border.all(color: Color(0xFFC2D9CD), width: 1.0),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Text(
-                                        userName.length > 10 ? userName.substring(0, 10) : userName + "!",
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.roboto(
-                                          fontSize: 11.sp, 
-                                          fontWeight: FontWeight.bold, 
-                                          color: Color(0xFF0F4E34),
-                                        ),
-                                      ),
-                                      SizedBox(width: 4.w),
-                                      SvgPicture.asset(
-                                        'assets/svg/h_profile.svg',
-                                        width: 14.w,
-                                        height: 14.h,
-                                        color: Color(0xFF0F4E34),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        // Location/Address Row (clean inline style like Zepto)
-                        Padding(
-                          padding: EdgeInsets.only(top: 6.h, left: 16.w, right: 16.w),
-                          child: InkWell(
-                            onTap: (){
-                              Navigator.push(context, MaterialPageRoute(builder: (context)=>LocationScreen()));
-                            },
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "${Provider.of<LanguageProvider>(context).translate('deliver_to')} - ",
-                                  style: GoogleFonts.roboto(
-                                    fontSize: 12.sp,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF0F4E34).withOpacity(0.7),
-                                  ),
-                                ),
-                                Flexible(
-                                  child: Text(
-                                    "$district, $city",
-                                    style: GoogleFonts.roboto(
-                                      fontSize: 12.sp,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF0F4E34),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                SizedBox(width: 2.w),
-                                Icon(
-                                  Icons.keyboard_arrow_down,
-                                  size: 16.sp,
-                                  color: Color(0xFF0F4E34),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        SizedBox(height: 14.h),
-
-                        // Search Container
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16.w),
-                          child: InkWell(
-                            onTap: () async {
-                              await Navigator.push(context, MaterialPageRoute(builder: (context)=>SearchProduct()));
-                            },
-                            child: Container(
-                              width: double.infinity,
-                              height: 38.h,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(12.r),
-                                border: Border.all(color: Color(0xFFC2D9CD), width: 1.0),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.03),
-                                    blurRadius: 4,
-                                    offset: Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 12.w),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.search, size: 20.sp, color: Color(0xFF0F4E34)),
-                                    SizedBox(width: 8.w),
-                                    Text(
-                                      Provider.of<LanguageProvider>(context).translate('search_placeholder'),
-                                      style: GoogleFonts.roboto(
-                                        fontSize: 13.sp,
-                                        fontWeight: FontWeight.w400,
-                                        color: Color(0xFF6B7280),
-                                      ),
-                                    ),
-                                    Spacer(),
-                                    Icon(Icons.mic, size: 18.sp, color: Color(0xFF0F4E34)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        if (_sliderList.isNotEmpty) ...[
-                          SizedBox(height: 16.h),
-                          // Slider / Carousel
-                          CarouselSlider(
-                            options: CarouselOptions(
-                              height: 130.h,
-                              autoPlay: true,
-                              enlargeCenterPage: false,
-                              viewportFraction: 0.85,
-                              aspectRatio: 16 / 9,
-                              autoPlayInterval: Duration(seconds: 4),
-                              enableInfiniteScroll: true,
-                              scrollPhysics: BouncingScrollPhysics(),
-                            ),
-                            items: _sliderList.map((item) {
-                              return Builder(
-                                builder: (BuildContext context) {
-                                  return Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6.0),
-                                    child: InkWell(
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(16.r),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: Colors.black.withOpacity(0.06),
-                                              blurRadius: 8,
-                                              offset: Offset(0, 4),
-                                            ),
-                                          ],
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius: BorderRadius.circular(16.r),
-                                          child: ProductImage(
-                                            path: item['banner_image'] as String?,
-                                            fit: BoxFit.cover,
-                                            width: double.infinity,
-                                            height: 130.h,
-                                          ),
-                                        ),
-                                      ),
-                                      onTap: (){
-                                        final categoryId =
-                                            int.tryParse(item['category_id']?.toString() ?? '') ?? 0;
-                                        if (categoryId == 0) return;
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => CategoryViewScreen(
-                                              categoryId: categoryId,
-                                              categoryName: _categoryNameFor(categoryId),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  );
-                                },
-                              );
-                            }).toList(),
-                          ),
-                        ],
-
-                        SizedBox(height: 16.h),
-
-                        // Curated Promo Mini Cards
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16.w),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              _buildPromoCard(
-                                title: "Farm Fresh",
-                                subtitle: "Up to 40% OFF",
-                                tag: "VEGGIES & FRUITS",
-                                startColor: Color(0xFFE2F0D9),
-                                endColor: Color(0xFFC5E0B4),
-                                textColor: Color(0xFF385723),
-                                categoryKeyword: "fruit",
-                              ),
-                              _buildPromoCard(
-                                title: "Dairy Hub",
-                                subtitle: "Flat 15% OFF",
-                                tag: "MILK & BREAD",
-                                startColor: Color(0xFFFFF2CC),
-                                endColor: Color(0xFFFCE4D6),
-                                textColor: Color(0xFF7F6000),
-                                categoryKeyword: "dairy",
-                              ),
-                              _buildPromoCard(
-                                title: "Saver Deals",
-                                subtitle: "Min 20% OFF",
-                                tag: "GROCERY ESSENTIALS",
-                                startColor: Color(0xFFFCE4D6),
-                                endColor: Color(0xFFF8CBAD),
-                                textColor: Color(0xFFC65911),
-                                categoryKeyword: "atta",
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Shop by Category section
-                Padding(
-                  padding: EdgeInsets.only(left: 16.w, right: 16.w, top: 20.h, bottom: 12.h),
-                  child: Text(
-                    Provider.of<LanguageProvider>(context).translate('categories'),
-                    style: GoogleFonts.roboto(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF111827), // Neutral 900
-                    ),
-                  ),
-                ),
-
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16.w),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.zero,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 12.h,
-                      crossAxisSpacing: 10.w,
-                      childAspectRatio: 0.60,
-                    ),
-                    itemCount: _categoryList.length > 8 ? 8 : _categoryList.length,
-                    itemBuilder: (context, index) {
-                      final item = _categoryList[index];
-                      final itemName = item.localizedName(
-                        Provider.of<LanguageProvider>(context).currentLanguage,
-                      );
-                      return GestureDetector(
-                        onTap: (){
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => CategoryViewScreen(
-                                categoryId: item.id,
-                                categoryName: itemName,
-                              ),
-                            ),
-                          );
-                        },
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 64.w,
-                              height: 64.w,
-                              decoration: BoxDecoration(
-                                color: Color(0xFFF3F7F5), // Calming off-white/pale mint background
-                                borderRadius: BorderRadius.circular(16.r),
-                                border: Border.all(color: Color(0xFFE8F1EC), width: 1.0),
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.all(6.w),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(10.r),
-                                  child: ProductImage(
-                                    path: item.imageUrl,
-                                    width: 64.w,
-                                    height: 64.w,
-                                    errorIcon: Icons.image_not_supported,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            SizedBox(height: 6.h),
-                            SizedBox(
-                              width: 72.w,
-                              child: Text(
-                                itemName,
-                                style: GoogleFonts.roboto(
-                                  fontSize: 10.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1F2937),
-                                ),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                // Products
-                SizedBox(height: 20.h),
-
-                // Everyday Essentials
-                if (everydayEssentialsList.isNotEmpty)
-                  buildSection('Everyday Essentials', everydayEssentialsList),
-
-                // Best Selling
-                if (bestSellingList.isNotEmpty) ...[
-                  SizedBox(height: 20.h),
-                  buildSection('Best Selling', bestSellingList),
-                ],
-
-                // Hot Deals
-                if (hotDealsList.isNotEmpty) ...[
-                  SizedBox(height: 20.h),
-                  buildSection('Hot Deals', hotDealsList),
-                ],
-                SizedBox(height: 100.h),
-              ],
-            ),
+          TextSpan(
+            text: 'Dx',
+            style: AppText.h1(color: AppColors.onSurfaceDark),
           ),
-
-          // Sticky Search Bar
-          AnimatedPositioned(
-            duration: Duration(milliseconds: 400),
-            top: _showStickySearchBar ? 0 : -87.h,
-            left: 0,
-            right: 0,
-            child: Container(
-              // Real status bar inset, not a hardcoded 35.h. The fixed value put the
-              // sticky search bar under the system clock on this emulator (and on any
-              // device with a taller status bar or a notch); categoryScreen and
-              // categoryViewScreen already did this correctly.
-              padding: EdgeInsets.only(
-                left: 16.w,
-                right: 16.w,
-                top: MediaQuery.of(context).padding.top + 8.h,
-                bottom: 16.w,
-              ),
-              decoration: BoxDecoration(
-                color: Color(0xFFD2E5DC), // matching our calming sage green header
-                borderRadius: BorderRadius.only(
-                  bottomRight: Radius.circular(20),
-                  bottomLeft: Radius.circular(20)
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: InkWell(
-                onTap: () async {
-                  await Navigator.push(context, MaterialPageRoute(builder: (context)=>SearchProduct()));
-                },
-                child: Container(
-                  height: 40.h,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12.r),
-                    border: Border.all(color: Color(0xFFC2D9CD), width: 1.0),
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12.w),
-                    child: Row(
-                      children: [
-                        Icon(Icons.search, size: 20.sp, color: Color(0xFF0F4E34)),
-                        SizedBox(width: 8.w),
-                        Text(Provider.of<LanguageProvider>(context).translate('search_placeholder'), style: GoogleFonts.roboto(
-                          fontSize: 14.sp,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF0F4E34).withOpacity(0.8),
-                        )),
-                        Spacer(),
-                        Icon(Icons.mic, size: 18.sp, color: Color(0xFF0F4E34)),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          TextSpan(
+            text: 'Mart',
+            style: AppText.h1(color: AppColors.discount),
           ),
-
-          Consumer<CartProvider>(
-            builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
-              final hasItems = uniqueItemsCount > 0;
-
-              return AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.slowMiddle,
-                bottom: hasItems ? 20.h : -60.h,
-                left: 20.w, // Wider pill for better visual presence & touch target
-                right: 20.w,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 300),
-                  opacity: hasItems ? 1.0 : 0.0,
-                  child: InkWell(
-                    onTap: () async {
-                      await Navigator.push(context, MaterialPageRoute(builder: (context) => CartScreen()));
-                    },
-                    child: Container(
-                      height: 48.h, // Increased from 38.h for premium feel and accessible tap size
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
-                        borderRadius: BorderRadius.circular(16.r), // Modern rounded rectangle
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primaryColor.withOpacity(0.3),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16.w),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 28.w,
-                              height: 28.w,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2), // Dim white badge background
-                                borderRadius: BorderRadius.circular(8.r),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  uniqueItemsCount.toString(),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14.sp,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: 12.w),
-                            Flexible(
-                              child: Text(
-                                Provider.of<LanguageProvider>(context).translate('view_cart'),
-                                style: TextStyle(
-                                  fontSize: 16.sp,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            SizedBox(width: 8.w),
-                            const Icon(Icons.arrow_forward_ios_outlined, color: Colors.white, size: 16),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          )
         ],
       ),
     );
   }
 
+  Widget _deliveryChip() {
+    return Container(
+      padding: AppSpace.symmetric(
+        horizontal: AppSpace.md,
+        vertical: AppSpace.xs,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.discount,
+        borderRadius: AppRadius.pillAll,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.bolt_rounded, size: 16, color: AppColors.onDiscount),
+          SizedBox(width: AppSpace.w(2)),
+          Text(deliveryTime, style: AppText.labelS(color: AppColors.onDiscount)),
+        ],
+      ),
+    );
+  }
 
+  Widget _avatar() {
+    final initial = userName.trim().isEmpty
+        ? '?'
+        : userName.trim()[0].toUpperCase();
 
-  Widget _buildPromoCard({
-    required String title,
-    required String subtitle,
-    required String tag,
-    required Color startColor,
-    required Color endColor,
-    required Color textColor,
-    required String categoryKeyword,
-  }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-          Category? category;
-          for (final c in _categoryList) {
-            if (c.name.toLowerCase().contains(categoryKeyword.toLowerCase())) {
-              category = c;
-              break;
-            }
-          }
-          if (category != null) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => CategoryViewScreen(
-                  categoryId: category!.id,
-                  categoryName: category.localizedName(lang),
-                ),
-              ),
-            );
-          }
-        },
-        child: Container(
-          margin: EdgeInsets.symmetric(horizontal: 4.w),
-          padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 8.w),
-          height: 95.h,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [startColor, endColor],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(16.r),
-            boxShadow: [
-              BoxShadow(
-                color: textColor.withOpacity(0.06),
-                blurRadius: 4,
-                offset: Offset(0, 2),
-              ),
-            ],
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+      ),
+      borderRadius: AppRadius.pillAll,
+      child: Container(
+        width: AppSpace.w(36),
+        height: AppSpace.w(36),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: AppColors.onSurfaceDark.withValues(alpha: 0.15),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: AppColors.onSurfaceDark.withValues(alpha: 0.30),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(6.r),
-                ),
-                child: Text(
-                  tag,
-                  style: GoogleFonts.roboto(
-                    fontSize: 7.5.sp,
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  ),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.roboto(
-                      fontSize: 11.5.sp,
-                      fontWeight: FontWeight.bold,
-                      color: textColor,
-                    ),
-                  ),
-                  SizedBox(height: 1.h),
-                  Text(
-                    subtitle,
-                    style: GoogleFonts.roboto(
-                      fontSize: 9.5.sp,
-                      fontWeight: FontWeight.w600,
-                      color: textColor.withOpacity(0.85),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+        ),
+        child: Text(
+          initial,
+          style: AppText.label(color: AppColors.onSurfaceDark),
         ),
       ),
     );
   }
 
-  /// Localized name for a category id, used by banners which only carry the id.
-  String _categoryNameFor(int categoryId) {
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
-    for (final c in _categoryList) {
-      if (c.id == categoryId) return c.localizedName(lang);
-    }
-    return 'Category';
+  Widget _locationRow(LanguageProvider lang) {
+    final place = (district == 'Not Set' && city == 'Not Set')
+        ? lang.translate('select_location')
+        : '$district, $city';
+
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const LocationScreen()),
+      ),
+      borderRadius: AppRadius.smAll,
+      child: Row(
+        children: [
+          Icon(
+            Icons.location_on_rounded,
+            size: 18,
+            color: AppColors.discount,
+          ),
+          SizedBox(width: AppSpace.w(6)),
+          Text(
+            '${lang.translate('deliver_to')} ',
+            style: AppText.bodyS(color: AppColors.onSurfaceDarkMuted),
+          ),
+          Flexible(
+            child: Text(
+              place,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.label(color: AppColors.onSurfaceDark),
+            ),
+          ),
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 18,
+            color: AppColors.onSurfaceDark,
+          ),
+        ],
+      ),
+    );
   }
 
-  Widget buildSection(String title, List<Product> list) {
-    final langProvider = Provider.of<LanguageProvider>(context);
-    String displayTitle = title;
-    if (title == 'Everyday Essentials') {
-      displayTitle = langProvider.translate('everyday_essentials');
-    } else if (title == 'Best Selling') {
-      displayTitle = langProvider.translate('best_selling');
-    } else if (title == 'Hot Deals') {
-      displayTitle = langProvider.translate('hot_deals');
-    }
+  /// One search component. The old screen drew this twice — an inline copy and
+  /// a sticky copy — at different heights, with different hint sizes, weights
+  /// and colours, and only one of them had a shadow.
+  Widget _searchField(LanguageProvider lang) {
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const SearchProduct()),
+      ),
+      borderRadius: AppRadius.mdAll,
+      child: Container(
+        height: AppSpace.h(46),
+        padding: AppSpace.symmetric(horizontal: AppSpace.md),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: AppRadius.mdAll,
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.search_rounded, size: 22, color: AppColors.primary),
+            AppSpace.gapW(AppSpace.sm),
+            Expanded(
+              child: Text(
+                lang.translate('search_placeholder'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.bodyM(color: AppColors.textTertiary),
+              ),
+            ),
+            Container(
+              width: 1,
+              height: AppSpace.h(20),
+              color: AppColors.border,
+            ),
+            AppSpace.gapW(AppSpace.md),
+            Icon(Icons.mic_rounded, size: 22, color: AppColors.primary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Body sections
+  // ---------------------------------------------------------------------------
+
+  Widget _trustStrip(LanguageProvider lang) {
+    return Padding(
+      padding: EdgeInsets.only(top: AppSpace.h(AppSpace.md)),
+      child: TrustStrip(
+        items: [
+          TrustItem(
+            icon: Icons.payments_outlined,
+            label: lang.translate('cod_available'),
+            tint: AppColors.primary,
+          ),
+          TrustItem(
+            icon: Icons.local_shipping_outlined,
+            label: lang.translate('fast_delivery'),
+            tint: AppColors.secondary,
+          ),
+          TrustItem(
+            icon: Icons.replay_rounded,
+            label: lang.translate('easy_returns'),
+            tint: AppColors.discountText,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _banners() {
+    if (_sliderList.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: EdgeInsets.only(top: AppSpace.h(AppSpace.lg)),
+      child: CarouselSlider(
+        options: CarouselOptions(
+          height: 168.h,
+          viewportFraction: 0.88,
+          autoPlay: _sliderList.length > 1,
+          autoPlayInterval: const Duration(seconds: 5),
+          enlargeCenterPage: true,
+          enlargeFactor: 0.14,
+        ),
+        items: [
+          for (final banner in _sliderList)
+            Padding(
+              padding: AppSpace.symmetric(horizontal: AppSpace.xs),
+              child: ClipRRect(
+                borderRadius: AppRadius.mdAll,
+                child: ProductImage(
+                  path: banner['banner_image'] as String?,
+                  width: double.infinity,
+                  height: 168.h,
+                  fit: BoxFit.cover,
+                  errorIcon: Icons.image_outlined,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Three offer cards, sized so the discount is the message.
+  ///
+  /// These replace a row of `95.h` boxes that tried to carry three ranks of
+  /// text — a `7.5.sp` all-caps tag, an `11.5.sp` title and a `9.5.sp`
+  /// subtitle — inside roughly 80dp of usable width. Nobody read them. Here the
+  /// number is the largest thing on the card and everything else supports it.
+  Widget _offerCards() {
+    final offers = <_Offer>[
+      _Offer('40%', 'Farm Fresh', 'Veggies & Fruits', AppColors.primary),
+      _Offer('15%', 'Dairy Hub', 'Milk & Bread', AppColors.secondary),
+      _Offer('20%', 'Saver Deals', 'Grocery Essentials', AppColors.discountText),
+    ];
+
+    return Padding(
+      padding: EdgeInsets.only(
+        top: AppSpace.h(AppSpace.lg),
+        left: AppSpace.w(AppSpace.gutter),
+        right: AppSpace.w(AppSpace.gutter),
+      ),
+      child: Row(
+        children: [
+          for (var i = 0; i < offers.length; i++) ...[
+            if (i > 0) AppSpace.gapW(AppSpace.md),
+            Expanded(
+              child: Container(
+                padding: AppSpace.symmetric(
+                  horizontal: AppSpace.md,
+                  vertical: AppSpace.md,
+                ),
+                decoration: BoxDecoration(
+                  color: offers[i].tint,
+                  borderRadius: AppRadius.mdAll,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'UP TO',
+                      style: AppText.overline(
+                        color: AppColors.onPrimary.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    Text(
+                      offers[i].amount,
+                      style: AppText.display(color: AppColors.onPrimary),
+                    ),
+                    Text(
+                      'OFF',
+                      style: AppText.overline(
+                        color: AppColors.onPrimary.withValues(alpha: 0.85),
+                      ),
+                    ),
+                    AppSpace.gapH(AppSpace.sm),
+                    Text(
+                      offers[i].title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.labelS(color: AppColors.onPrimary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The category grid.
+  ///
+  /// Still capped, but now the cap is honest: a "See all" leads to the full
+  /// list. Previously the grid silently truncated to eight with no affordance
+  /// at all, and the label box was set `72.w` wide beneath a `64.w` tile, which
+  /// is why rows with short names left ragged gaps.
+  Widget _categoryGrid(LanguageProvider lang, String code) {
+    if (_categoryList.isEmpty) return const SizedBox.shrink();
+
+    final shown = _categoryList.take(8).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: EdgeInsets.only(left: 16.w, right: 16.w, bottom: 10.h),
-          child: Text(
-            displayTitle,
-            style: TextStyle(
-              fontSize: 16.sp,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF111827),
-            ),
-          ),
+        SectionHeader(
+          title: lang.translate('categories'),
+          subtitle: '${_categoryList.length} in your area',
+          onSeeAll: _categoryList.length > 8
+              ? () => _openCategory(_categoryList.first.id,
+                  _categoryList.first.localizedName(code))
+              : null,
         ),
-        SizedBox(
-          height: 220.w,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: list.length,
-            padding: EdgeInsets.only(left: 16.w, right: 8.w),
-            itemBuilder: (context, index) {
-              final product = list[index];
-              return Padding(
-                padding: EdgeInsets.only(right: 8.w),
-                child: SizedBox(
-                  width: 120.w,
-                  child: ProductCard(
-                    product: _productCardData(product, langProvider.currentLanguage),
-                    // Identity comes from the session, never from the widget tree.
-                    userId: '',
-                    onCartUpdated: fetchCartQuantity,
-                    onCategoryBack: fetchCartQuantity,
-                  ),
+        Padding(
+          padding: AppSpace.symmetric(horizontal: AppSpace.gutter),
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.zero,
+            itemCount: shown.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: AppSpace.h(AppSpace.base),
+              crossAxisSpacing: AppSpace.w(AppSpace.md),
+              // Sized so the cell reserves two full label lines under a square
+              // tile. At 0.78 there was room for one, so "Tea, Coffee & More"
+              // and "Masala & Dry Fruits" were clipped rather than wrapped —
+              // and category names get longer, not shorter, in Hindi.
+              childAspectRatio: 0.64,
+            ),
+            itemBuilder: (context, i) {
+              final c = shown[i];
+              final name = c.localizedName(code);
+
+              return InkWell(
+                onTap: () => _openCategory(c.id, name),
+                borderRadius: AppRadius.mdAll,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 1,
+                      child: Container(
+                        padding: AppSpace.all(AppSpace.sm),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: AppRadius.mdAll,
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: ProductImage(
+                          path: c.imageUrl,
+                          width: double.infinity,
+                          height: double.infinity,
+                          errorIcon: Icons.category_outlined,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: AppSpace.h(6)),
+                    Expanded(
+                      child: Text(
+                        name,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.caption(color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -984,5 +773,124 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  List<Widget> _rails(LanguageProvider lang, String code) {
+    final sections = <_Rail>[
+      _Rail(lang.translate('everyday_essentials'), 'Daily staples',
+          everydayEssentialsList),
+      _Rail(lang.translate('best_selling'), 'Most ordered near you',
+          bestSellingList),
+      _Rail(lang.translate('hot_deals'), 'Biggest savings today', hotDealsList),
+    ];
 
+    return [
+      for (final s in sections)
+        if (s.products.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SectionHeader(title: s.title, subtitle: s.subtitle),
+                SizedBox(
+                  // Sized to the card's real content: a square image plus a
+                  // two-line name, pack size and price row. It was 268.h, which
+                  // left a visible dead gap under every card.
+                  height: 222.h,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: AppSpace.symmetric(horizontal: AppSpace.gutter),
+                    itemCount: s.products.length,
+                    separatorBuilder: (_, __) => AppSpace.gapW(AppSpace.md),
+                    itemBuilder: (context, i) => SizedBox(
+                      width: 150.w,
+                      child: ProductCard(
+                        product: _productCardData(s.products[i], code),
+                        // Identity comes from the session, never from the widget tree.
+                        userId: '',
+                        onCartUpdated: fetchCartQuantity,
+                        onCategoryBack: fetchCartQuantity,
+                        height: 222.h,
+                        width: 150.w,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+    ];
+  }
+
+  /// A skeleton of the page that is coming, rather than a spinner on a blank
+  /// screen. The `shimmer` package has been a dependency since the beginning
+  /// and was never imported.
+  Widget _loadingBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AppSpace.gapH(AppSpace.lg),
+        AppSkeleton.sweep(
+          child: Padding(
+            padding: AppSpace.symmetric(horizontal: AppSpace.gutter),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AppSkeleton(
+                  width: double.infinity,
+                  height: 168.h,
+                  radius: AppRadius.mdAll,
+                ),
+                AppSpace.gapH(AppSpace.lg),
+                AppSkeleton(width: 160.w, height: AppSpace.h(18)),
+                AppSpace.gapH(AppSpace.base),
+              ],
+            ),
+          ),
+        ),
+        const ProductRailSkeleton(),
+      ],
+    );
+  }
+}
+
+class _Offer {
+  const _Offer(this.amount, this.title, this.subtitle, this.tint);
+  final String amount;
+  final String title;
+  final String subtitle;
+  final Color tint;
+}
+
+class _Rail {
+  const _Rail(this.title, this.subtitle, this.products);
+  final String title;
+  final String subtitle;
+  final List<Product> products;
+}
+
+/// Keeps the category bar on screen while the page scrolls under it.
+class _PinnedCategoryBar extends SliverPersistentHeaderDelegate {
+  _PinnedCategoryBar({required this.child});
+
+  final Widget child;
+
+  double get _height => 108.h;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Material(
+      color: AppColors.surface,
+      elevation: overlapsContent || shrinkOffset > 0 ? 1 : 0,
+      shadowColor: AppColors.textPrimary.withValues(alpha: 0.10),
+      child: SizedBox(height: _height, child: child),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _PinnedCategoryBar old) => old.child != child;
 }

@@ -5,7 +5,10 @@ import 'package:provider/provider.dart';
 import '../ProductDetailScreen/product_details_screen.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
-import '../utils/colors.dart';
+import '../design/app_colors.dart';
+import '../design/app_radius.dart';
+import '../design/app_space.dart';
+import '../design/app_type.dart';
 import '../utils/responsive_helper.dart';
 import 'cart_provider.dart';
 import 'product_image.dart';
@@ -24,6 +27,15 @@ class ProductCard extends StatefulWidget {
   final VoidCallback? onCategoryBack;
   final double? height;
 
+  /// The width the card will actually be drawn at.
+  ///
+  /// Used purely as the image decode bound. The card is stretched to five
+  /// different footprints across the app (98–160dp), and the image was
+  /// previously bounded by the card's *height* instead — so a 99dp-wide card in
+  /// the search grid decoded its photo for a 216dp box, roughly 2.6x the pixels
+  /// it draws, thirty times over in a scrolling grid.
+  final double? width;
+
   const ProductCard({
     Key? key,
     required this.product,
@@ -32,6 +44,7 @@ class ProductCard extends StatefulWidget {
     this.onWishlistUpdated,
     this.onCategoryBack,
     this.height,
+    this.width,
   }) : super(key: key);
 
   @override
@@ -97,7 +110,7 @@ class _ProductCardState extends State<ProductCard> {
       SnackBar(
         content: Text(message),
         duration: Duration(seconds: 2),
-        backgroundColor: AppColors.errorColor,
+        backgroundColor: AppColors.danger,
       ),
     );
   }
@@ -196,7 +209,7 @@ class _ProductCardState extends State<ProductCard> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.backgroundColor,
+      backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
       ),
@@ -226,7 +239,7 @@ class _ProductCardState extends State<ProductCard> {
               return Container(
                 padding: EdgeInsets.all(12.w),
                 decoration: BoxDecoration(
-                  color: AppColors.backgroundColor,
+                  color: AppColors.surface,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20.r)),
                 ),
                 child: Column(
@@ -241,7 +254,7 @@ class _ProductCardState extends State<ProductCard> {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontWeight: FontWeight.w500,
-                          color: AppColors.primaryTextColor,
+                          color: AppColors.textPrimary,
                           fontSize: 14.sp,
                         ),
                       ),
@@ -280,7 +293,7 @@ class _ProductCardState extends State<ProductCard> {
                             child: Container(
                               margin: EdgeInsets.only(bottom: 10.h),
                               decoration: BoxDecoration(
-                                color: AppColors.primaryColor.withOpacity(0.1),
+                                color: AppColors.primary.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(20.r),
                               ),
                               padding: EdgeInsets.all(8.w),
@@ -295,7 +308,7 @@ class _ProductCardState extends State<ProductCard> {
                                             width: 50.h,
                                             height: 50.h,
                                             decoration: BoxDecoration(
-                                              color: AppColors.backgroundColor,
+                                              color: AppColors.surface,
                                               borderRadius: BorderRadius.circular(10.r),
                                             ),
                                             child: Center(
@@ -323,7 +336,7 @@ class _ProductCardState extends State<ProductCard> {
                                             child: Container(
                                               padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 2.h),
                                               decoration: BoxDecoration(
-                                                color: AppColors.secondaryColor,
+                                                color: AppColors.discount,
                                                 borderRadius: BorderRadius.only(
                                                   bottomRight: Radius.circular(10.r),
                                                   topLeft: Radius.circular(10.r),
@@ -337,7 +350,7 @@ class _ProductCardState extends State<ProductCard> {
                                                     tablet: 6.sp,
                                                     desktop: 7.sp,
                                                   ),
-                                                  color: AppColors.primaryTextColor,
+                                                  color: AppColors.textPrimary,
                                                   fontWeight: FontWeight.w500,
                                                 ),
                                               ),
@@ -488,7 +501,7 @@ class _ProductCardState extends State<ProductCard> {
   Widget _buildCartControl(int quantity, int variantId, int stock, Function(int) removeFromCart, Function(int, int) updateQuantity, Function(int) addToCart) {
     // Use a common decoration for both states to avoid code duplication
     final decoration = BoxDecoration(
-      color: AppColors.primaryColor,
+      color: AppColors.primary,
       borderRadius: BorderRadius.circular(8.r),
     );
 
@@ -616,8 +629,9 @@ class _ProductCardState extends State<ProductCard> {
             variants.every((variant) =>
             (int.tryParse(variant['stock']?.toString() ?? '0') ?? 0) <= 0);
         return SizedBox(
-          height: widget.height ?? 216.w,
+          height: widget.height ?? 222.h,
           child: InkWell(
+            borderRadius: AppRadius.mdAll,
             onTap: () async {
               if (allOutOfStock) return;
 
@@ -633,178 +647,188 @@ class _ProductCardState extends State<ProductCard> {
                 widget.onCategoryBack!();
               }
             },
+            // The card finally has a container. It used to be white on
+            // white-backed screens with no border and no shadow, so the only
+            // visible edge in a whole grid was the 1px line around each image
+            // and the text below floated free, belonging to nothing.
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12.r),
+                color: AppColors.surface,
+                borderRadius: AppRadius.mdAll,
+                border: Border.all(color: AppColors.border),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 🖼️ Image Container (acts as separation, has border)
                   AspectRatio(
                     aspectRatio: 1,
-                    child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12.r),
-                        border: Border.all(color: Colors.grey.shade200, width: 1),
-                      ),
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12.r),
-                            child: Padding(
-                              padding: EdgeInsets.all(8.w),
-                              child: Center(
-                                // Bounded to the card width so a 1500px source photo is
-                                // not decoded at full resolution for a thumbnail.
-                                child: ProductImage(
-                                  path: productImage,
-                                  width: (widget.height ?? 216.w),
-                                  height: (widget.height ?? 216.w),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: Padding(
+                            padding: EdgeInsets.all(AppSpace.w(AppSpace.sm)),
+                            child: ProductImage(
+                              path: productImage,
+                              // Bounded to the width actually drawn. This used
+                              // to be passed the card *height*, so a card ~99dp
+                              // wide decoded for a 216dp box — roughly 2.6x the
+                              // pixels needed, per card, per grid.
+                              width: (widget.width ?? 150.w),
+                              height: (widget.width ?? 150.w),
+                            ),
+                          ),
+                        ),
+
+                        // One discount treatment, everywhere. This was four:
+                        // blue text here, a yellow corner tab in the variant
+                        // sheet that rendered even at 0%, a peach pill on the
+                        // detail page and a green ribbon on the variant chip.
+                        if (discountPercentage > 0)
+                          Positioned(
+                            top: 0,
+                            left: 0,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: AppSpace.w(AppSpace.sm),
+                                vertical: AppSpace.h(3),
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.discount,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(AppRadius.md.r),
+                                  bottomRight: Radius.circular(AppRadius.md.r),
                                 ),
+                              ),
+                              child: Text(
+                                '$discountPercentage% OFF',
+                                style: AppText.overline(
+                                    color: AppColors.onDiscount),
                               ),
                             ),
                           ),
 
-                          // ❤️ Wishlist
-                          Positioned(
-                            top: 6.w,
-                            right: 6.w,
-                            child: GestureDetector(
-                              onTap: () {
-                                if (!isWishlistLoading) {
-                                  toggleWishlist();
-                                }
-                              },
-                              child: isWishlistLoading
-                                  ? SizedBox(
-                                      width: 14.w,
-                                      height: 14.w,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                            AppColors.primaryColor),
-                                      ),
-                                    )
-                                  : SvgPicture.asset(
-                                      isWishlisted
-                                          ? 'assets/svg/wishlist_red.svg'
-                                          : 'assets/svg/fev.svg',
-                                      width: 14.w,
-                                    ),
+                        // A 44dp target instead of a bare 14dp glyph sitting
+                        // directly on the packaging, and a surface behind it so
+                        // it survives a light product photo.
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!isWishlistLoading) toggleWishlist();
+                            },
+                            child: SizedBox(
+                              width: AppSpace.w(AppSpace.minTapTarget),
+                              height: AppSpace.w(AppSpace.minTapTarget),
+                              child: Center(
+                                child: Container(
+                                  width: AppSpace.w(28),
+                                  height: AppSpace.w(28),
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.surface.withValues(alpha: 0.9),
+                                    shape: BoxShape.circle,
+                                    border:
+                                        Border.all(color: AppColors.border),
+                                  ),
+                                  child: isWishlistLoading
+                                      ? SizedBox(
+                                          width: AppSpace.w(12),
+                                          height: AppSpace.w(12),
+                                          child:
+                                              const CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : Icon(
+                                          isWishlisted
+                                              ? Icons.favorite_rounded
+                                              : Icons.favorite_border_rounded,
+                                          size: 16,
+                                          color: isWishlisted
+                                              ? AppColors.danger
+                                              : AppColors.iconMuted,
+                                        ),
+                                ),
+                              ),
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+
+                        // ADD moves out of the text row and onto the image.
+                        // In its old position it shared a Row with the pack-size
+                        // chip and grew 60->78dp on tap, reflowing the chip
+                        // every single time someone added an item.
+                        Positioned(
+                          right: AppSpace.w(AppSpace.sm),
+                          bottom: AppSpace.h(AppSpace.sm),
+                          child: allOutOfStock
+                              ? _buildOutOfStockButton()
+                              : _buildMainCartButton(
+                                  variants, firstVariantId, stock),
+                        ),
+                      ],
                     ),
                   ),
 
                   Expanded(
                     child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 6.w),
+                      padding: EdgeInsets.fromLTRB(
+                        AppSpace.w(AppSpace.sm),
+                        AppSpace.h(AppSpace.sm),
+                        AppSpace.w(AppSpace.sm),
+                        AppSpace.h(AppSpace.sm),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          SizedBox(height: 4.w),
-
-                          // 1. Weight Tag and ADD button Row
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              // Weight Tag
-                              Flexible(
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(
-                                      horizontal: 6.w, vertical: 3.w),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.neutral100,
-                                    borderRadius: BorderRadius.circular(4.r),
-                                  ),
-                                  child: Text(
-                                    variantName,
-                                    style: TextStyle(
-                                      fontSize: 10.sp,
-                                      color: AppColors.primaryTextColor,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                  ),
-                                ),
-                              ),
-                              // ADD Button
-                              allOutOfStock
-                                  ? _buildOutOfStockButton()
-                                  : _buildMainCartButton(variants, firstVariantId, stock),
-                            ],
+                          // The name leads now. It used to be rendered last and
+                          // smallest (11sp w400) under the price, while the
+                          // pack size — the least important datum on the card —
+                          // was the only element with a filled pill behind it,
+                          // so it read as the product's title.
+                          Flexible(
+                            child: Text(
+                              productName,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.h3(),
+                            ),
                           ),
-                          SizedBox(height: 4.w),
-
-                          // 2. Price Row (Highlighted)
+                          SizedBox(height: AppSpace.h(2)),
+                          Text(
+                            variantName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.caption(),
+                          ),
+                          SizedBox(height: AppSpace.h(AppSpace.xs)),
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.baseline,
                             textBaseline: TextBaseline.alphabetic,
                             children: [
                               Text(
                                 '₹${variantSellingPrice.toStringAsFixed(0)}',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13.sp,
-                                  color: AppColors.primaryTextColor,
-                                ),
+                                style: AppText.priceM(),
                               ),
                               if (discountPercentage > 0) ...[
-                                SizedBox(width: 4.w),
-                                Text(
-                                  '₹${variantPrice.toStringAsFixed(0)}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.normal,
-                                    fontSize: 10.sp,
-                                    decoration: TextDecoration.lineThrough,
-                                    color: AppColors.neutral400,
+                                SizedBox(width: AppSpace.w(AppSpace.xs)),
+                                Flexible(
+                                  child: Text(
+                                    '₹${variantPrice.toStringAsFixed(0)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.mrp(),
                                   ),
                                 ),
                               ],
                             ],
                           ),
-
-                          // 3. Discount text (blue)
-                          if (discountPercentage > 0) ...[
-                            SizedBox(height: 1.w),
-                            Text(
-                              '$discountPercentage% OFF',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 9.sp,
-                                color: const Color(0xFF2563EB), // Premium Blue
-                              ),
-                            ),
-                          ],
-                          SizedBox(height: 4.w),
-
-                          // 4. Product Title / Name (At the bottom)
-                          Flexible(
-                            child: Text(
-                              productName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w400,
-                                fontSize: 11.sp,
-                                height: 1.3,
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),
                   ),
-
-
                 ],
               ),
             ),
@@ -834,7 +858,7 @@ class _ProductCardState extends State<ProductCard> {
             // this app exists to have people tap.
             height: 34.w,
             decoration: BoxDecoration(
-              color: AppColors.primaryColor,
+              color: AppColors.primary,
               borderRadius: BorderRadius.circular(6.r),
             ),
             child: Row(
@@ -960,7 +984,7 @@ class _ProductCardState extends State<ProductCard> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(6.r),
-                border: Border.all(color: AppColors.primaryColor, width: 1),
+                border: Border.all(color: AppColors.primary, width: 1),
               ),
               child: Center(
                 child: Row(
@@ -971,7 +995,7 @@ class _ProductCardState extends State<ProductCard> {
                       child: Text(
                         Provider.of<LanguageProvider>(context).translate('add').toUpperCase(),
                         style: TextStyle(
-                          color: AppColors.primaryColor,
+                          color: AppColors.primary,
                           fontWeight: FontWeight.bold,
                           fontSize: 10.sp,
                         ),
@@ -983,7 +1007,7 @@ class _ProductCardState extends State<ProductCard> {
                       Padding(
                         padding: EdgeInsets.only(left: 1.w),
                         child: Icon(Icons.keyboard_arrow_down,
-                            size: 10.sp, color: AppColors.primaryColor),
+                            size: 10.sp, color: AppColors.primary),
                       ),
                   ],
                 ),

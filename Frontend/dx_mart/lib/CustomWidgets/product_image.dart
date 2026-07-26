@@ -1,8 +1,9 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:shimmer/shimmer.dart';
 
 import '../core/supabase.dart';
-import '../utils/colors.dart';
+import '../design/app_colors.dart';
 
 /// The one way this app draws a remote image.
 ///
@@ -52,7 +53,8 @@ class ProductImage extends StatelessWidget {
     final cacheWidth = (logicalWidth * dpr).round().clamp(1, 2000);
 
     Widget image = url.isEmpty
-        ? _placeholder(Icon(errorIcon ?? Icons.image_outlined, color: Colors.grey))
+        ? _empty(Icon(errorIcon ?? Icons.image_outlined,
+            color: AppColors.iconMuted, size: 22))
         : CachedNetworkImage(
             imageUrl: url,
             width: width,
@@ -61,9 +63,10 @@ class ProductImage extends StatelessWidget {
             memCacheWidth: cacheWidth,
             maxWidthDiskCache: cacheWidth,
             fadeInDuration: const Duration(milliseconds: 150),
-            placeholder: (_, __) => _placeholder(null),
-            errorWidget: (_, __, ___) => _placeholder(
-              Icon(errorIcon ?? Icons.broken_image_outlined, color: Colors.grey),
+            placeholder: (_, _) => _loading(),
+            errorWidget: (_, _, _) => _empty(
+              Icon(errorIcon ?? Icons.broken_image_outlined,
+                  color: AppColors.iconMuted, size: 22),
             ),
           );
 
@@ -73,12 +76,32 @@ class ProductImage extends StatelessWidget {
     return image;
   }
 
-  /// A quiet grey block rather than empty space, so a loading grid reads as "loading"
-  /// instead of "broken".
-  Widget _placeholder(Widget? child) => Container(
+  /// A shimmering block while bytes are in flight.
+  ///
+  /// This used to be `AppColors.backgroundColor` — pure `#FFFFFF` — painted on
+  /// cards that are themselves white, so the "placeholder" was invisible and a
+  /// loading grid rendered as genuinely empty space. The doc comment on it
+  /// claimed "a quiet grey block ... so a loading grid reads as 'loading'
+  /// instead of 'broken'", which is exactly what it did not do. On the
+  /// connections this app is built for, that blank state is most of what the
+  /// user actually looks at, so it is worth getting right.
+  Widget _loading() => Shimmer.fromColors(
+        baseColor: AppColors.surfaceSunken,
+        highlightColor: AppColors.surface,
+        period: const Duration(milliseconds: 1200),
+        child: Container(
+          width: width,
+          height: height,
+          color: AppColors.surfaceSunken,
+        ),
+      );
+
+  /// No image, or the fetch failed. Static rather than shimmering — this state
+  /// is final, and pulsing it would promise something still to come.
+  Widget _empty(Widget child) => Container(
         width: width,
         height: height,
-        color: AppColors.backgroundColor,
+        color: AppColors.surfaceSunken,
         alignment: Alignment.center,
         child: child,
       );
