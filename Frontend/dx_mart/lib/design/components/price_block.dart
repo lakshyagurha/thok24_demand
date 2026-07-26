@@ -26,6 +26,7 @@ class PriceBlock extends StatelessWidget {
     this.mrp,
     this.size = PriceSize.card,
     this.showDiscount = false,
+    this.highlighted = false,
   });
 
   final double sellingPrice;
@@ -35,6 +36,18 @@ class PriceBlock extends StatelessWidget {
   /// Renders the percentage inline. Off by default because on a product card
   /// the discount belongs on the image as a [DiscountBadge], not in the text.
   final bool showDiscount;
+
+  /// Wrap the price in a warm plate, with the MRP struck through beside it.
+  ///
+  /// This is the Flipkart Grocery treatment, and it works for a reason: a plain
+  /// price and a plain strikethrough are two pieces of text the eye has to
+  /// compare, whereas a highlighted plate reads as "this is the deal" before
+  /// you have parsed either number. On a shelf of twelve cards that difference
+  /// is the whole scan.
+  ///
+  /// Only for the card. On the detail page and in the cart the price is already
+  /// the largest thing on screen and does not need a plate to win.
+  final bool highlighted;
 
   bool get _hasMrp => mrp != null && mrp! > sellingPrice;
 
@@ -49,7 +62,7 @@ class PriceBlock extends StatelessWidget {
       PriceSize.hero => AppText.priceHero(),
     };
 
-    return Row(
+    final row = Row(
       crossAxisAlignment: CrossAxisAlignment.baseline,
       textBaseline: TextBaseline.alphabetic,
       mainAxisSize: MainAxisSize.min,
@@ -71,6 +84,18 @@ class PriceBlock extends StatelessWidget {
           DiscountBadge(percentage: discountPercentage, compact: true),
         ],
       ],
+    );
+
+    if (!highlighted) return row;
+
+    return Container(
+      padding: AppSpace.symmetric(horizontal: AppSpace.sm, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.discountSurface,
+        borderRadius: AppRadius.xsAll,
+        border: Border.all(color: AppColors.discountBorder),
+      ),
+      child: row,
     );
   }
 }

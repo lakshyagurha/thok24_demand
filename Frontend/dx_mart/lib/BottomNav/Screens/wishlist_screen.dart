@@ -234,15 +234,16 @@ class _WishlistScreenState extends State<WishlistScreen> {
                   child: GridView.builder(
                     padding: EdgeInsets.all(12.w),
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 16.w,
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12.w,
                       mainAxisSpacing: 16.h,
-                      childAspectRatio: 0.42,
+                      childAspectRatio: 0.62,
                     ),
                     itemCount: wishlistProducts.length,
                     itemBuilder: (context, index) {
                       final product = wishlistProducts[index];
                       return ProductCard(
+                        width: 158.w,
                         product: product,
                         userId: '',
                         onCartUpdated: _refreshCart,

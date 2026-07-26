@@ -67,8 +67,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Scroll controller for detecting scroll direction
   final ScrollController _scrollController = ScrollController();
-  bool _showStickySearchBar = false;
-  double _scrollPosition = 0;
+  /// Whether the page has scrolled far enough that the pinned category bar,
+  /// rather than the hero, is what sits under the status bar.
+  ///
+  /// A ValueNotifier and not setState. It was setState, and that rebuilt the
+  /// entire screen — hero, twelve category thumbnails, the banner carousel,
+  /// three offer cards and three product rails — on every scroll-direction
+  /// change. Combined with the delegate bug below it was enough to hang the
+  /// app: Android showed "DxMart isn't responding" on an ordinary scroll.
+  /// Only the status-bar strip listens to this now.
+  final ValueNotifier<bool> _scrolled = ValueNotifier<bool>(false);
 
   // Data variables
   String deliveryTime = '15 minutes';
@@ -97,30 +105,15 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _scrollController.removeListener(_scrollListener);
     _scrollController.dispose();
+    _scrolled.dispose();
     super.dispose();
   }
 
   void _scrollListener() {
-    final double currentScroll = _scrollController.offset;
-
-    // Show sticky search bar when scrolling down beyond a certain point
-    if (currentScroll > 100 && currentScroll > _scrollPosition) {
-      if (!_showStickySearchBar) {
-        setState(() {
-          _showStickySearchBar = true;
-        });
-      }
-    }
-    // Hide sticky search bar when scrolling up or at the top
-    else if (currentScroll <= 100 || currentScroll < _scrollPosition) {
-      if (_showStickySearchBar) {
-        setState(() {
-          _showStickySearchBar = false;
-        });
-      }
-    }
-
-    _scrollPosition = currentScroll;
+    // Cheap: one bool compare per frame, and a repaint of a strip the height of
+    // the status bar. No setState, so the widget tree is untouched.
+    final next = _scrollController.offset > 12;
+    if (next != _scrolled.value) _scrolled.value = next;
   }
 
   Future<void> _loadAllData() async {
@@ -281,7 +274,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: RefreshIndicator(
+      body: Column(
+        children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: _scrolled,
+            builder: (context, scrolled, _) => AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              height: MediaQuery.of(context).padding.top,
+              color: scrolled ? AppColors.surface : const Color(0xFFC7E9D5),
+            ),
+          ),
+          Expanded(
+            child: RefreshIndicator(
         onRefresh: _loadAllData,
         color: AppColors.primary,
         child: CustomScrollView(
@@ -298,16 +302,18 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _PinnedCategoryBar(
-                  child: CategoryBar(
-                    items: [
-                      for (final c in _categoryList.take(12))
-                        CategoryBarItem(
-                          id: c.id,
-                          label: c.localizedName(code),
-                          image: c.imageUrl,
-                        ),
-                    ],
-                    onSelected: (item) => _openCategory(item.id, item.label),
+                  items: [
+                    for (final c in _categoryList.take(12))
+                      CategoryBarItem(
+                        id: c.id,
+                        label: c.localizedName(code),
+                        image: c.imageUrl,
+                      ),
+                  ],
+                  onSelected: (item) => _openCategory(item.id, item.label),
+                  onViewAll: () => _openCategory(
+                    _categoryList.first.id,
+                    _categoryList.first.localizedName(code),
                   ),
                 ),
               ),
@@ -318,7 +324,6 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverToBoxAdapter(child: _trustStrip(lang)),
               SliverToBoxAdapter(child: _banners()),
               SliverToBoxAdapter(child: _offerCards()),
-              SliverToBoxAdapter(child: _categoryGrid(lang, code)),
               ..._rails(lang, code),
               SliverToBoxAdapter(
                 child: SizedBox(height: AppSpace.h(AppSpace.xl)),
@@ -326,6 +331,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ],
         ),
+      ),
+          ),
+        ],
       ),
       // Docked rather than floating. The old pill was `Positioned` over the
       // content and covered the product row beneath it.
@@ -371,9 +379,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _header(LanguageProvider lang) {
     return Container(
       decoration: const BoxDecoration(gradient: AppGradients.heroSoft),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
+      child: Padding(
           padding: EdgeInsets.fromLTRB(
             AppSpace.w(AppSpace.gutter),
             AppSpace.h(AppSpace.md),
@@ -398,7 +404,6 @@ class _HomeScreenState extends State<HomeScreen> {
               _searchField(lang),
             ],
           ),
-        ),
       ),
     );
   }
@@ -694,100 +699,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// The category grid.
-  ///
-  /// Still capped, but now the cap is honest: a "See all" leads to the full
-  /// list. Previously the grid silently truncated to eight with no affordance
-  /// at all, and the label box was set `72.w` wide beneath a `64.w` tile, which
-  /// is why rows with short names left ragged gaps.
-  Widget _categoryGrid(LanguageProvider lang, String code) {
-    if (_categoryList.isEmpty) return const SizedBox.shrink();
-
-    final shown = _categoryList.take(8).toList();
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionHeader(
-          title: lang.translate('categories'),
-          subtitle: '${_categoryList.length} in your area',
-          onSeeAll: _categoryList.length > 8
-              ? () => _openCategory(_categoryList.first.id,
-                  _categoryList.first.localizedName(code))
-              : null,
-        ),
-        Padding(
-          padding: AppSpace.symmetric(horizontal: AppSpace.gutter),
-          child: GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.zero,
-            itemCount: shown.length,
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
-              mainAxisSpacing: AppSpace.h(AppSpace.base),
-              crossAxisSpacing: AppSpace.w(AppSpace.md),
-              // Sized so the cell reserves two full label lines under a square
-              // tile. At 0.78 there was room for one, so "Tea, Coffee & More"
-              // and "Masala & Dry Fruits" were clipped rather than wrapped —
-              // and category names get longer, not shorter, in Hindi.
-              childAspectRatio: 0.64,
-            ),
-            itemBuilder: (context, i) {
-              final c = shown[i];
-              final name = c.localizedName(code);
-
-              return InkWell(
-                onTap: () => _openCategory(c.id, name),
-                borderRadius: AppRadius.mdAll,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // The catalogue's category artwork has a cream background
-                    // baked into the file. Inset inside a white tile that cream
-                    // reads as a stray yellow square; filling the tile with
-                    // `cover` lets it become the tile's own background, so the
-                    // shape looks deliberate instead of like a mistake.
-                    AspectRatio(
-                      aspectRatio: 1,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: AppGradients.tile,
-                          borderRadius: AppRadius.mdAll,
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: AppRadius.mdAll,
-                          child: ProductImage(
-                            path: c.imageUrl,
-                            width: double.infinity,
-                            height: double.infinity,
-                            fit: BoxFit.cover,
-                            errorIcon: Icons.category_outlined,
-                          ),
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: AppSpace.h(6)),
-                    Expanded(
-                      child: Text(
-                        name,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.caption(color: AppColors.textPrimary),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
   List<Widget> _rails(LanguageProvider lang, String code) {
     final sections = <_Rail>[
       _Rail(lang.translate('everyday_essentials'), 'Daily staples',
@@ -884,11 +795,17 @@ class _Rail {
 
 /// Keeps the category bar on screen while the page scrolls under it.
 class _PinnedCategoryBar extends SliverPersistentHeaderDelegate {
-  _PinnedCategoryBar({required this.child});
+  _PinnedCategoryBar({
+    required this.items,
+    required this.onSelected,
+    required this.onViewAll,
+  });
 
-  final Widget child;
+  final List<CategoryBarItem> items;
+  final ValueChanged<CategoryBarItem> onSelected;
+  final VoidCallback onViewAll;
 
-  double get _height => 108.h;
+  double get _height => 116.h;
 
   @override
   double get minExtent => _height;
@@ -902,10 +819,25 @@ class _PinnedCategoryBar extends SliverPersistentHeaderDelegate {
       color: AppColors.surface,
       elevation: overlapsContent || shrinkOffset > 0 ? 1 : 0,
       shadowColor: AppColors.textPrimary.withValues(alpha: 0.10),
-      child: SizedBox(height: _height, child: child),
+      child: SizedBox(
+        height: _height,
+        child: CategoryBar(
+          items: items,
+          onSelected: onSelected,
+          onViewAll: onViewAll,
+        ),
+      ),
     );
   }
 
+  /// Compares the data, not the widget.
+  ///
+  /// This was `old.child != child`, and `child` was a freshly-constructed
+  /// CategoryBar on every parent build — so it was always true, and the bar's
+  /// twelve images were rebuilt on every scroll frame.
   @override
-  bool shouldRebuild(covariant _PinnedCategoryBar old) => old.child != child;
+  bool shouldRebuild(covariant _PinnedCategoryBar old) =>
+      old.items.length != items.length ||
+      (items.isNotEmpty && old.items.first.id != items.first.id) ||
+      (items.isNotEmpty && old.items.first.label != items.first.label);
 }

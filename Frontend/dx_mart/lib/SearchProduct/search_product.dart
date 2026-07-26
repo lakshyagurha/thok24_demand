@@ -530,15 +530,16 @@ class _SearchProductState extends State<SearchProduct> {
         padding: EdgeInsets.zero,
         physics: const BouncingScrollPhysics(),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          crossAxisSpacing: 16.w,
+          crossAxisCount: 2,
+          crossAxisSpacing: 12.w,
           mainAxisSpacing: 16.h,
-          childAspectRatio: 0.42,
+          childAspectRatio: 0.62,
         ),
         itemCount: list.length,
         itemBuilder: (context, index) {
           final product = list[index];
           return ProductCard(
+            width: 158.w,
             product: product,
             userId: '',
             onCartUpdated: _refreshCart,

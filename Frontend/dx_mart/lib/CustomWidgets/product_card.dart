@@ -6,6 +6,7 @@ import '../ProductDetailScreen/product_details_screen.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
 import '../design/app_colors.dart';
+import '../design/components/price_block.dart';
 import '../design/app_gradients.dart';
 import '../design/app_radius.dart';
 import '../design/app_space.dart';
@@ -804,27 +805,20 @@ class _ProductCardState extends State<ProductCard> {
                             overflow: TextOverflow.ellipsis,
                             style: AppText.caption(),
                           ),
-                          SizedBox(height: AppSpace.h(AppSpace.xs)),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Text(
-                                '₹${variantSellingPrice.toStringAsFixed(0)}',
-                                style: AppText.priceM(),
-                              ),
-                              if (discountPercentage > 0) ...[
-                                SizedBox(width: AppSpace.w(AppSpace.xs)),
-                                Flexible(
-                                  child: Text(
-                                    '₹${variantPrice.toStringAsFixed(0)}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: AppText.mrp(),
-                                  ),
-                                ),
-                              ],
-                            ],
+                          SizedBox(height: AppSpace.h(AppSpace.sm)),
+                          // A warm plate behind the price with the MRP struck
+                          // through beside it. A bare price and a bare
+                          // strikethrough are two numbers the eye has to
+                          // compare; a plate reads as "this is the deal" before
+                          // either has been parsed, which is what matters on a
+                          // shelf of twelve cards.
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: PriceBlock(
+                              sellingPrice: variantSellingPrice,
+                              mrp: discountPercentage > 0 ? variantPrice : null,
+                              highlighted: true,
+                            ),
                           ),
                         ],
                       ),

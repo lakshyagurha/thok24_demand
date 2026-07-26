@@ -1478,15 +1478,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             child: GridView.builder(
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
+                crossAxisCount: 2,
                 crossAxisSpacing: 12.w,
-                mainAxisSpacing: 12.h,
-                childAspectRatio: 0.45,
+                mainAxisSpacing: 16.h,
+                childAspectRatio: 0.62,
               ),
               itemCount: list.length > 6 ? 6 : list.length,
               itemBuilder: (context, index) {
                 final product = list[index];
                 return ProductCard(
+                  width: 158.w,
                   product: product,
                   userId: '',
                   onCartUpdated: () {
