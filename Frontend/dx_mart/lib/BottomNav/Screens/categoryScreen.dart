@@ -5,7 +5,14 @@ import '../../CategoryViewScreen/categoryViewScreen.dart';
 import '../../core/supabase.dart';
 import '../../data/catalog_repository.dart';
 import '../../data/models.dart';
-import '../../utils/colors.dart';
+import '../../design/app_colors.dart';
+import '../../design/app_gradients.dart';
+import '../../design/app_radius.dart';
+import '../../design/app_space.dart';
+import '../../design/app_type.dart';
+import '../../design/components/app_header.dart';
+import '../../design/components/skeleton.dart';
+import '../../design/components/states.dart';
 import '../../utils/language_provider.dart';
 import '../../CustomWidgets/product_image.dart';
 
@@ -47,7 +54,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
       });
     } on DataException catch (e) {
       if (!mounted) return;
-      _showSnackBar("Error: ${e.message}", AppColors.errorColor);
+      _showSnackBar("Error: ${e.message}", AppColors.danger);
       setState(() {
         _isLoading = false;
         _hasError = true;
@@ -55,7 +62,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar("Connection error: $e", AppColors.errorColor);
+      _showSnackBar("Connection error: $e", AppColors.danger);
       setState(() {
         _isLoading = false;
         _hasError = true;
@@ -90,201 +97,155 @@ class _CategoryScreenState extends State<CategoryScreen> {
     );
   }
 
-  Widget _buildErrorWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+  // ===========================================================================
+  // Presentation
+  // ===========================================================================
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context);
+    final code = lang.currentLanguage;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: Column(
         children: [
-          Icon(Icons.error_outline, size: 50.sp, color: Colors.red),
-          SizedBox(height: 10.h),
-          Text(
-            Provider.of<LanguageProvider>(context).translate('error_loading_categories'),
-            style: TextStyle(
-              fontSize: 16.sp,
-              color: Colors.red,
-              fontWeight: FontWeight.bold,
-            ),
+          AppHeader(
+            title: lang.translate('categories'),
+            subtitle: _isLoading || _hasError
+                ? null
+                : '${_categoryList.length} ${lang.translate('categories').toLowerCase()}',
+            showBack: false,
+            actions: [
+              HeaderAction(
+                icon: Icons.refresh_rounded,
+                onTap: _fetchCategories,
+              ),
+            ],
           ),
-          SizedBox(height: 10.h),
-          Text(
-            _errorMessage,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14.sp),
-          ),
-          SizedBox(height: 20.h),
-          ElevatedButton(
-            onPressed: _fetchCategories,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primaryColor,
-            ),
-            child: Text(Provider.of<LanguageProvider>(context).translate('retry'), style: TextStyle(color: Colors.white)),
-          ),
+          const Divider(height: 1),
+          Expanded(child: _body(lang, code)),
         ],
       ),
     );
   }
 
-  Widget _buildLoadingWidget() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: AppColors.primaryColor),
-          SizedBox(height: 16.h),
-          Text(
-            Provider.of<LanguageProvider>(context).translate('loading_categories'),
-            style: TextStyle(fontSize: 14.sp),
+  Widget _body(LanguageProvider lang, String code) {
+    if (_isLoading) {
+      return AppSkeleton.sweep(
+        child: GridView.builder(
+          padding: AppSpace.all(AppSpace.gutter),
+          itemCount: 12,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: AppSpace.h(AppSpace.base),
+            crossAxisSpacing: AppSpace.w(AppSpace.md),
+            childAspectRatio: 0.74,
           ),
-        ],
-      ),
-    );
-  }
+          itemBuilder: (_, _) => Column(
+            children: [
+              Expanded(
+                child: AppSkeleton(
+                  width: double.infinity,
+                  height: double.infinity,
+                  radius: AppRadius.mdAll,
+                ),
+              ),
+              AppSpace.gapH(AppSpace.sm),
+              AppSkeleton(width: 60.w, height: AppSpace.h(10)),
+            ],
+          ),
+        ),
+      );
+    }
 
-  Widget _buildCategoryGrid() {
-    return Padding(
-      padding: EdgeInsets.all(16.w),
+    if (_hasError) {
+      return AppEmptyState(
+        icon: Icons.wifi_off_rounded,
+        title: lang.translate('something_went_wrong'),
+        message: _errorMessage.isEmpty
+            ? lang.translate('check_connection')
+            : _errorMessage,
+        actionLabel: lang.translate('retry'),
+        onAction: _fetchCategories,
+        tone: StateTone.error,
+      );
+    }
+
+    if (_categoryList.isEmpty) {
+      return AppEmptyState(
+        icon: Icons.category_outlined,
+        title: lang.translate('no_categories'),
+        actionLabel: lang.translate('retry'),
+        onAction: _fetchCategories,
+      );
+    }
+
+    // Three across rather than four.
+    //
+    // The old screen put twelve tiles into a four-column grid at an 0.60 aspect
+    // ratio and left the bottom two-thirds of the screen empty, so a page whose
+    // whole job is "show me everything you sell" managed to look like the
+    // catalogue was nearly bare. Three columns give each tile a usable image
+    // and a two-line label, and twelve of them fill the viewport.
+    return RefreshIndicator(
+      onRefresh: _fetchCategories,
+      color: AppColors.primary,
       child: GridView.builder(
-        physics: const BouncingScrollPhysics(),
-        padding: EdgeInsets.zero,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4,
-          mainAxisSpacing: 12.h,
-          crossAxisSpacing: 10.w,
-          childAspectRatio: 0.60,
+        padding: AppSpace.all(AppSpace.gutter),
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
         ),
         itemCount: _categoryList.length,
-        itemBuilder: (context, index) {
-          final category = _categoryList[index];
-          final categoryName = category.localizedName(
-            Provider.of<LanguageProvider>(context).currentLanguage,
-          );
-          final imageUrl = category.imageUrl;
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          mainAxisSpacing: AppSpace.h(AppSpace.base),
+          crossAxisSpacing: AppSpace.w(AppSpace.md),
+          childAspectRatio: 0.74,
+        ),
+        itemBuilder: (context, i) {
+          final c = _categoryList[i];
+          final name = c.localizedName(code);
 
-          return GestureDetector(
-            onTap: () => _onCategoryTap(category),
+          return InkWell(
+            onTap: () => _onCategoryTap(c),
+            borderRadius: AppRadius.mdAll,
             child: Column(
               children: [
-                Container(
-                  width: 60.w,
-                  height: 60.w,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10.r),
-
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(10.r),
-                    child: imageUrl.isNotEmpty
-                        ? ProductImage(
-                            path: imageUrl,
-                            width: 60.w,
-                            height: 60.w,
-                            fit: BoxFit.cover,
-                            errorIcon: Icons.category,
-                          )
-                        : Icon(Icons.category, size: 30.sp, color: AppColors.primaryColor),
+                Expanded(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: AppGradients.tile,
+                      borderRadius: AppRadius.mdAll,
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: AppRadius.mdAll,
+                      child: ProductImage(
+                        path: c.imageUrl,
+                        width: double.infinity,
+                        height: double.infinity,
+                        fit: BoxFit.cover,
+                        errorIcon: Icons.category_outlined,
+                      ),
+                    ),
                   ),
                 ),
-                SizedBox(height: 6.h),
+                AppSpace.gapH(AppSpace.sm),
                 SizedBox(
-                  width: 72.w,
+                  height: AppSpace.h(32),
                   child: Text(
-                    categoryName,
-                    style: TextStyle(
-                      fontSize: 10.sp,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
+                    name,
                     textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.labelS(color: AppColors.textPrimary),
                   ),
                 ),
               ],
             ),
           );
         },
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: Column(
-        children: [
-          Container(
-            color: Colors.white,
-            height: MediaQuery.of(context).padding.top,
-          ),
-          Container(
-            width: double.infinity,
-            height: 60.h,
-            decoration: BoxDecoration(
-              color: AppColors.backgroundColor,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  offset: Offset(0, 4),
-                  blurRadius: 6,
-                  spreadRadius: 1,
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: EdgeInsets.only(top: 10.h),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(width: 20.w),
-                  Text(
-                    Provider.of<LanguageProvider>(context).translate('categories'),
-                    style: TextStyle(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primaryTextColor,
-                    ),
-                  ),
-                  const Spacer(),
-                  // Refresh Button
-                  IconButton(
-                    onPressed: _fetchCategories,
-                    icon: const Icon(Icons.refresh, color: AppColors.primaryColor),
-                  ),
-                  SizedBox(width: 16.w),
-                ],
-              ),
-            ),
-          ),
-          Expanded(
-            child: _hasError
-                ? _buildErrorWidget()
-                : _isLoading
-                ? _buildLoadingWidget()
-                : _categoryList.isEmpty
-                ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.category_outlined, size: 50.sp, color: Colors.grey),
-                  SizedBox(height: 10.h),
-                  Text(
-                    Provider.of<LanguageProvider>(context).translate('no_categories_found'),
-                    style: TextStyle(fontSize: 16.sp),
-                  ),
-                  SizedBox(height: 10.h),
-                  ElevatedButton(
-                    onPressed: _fetchCategories,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryColor,
-                    ),
-                    child: Text(Provider.of<LanguageProvider>(context).translate('refresh'), style: TextStyle(color: Colors.white)),
-                  ),
-                ],
-              ),
-            )
-                : _buildCategoryGrid(),
-          )
-        ],
       ),
     );
   }

@@ -470,6 +470,41 @@ class LocalizationService {
       'hi': 'कार्ट देखें',
       'hn': 'Cart dekho',
     },
+    'something_went_wrong': {
+      'en': 'Something went wrong',
+      'hi': 'कुछ गड़बड़ हो गई',
+      'hn': 'Kuch gadbad ho gayi',
+    },
+    'check_connection': {
+      'en': 'Please check your connection and try again.',
+      'hi': 'कृपया अपना कनेक्शन जांचें और फिर कोशिश करें।',
+      'hn': 'Apna connection check karke dobara try karein.',
+    },
+    'try_another_category': {
+      'en': 'Try another category from the list.',
+      'hi': 'सूची से कोई दूसरी श्रेणी चुनें।',
+      'hn': 'List se dusri category chunein.',
+    },
+    'items': {
+      'en': 'items',
+      'hi': 'सामान',
+      'hn': 'items',
+    },
+    'sort': {
+      'en': 'Sort',
+      'hi': 'क्रम',
+      'hn': 'Sort',
+    },
+    'filter': {
+      'en': 'Filter',
+      'hi': 'फ़िल्टर',
+      'hn': 'Filter',
+    },
+    'no_categories': {
+      'en': 'No categories yet',
+      'hi': 'अभी कोई श्रेणी नहीं',
+      'hn': 'Abhi koi category nahi',
+    },
     'select_location': {
       'en': 'Select location',
       'hi': 'पता चुनें',

@@ -7,7 +7,16 @@ import '../CustomWidgets/product_card.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
 import '../data/models.dart';
-import '../utils/colors.dart';
+import '../SearchProduct/search_product.dart';
+import '../design/app_colors.dart';
+import '../design/app_gradients.dart';
+import '../design/app_radius.dart';
+import '../design/app_space.dart';
+import '../design/app_type.dart';
+import '../design/components/app_header.dart';
+import '../design/components/cart_bar.dart';
+import '../design/components/skeleton.dart';
+import '../design/components/states.dart';
 import 'package:provider/provider.dart';
 import '../utils/language_provider.dart';
 import '../CustomWidgets/cart_provider.dart';
@@ -160,361 +169,329 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
     }
   }
 
-  Widget _buildCategoryImage(String? imageUrl) {
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      return ProductImage(
-        path: imageUrl,
-        width: 45.w,
-        height: 45.h,
-      );
-    } else {
-      return _buildDefaultImage();
-    }
-  }
-
-  Widget _buildDefaultImage() {
-    return Padding(
-      padding: EdgeInsets.only(top: 5.h),
-      child: SvgPicture.asset(
-        'assets/svg/category.svg',
-        width: 26.w,
-        height: 26.h,
-        fit: BoxFit.contain,
-        color: AppColors.primaryColor,
-      ),
-    );
-  }
+  // ===========================================================================
+  // Presentation
+  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context);
+    final code = lang.currentLanguage;
+
     return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
-      body: Stack(
+      backgroundColor: AppColors.background,
+      body: Column(
         children: [
-          Column(
-            children: [
-              Container(
-                color: Colors.white,
-                height: MediaQuery.of(context).padding.top,
-              ),
-              Container(
-                width: double.infinity,
-                height: 60.h,
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundColor,
-                  border: Border(
-                    bottom: BorderSide(color: Colors.grey.shade200, width: 1),
-                  ),
-                ),
-                child: Padding(
-                  padding:  EdgeInsets.only(top: 10.h),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      SizedBox(width: 16.w),
-                      InkWell(
-                        onTap: () {
-                          Navigator.pop(context);
-                        },
-                        child: Container(
-                          height: 32.h,
-                          width: 32.w,
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryColor.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.arrow_back,
-                              size: 18.sp,
-                              color: AppColors.primaryColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 16.w),
-                      Text(
-                        selectedCategoryName.isNotEmpty ? selectedCategoryName : Provider.of<LanguageProvider>(context).translate('categories'),
-                        style: TextStyle(
-                          fontSize: 17.sp,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              Expanded(
-                child: Row(
-                  children: [
-                    // Left Container - Categories List
-                    Padding(
-                      padding: EdgeInsets.only(top: 8.h),
-                      child: Container(
-                        width: 80.w,
-                        decoration: BoxDecoration(
-                            color: AppColors.neutral50,
-                            borderRadius: BorderRadius.only(
-                              topRight: Radius.circular(10.r),
-                            ),
-                            border: Border(
-                              right: BorderSide(color: Colors.grey.shade200, width: 1),
-                            )
-                        ),
-                        child: _isLoadingCategories
-                            ? Center(child: CircularProgressIndicator())
-                            : categories.isEmpty
-                            ? Center(
-                          child: Text(
-                            "No categories",
-                            style: TextStyle(fontSize: 12.sp),
-                            textAlign: TextAlign.center,
-                          ),
-                        )
-                            : ListView.builder(
-                          padding: EdgeInsets.zero,
-                          itemCount: categories.length,
-                          itemBuilder: (context, index) {
-                            final category = categories[index];
-                            final int categoryId = category.id;
-                            final bool isSelected = categoryId == selectedCategoryId;
-
-                            return GestureDetector(
-                              onTap: () {
-                                if (categoryId != selectedCategoryId) {
-                                  setState(() => selectedCategoryId = categoryId);
-                                  fetchProductsByCategory(categoryId);
-                                }
-                              },
-                              child: Stack(
-                                children: [
-                                  Container(
-                                    margin: EdgeInsets.symmetric(vertical: 2.h),
-                                    padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 8.h),
-                                    decoration: BoxDecoration(
-                                      color: isSelected ? Colors.white : Colors.transparent,
-                                      borderRadius: isSelected
-                                          ? BorderRadius.horizontal(left: Radius.circular(12.r))
-                                          : null,
-                                    ),
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.center,
-                                      children: [
-                                        // Circular icon wrapper
-                                        Container(
-                                          width: 44.w,
-                                          height: 44.w,
-                                          decoration: BoxDecoration(
-                                            color: isSelected ? AppColors.primary50 : AppColors.neutral100,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Center(
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(22.r),
-                                              child: _buildCategoryImage(category.imageUrl),
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(height: 4.h),
-                                        AnimatedDefaultTextStyle(
-                                          duration: const Duration(milliseconds: 300),
-                                          style: TextStyle(
-                                            fontSize: 10.sp,
-                                            color: isSelected ? AppColors.primaryColor : AppColors.neutral600,
-                                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                          ),
-                                          child: Text(
-                                            category.localizedName(
-                                              Provider.of<LanguageProvider>(context).currentLanguage,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  AnimatedPositioned(
-                                    duration: Duration(milliseconds: 300),
-                                    curve: Curves.easeOutCubic,
-                                    right: isSelected ? 0 : -4.w,
-                                    top: 6.h,
-                                    child: AnimatedContainer(
-                                      duration: Duration(milliseconds: 300),
-                                      curve: Curves.easeOutCubic,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primaryColor,
-                                        borderRadius: BorderRadius.only(
-                                          topLeft: Radius.circular(10.r),
-                                          bottomLeft: Radius.circular(10.r),
-                                        ),
-                                      ),
-                                      width: isSelected ? 4.w : 0,
-                                      height: 40.h,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-
-                    // Right Container - Products
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: _isLoadingProducts
-                                ? Center(child: CircularProgressIndicator())
-                                : products.isEmpty
-                                ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    _productsFailed
-                                        ? Icons.wifi_off_rounded
-                                        : Icons.inventory_2_outlined,
-                                    size: 50.sp,
-                                    color: Colors.grey,
-                                  ),
-                                  SizedBox(height: 10.h),
-                                  Padding(
-                                    padding: EdgeInsets.symmetric(horizontal: 24.w),
-                                    child: Text(
-                                      Provider.of<LanguageProvider>(context).translate(
-                                        _productsFailed
-                                            ? 'network_error_retry'
-                                            : 'no_products_found',
-                                      ),
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(fontSize: 14.sp),
-                                    ),
-                                  ),
-                                  if (_productsFailed)
-                                    TextButton.icon(
-                                      onPressed: () =>
-                                          fetchProductsByCategory(selectedCategoryId),
-                                      icon: const Icon(Icons.refresh),
-                                      label: Text(
-                                        Provider.of<LanguageProvider>(context)
-                                            .translate('retry'),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            )
-                                : GridView.builder(
-                                padding: EdgeInsets.only(left: 12.w, right: 12.w, top: 12.w, bottom: cartList.isNotEmpty ? 100.h : 12.w),
-                                itemCount: products.length,
-                                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  childAspectRatio: 0.55,
-                                  crossAxisSpacing: 16.w,
-                                  mainAxisSpacing: 16.h,
-                                ),
-                              itemBuilder: (context, index) {
-                                final product = products[index];
-                                return ProductCard(
-                                  product: _productCardData(
-                                    product,
-                                    Provider.of<LanguageProvider>(context).currentLanguage,
-                                  ),
-                                  // Identity comes from the session, never from the widget tree.
-                                  userId: '',
-                                  onCartUpdated: fetchCartQuantity,
-                                  onCategoryBack: fetchCartQuantity,
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+          AppHeader(
+            title: selectedCategoryName,
+            subtitle: _isLoadingProducts
+                ? null
+                : '${products.length} ${products.length == 1 ? "item" : "items"}',
+            actions: [
+              HeaderAction(
+                icon: Icons.search_rounded,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SearchProduct()),
                 ),
               ),
             ],
           ),
+          const Divider(height: 1),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _rail(code),
+                Expanded(child: _content(lang, code)),
+              ],
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: Consumer<CartProvider>(
+        builder: (context, cart, _) => CartBar(
+          itemCount: cart.getUniqueItemsCount(),
+          label: lang.translate('view_cart'),
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => CartScreen()),
+            );
+            await fetchCartQuantity();
+          },
+        ),
+      ),
+    );
+  }
 
-          Consumer<CartProvider>(
-            builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
-              final hasItems = uniqueItemsCount > 0;
+  // ---------------------------------------------------------------------------
+  // Left rail
+  // ---------------------------------------------------------------------------
 
-              return AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.slowMiddle,
-                bottom: hasItems ? 40.h : -100.h,
-                left: 80.w,
-                right: 80.w,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 300),
-                  opacity: hasItems ? 1.0 : 0.0,
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => CartScreen()));
-                    },
-                    child: Container(
-                      height: 38.h,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
-                        borderRadius: BorderRadius.circular(30.r),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: AppColors.gray,
-                                borderRadius: BorderRadius.circular(50.r),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  uniqueItemsCount.toString(),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14.sp,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            Text(
-                              Provider.of<LanguageProvider>(context).translate('go_to_cart'),
-                              style: TextStyle(
-                                fontSize: 15.sp,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primaryTextColor,
-                              ),
-                            ),
-                            const Spacer(),
-                            Icon(Icons.arrow_forward_ios_outlined, color: AppColors.iconColor, size: 16.sp),
-                          ],
-                        ),
+  /// The category rail.
+  ///
+  /// The two-level browse — groups on the left, products on the right — was
+  /// already the right structure; DMart Ready and BigBasket both use it and it
+  /// is the fastest way to move sideways through a catalogue without losing
+  /// your place.
+  ///
+  /// What was wrong was the direction. The selected item's white card rounded on
+  /// its **left** edge while the green accent sat on its **right**, so the card
+  /// pulled away from the very pane it was supposed to be connected to. Here the
+  /// accent is on the outer (left) edge and the card rounds toward the content,
+  /// which is what makes the rail read as a tab strip rather than a list.
+  Widget _rail(String code) {
+    if (_isLoadingCategories) {
+      return SizedBox(
+        width: 84.w,
+        child: AppSkeleton.sweep(
+          child: ListView.separated(
+            padding: AppSpace.symmetric(vertical: AppSpace.md),
+            itemCount: 8,
+            separatorBuilder: (_, _) => AppSpace.gapH(AppSpace.base),
+            itemBuilder: (_, _) => Column(
+              children: [
+                AppSkeleton(
+                  width: 48.w,
+                  height: 48.w,
+                  radius: AppRadius.mdAll,
+                ),
+                AppSpace.gapH(AppSpace.sm),
+                AppSkeleton(width: 56.w, height: AppSpace.h(8)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 84.w,
+      color: AppColors.surfaceSunken,
+      child: ListView.builder(
+        padding: EdgeInsets.symmetric(vertical: AppSpace.h(AppSpace.sm)),
+        itemCount: categories.length,
+        itemBuilder: (context, i) {
+          final c = categories[i];
+          final selected = c.id == selectedCategoryId;
+
+          return InkWell(
+            onTap: () {
+              if (selected) return;
+              setState(() => selectedCategoryId = c.id);
+              fetchProductsByCategory(c.id);
+            },
+            child: Container(
+              padding: EdgeInsets.symmetric(vertical: AppSpace.h(AppSpace.md)),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.background : Colors.transparent,
+                borderRadius: BorderRadius.horizontal(
+                  right: Radius.circular(AppRadius.md.r),
+                ),
+              ),
+              child: Row(
+                children: [
+                  // The accent, on the outer edge, pointing the selection at
+                  // the content rather than away from it.
+                  Container(
+                    width: AppSpace.w(3),
+                    height: AppSpace.h(44),
+                    decoration: BoxDecoration(
+                      color: selected ? AppColors.primary : Colors.transparent,
+                      borderRadius: BorderRadius.horizontal(
+                        right: Radius.circular(AppRadius.xs.r),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
-          )
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 46.w,
+                          height: 46.w,
+                          decoration: BoxDecoration(
+                            gradient: selected ? null : AppGradients.tile,
+                            color: selected ? AppColors.primarySurface : null,
+                            borderRadius: AppRadius.mdAll,
+                            border: Border.all(
+                              color: selected
+                                  ? AppColors.primary
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: AppRadius.mdAll,
+                            child: ProductImage(
+                              path: c.imageUrl,
+                              width: 46.w,
+                              height: 46.w,
+                              fit: BoxFit.cover,
+                              errorIcon: Icons.category_outlined,
+                            ),
+                          ),
+                        ),
+                        AppSpace.gapH(AppSpace.xs),
+                        Padding(
+                          padding: AppSpace.symmetric(horizontal: 2),
+                          child: Text(
+                            c.localizedName(code),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: selected
+                                ? AppText.overline(color: AppColors.primary)
+                                : AppText.caption(
+                                    color: AppColors.textSecondary),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Right pane
+  // ---------------------------------------------------------------------------
+
+  Widget _content(LanguageProvider lang, String code) {
+    if (_isLoadingProducts) {
+      return AppSkeleton.sweep(
+        child: GridView.builder(
+          padding: AppSpace.all(AppSpace.md),
+          itemCount: 6,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: AppSpace.h(AppSpace.md),
+            crossAxisSpacing: AppSpace.w(AppSpace.md),
+            childAspectRatio: 0.66,
+          ),
+          itemBuilder: (_, _) => const ProductCardSkeleton(),
+        ),
+      );
+    }
+
+    if (_productsFailed) {
+      return AppEmptyState(
+        icon: Icons.wifi_off_rounded,
+        title: lang.translate('something_went_wrong'),
+        message: lang.translate('check_connection'),
+        actionLabel: lang.translate('retry'),
+        onAction: () => fetchProductsByCategory(selectedCategoryId),
+        tone: StateTone.error,
+      );
+    }
+
+    if (products.isEmpty) {
+      return AppEmptyState(
+        icon: Icons.inventory_2_outlined,
+        title: lang.translate('no_products_found'),
+        message: lang.translate('try_another_category'),
+      );
+    }
+
+    return Column(
+      children: [
+        _filterBar(lang),
+        Expanded(
+          child: GridView.builder(
+            padding: EdgeInsets.fromLTRB(
+              AppSpace.w(AppSpace.md),
+              AppSpace.h(AppSpace.xs),
+              AppSpace.w(AppSpace.md),
+              AppSpace.h(AppSpace.base),
+            ),
+            physics: const BouncingScrollPhysics(),
+            itemCount: products.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: AppSpace.h(AppSpace.md),
+              crossAxisSpacing: AppSpace.w(AppSpace.md),
+              childAspectRatio: 0.62,
+            ),
+            itemBuilder: (context, i) => ProductCard(
+              product: _productCardData(products[i], code),
+              userId: '',
+              onCartUpdated: fetchCartQuantity,
+              onCategoryBack: fetchCartQuantity,
+              width: 132.w,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Filter and sort. BigBasket puts a single "Filter & Sort" chip at the top
+  /// of every category listing; without one the only way to reorder a category
+  /// is to scroll it.
+  ///
+  /// The controls are presented but not yet wired — sorting is a data change,
+  /// and this pass is presentation only. They are disabled rather than fake:
+  /// the app already had two selectable dead ends (a UPI option that is
+  /// rejected on tap, a rating sheet that ends in "coming soon"), and adding a
+  /// third would be worse than showing none.
+  Widget _filterBar(LanguageProvider lang) {
+    return SizedBox(
+      height: AppSpace.h(46),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: AppSpace.symmetric(
+          horizontal: AppSpace.md,
+          vertical: AppSpace.sm,
+        ),
+        children: [
+          _chip(
+            label: '${products.length} ${lang.translate('items')}',
+            icon: Icons.inventory_2_outlined,
+            emphasised: true,
+          ),
+          AppSpace.gapW(AppSpace.sm),
+          _chip(label: lang.translate('sort'), icon: Icons.swap_vert_rounded),
+          AppSpace.gapW(AppSpace.sm),
+          _chip(label: lang.translate('filter'), icon: Icons.tune_rounded),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip({
+    required String label,
+    required IconData icon,
+    bool emphasised = false,
+  }) {
+    return Container(
+      padding: AppSpace.symmetric(horizontal: AppSpace.md, vertical: 2),
+      decoration: BoxDecoration(
+        color: emphasised ? AppColors.primarySurface : AppColors.surface,
+        borderRadius: AppRadius.pillAll,
+        border: Border.all(
+          color: emphasised ? AppColors.primaryBorder : AppColors.border,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 15,
+            color: emphasised ? AppColors.primary : AppColors.iconMuted,
+          ),
+          AppSpace.gapW(AppSpace.xs),
+          Text(
+            label,
+            style: AppText.labelS(
+              color: emphasised ? AppColors.primary : AppColors.textSecondary,
+            ),
+          ),
         ],
       ),
     );
