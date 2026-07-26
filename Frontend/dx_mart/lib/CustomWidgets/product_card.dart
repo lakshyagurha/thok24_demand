@@ -631,8 +631,34 @@ class _ProductCardState extends State<ProductCard> {
             variants.every((variant) =>
             (int.tryParse(variant['stock']?.toString() ?? '0') ?? 0) <= 0);
         return SizedBox(
-          height: widget.height ?? 222.h,
-          child: InkWell(
+          // 236.h rather than 222.h: 222 was tuned to sit flush against the
+          // image + a two-line name + pack size + price at the *default* OS
+          // text scale, with no headroom. Real phones (unlike the emulator,
+          // which we tested at 1.0x) commonly ship with a larger default font
+          // scale, and several OEM skins default above 1.0 out of the box.
+          // 236 gives the card room to survive a moderately larger system
+          // font size without the text-scale clamp below having to do all the
+          // work alone.
+          height: widget.height ?? 236.h,
+          child: MediaQuery(
+            // Caps how far the OS accessibility text-size setting can stretch
+            // this specific card. This was the actual bug: a fixed-height
+            // shelf card with two lines of product name, a pack-size line and
+            // a price plate has no slack for arbitrary text growth, so a
+            // phone with the font scale bumped past 1.0 (common on Xiaomi,
+            // Oppo, Vivo and similar out of the box, and trivial for any user
+            // to set under Settings > Display > Font size) rendered the
+            // second name line squeezed into the pack-size line below it —
+            // exactly reproduced here at font_scale 1.3 on the emulator.
+            //
+            // 1.15 still lets low-vision users get meaningfully larger type
+            // on the shelf; the same name renders at full, unclamped scale on
+            // the product detail page, where there is no such space budget.
+            data: MediaQuery.of(context).copyWith(
+              textScaler: MediaQuery.textScalerOf(context)
+                  .clamp(maxScaleFactor: 1.15),
+            ),
+            child: InkWell(
             borderRadius: AppRadius.mdAll,
             onTap: () async {
               if (allOutOfStock) return;
@@ -826,6 +852,7 @@ class _ProductCardState extends State<ProductCard> {
                   ),
                 ],
               ),
+            ),
             ),
           ),
         );

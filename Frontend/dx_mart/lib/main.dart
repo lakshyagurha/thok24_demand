@@ -98,7 +98,17 @@ class MyApp extends StatelessWidget {
     return ScreenUtilInit(
       designSize: const Size(360, 690),
       minTextAdapt: true,
-      splitScreenMode: true,
+      // `splitScreenMode` was true. It exists so ScreenUtil can account for a
+      // device actually being in Android/iOS split-screen or multi-window
+      // mode, which this app does not support and never checks for. Left on,
+      // it is a documented flutter_screenutil footgun: its split-screen
+      // detection heuristic misfires on some real devices — certain OEM
+      // skins, aspect ratios and Android versions — and the app renders into
+      // only part of the screen with the remainder left blank, which matches
+      // exactly what was reported ("splash screen shows in half screen") and
+      // could not be reproduced on the emulator, since the heuristic is
+      // device-dependent. Default is false; nothing else in this app reads
+      // or needs it.
       builder: (context, child) {
         return MultiProvider(
           providers: [

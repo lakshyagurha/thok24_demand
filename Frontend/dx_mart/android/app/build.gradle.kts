@@ -42,3 +42,14 @@ android {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Backport of the Android 12 Splash Screen API down to the app's actual
+    // minSdk. `android:style/Theme.SplashScreen` and `postSplashScreenTheme`
+    // are framework resources that this project's compileSdk cannot resolve
+    // at build time (confirmed by a real AAPT2 link failure, not assumed) —
+    // this library ships its own `Theme.SplashScreen` and handles the
+    // platform API on 31+ transparently, which is Google's own documented
+    // fix for exactly that resolution gap.
+    implementation("androidx.core:core-splashscreen:1.0.1")
+}

@@ -1,10 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <!-- Show a splash screen on the activity. Automatically removed when
-             the Flutter engine draws its first frame -->
-        <item name="android:windowBackground">@drawable/launch_background</item>
+    <!-- Theme applied to the Android Window while the process is starting, on
+         every API level `androidx.core:core-splashscreen` supports.
+
+         This used to parent `Theme.Light.NoTitleBar` and paint the app's
+         launcher icon centred on a plain window background using the OS's own
+         default behaviour on Android 12+ (API 31+) — the framework does that
+         automatically for any app targeting 31+ that doesn't opt into the
+         Splash Screen API, regardless of what this file said. That default
+         rendering (a circle-masked icon on an unbranded background, sometimes
+         still visible over the first frames the Flutter engine draws) is what
+         was reported as the app "showing in half screen".
+
+         `Theme.SplashScreen` here resolves to the compat library's own style,
+         not the platform's `android:style/Theme.SplashScreen` — the platform
+         style exists on-device from API 31 but is not resolvable at this
+         project's compile time (confirmed by a real AAPT2 link failure), so
+         the compat library is what makes the same API available uniformly.
+         MainActivity calls `installSplashScreen()` to hand off cleanly to
+         `NormalTheme` once the first Flutter frame is ready. -->
+    <style name="LaunchTheme" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/brand_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/brand_splash_background</item>
+        <item name="postSplashScreenTheme">@style/NormalTheme</item>
     </style>
     <!-- Theme applied to the Android Window as soon as the process has started.
          This theme determines the color of the Android Window while your
