@@ -15,7 +15,8 @@ import '../data/cart_repository.dart';
 import '../data/catalog_repository.dart';
 import '../data/models.dart';
 import '../data/order_repository.dart';
-import '../utils/colors.dart';
+import '../design/app_colors.dart';
+import '../design/app_type.dart';
 import '../utils/language_provider.dart';
 
 /// Checkout.
@@ -387,7 +388,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 style: TextStyle(
                   fontSize: 12.sp,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.neutral600,
+                  color: AppColors.textSecondary,
                 ),
               ),
               if (order.discountAmount > 0) ...[
@@ -418,7 +419,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   width: 120.w,
                   height: 27.h,
                   decoration: BoxDecoration(
-                    color: AppColors.primaryColor,
+                    color: AppColors.primary,
                     borderRadius: BorderRadius.circular(7.r),
                   ),
                   child: Center(
@@ -460,7 +461,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   style: TextStyle(
                     fontSize: 12.sp,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primaryColor,
+                    color: AppColors.primary,
                   ),
                 ),
               ),
@@ -509,7 +510,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           width: 26.w,
           height: 26.w,
           decoration: BoxDecoration(
-            color: AppColors.primaryColor,
+            color: AppColors.primary,
             shape: BoxShape.circle,
           ),
           child: Center(
@@ -526,7 +527,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         SizedBox(width: 10.w),
         Icon(
           icon,
-          color: AppColors.primaryColor,
+          color: AppColors.primary,
           size: 18.sp,
         ),
         SizedBox(width: 8.w),
@@ -535,7 +536,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           style: TextStyle(
             fontSize: 14.sp,
             fontWeight: FontWeight.bold,
-            color: AppColors.primaryTextColor,
+            color: AppColors.textPrimary,
           ),
         ),
       ],
@@ -550,7 +551,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           label,
           style: TextStyle(
             fontSize: 12.sp,
-            color: AppColors.neutral600,
+            color: AppColors.textSecondary,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -563,7 +564,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ? Colors.green
                 : isDiscount
                     ? Colors.green
-                    : AppColors.primaryTextColor,
+                    : AppColors.textPrimary,
           ),
         ),
       ],
@@ -573,7 +574,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.neutral50,
+      backgroundColor: AppColors.background,
       body: Stack(
         children: [
           Column(
@@ -604,13 +605,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         height: 30.h,
                         width: 30.w,
                         decoration: BoxDecoration(
-                          color: AppColors.primaryColor.withOpacity(0.1),
+                          color: AppColors.primary.withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
                           Icons.arrow_back,
                           size: 18.sp,
-                          color: AppColors.primaryColor,
+                          color: AppColors.primary,
                         ),
                       ),
                     ),
@@ -620,7 +621,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       style: TextStyle(
                         fontSize: 16.sp,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.primaryTextColor,
+                        color: AppColors.textPrimary,
                       ),
                     ),
                     const Spacer(),
@@ -644,7 +645,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12.r),
-                            border: Border.all(color: AppColors.borderColor, width: 1.w),
+                            border: Border.all(color: AppColors.border, width: 1.w),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.02),
@@ -666,12 +667,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       _fullAddress.isNotEmpty
                                           ? _fullAddress
                                           : Provider.of<LanguageProvider>(context).translate('no_address'),
-                                      style: TextStyle(
-                                        fontSize: 13.sp,
-                                        color: _fullAddress.isNotEmpty ? AppColors.neutral700 : Colors.red,
-                                        fontWeight: _fullAddress.isNotEmpty ? FontWeight.w500 : FontWeight.bold,
-                                        height: 1.4,
-                                      ),
+                                      style: _fullAddress.isNotEmpty
+                                          ? AppText.bodyM(
+                                              color: AppColors.textSecondary)
+                                          : AppText.bodyM(
+                                              color: AppColors.danger),
                                     ),
                                   ),
                                   SizedBox(width: 12.w),
@@ -696,7 +696,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     child: Container(
                                       padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
                                       decoration: BoxDecoration(
-                                        color: AppColors.primaryColor.withOpacity(0.1),
+                                        color: AppColors.primary.withOpacity(0.1),
                                         borderRadius: BorderRadius.circular(6.r),
                                       ),
                                       child: Text(
@@ -704,7 +704,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                             ? Provider.of<LanguageProvider>(context).translate('change')
                                             : Provider.of<LanguageProvider>(context).translate('select'),
                                         style: TextStyle(
-                                          color: AppColors.primaryColor,
+                                          color: AppColors.primary,
                                           fontSize: 12.sp,
                                           fontWeight: FontWeight.bold,
                                         ),
@@ -724,7 +724,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12.r),
-                            border: Border.all(color: AppColors.borderColor, width: 1.w),
+                            border: Border.all(color: AppColors.border, width: 1.w),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.02),
@@ -746,20 +746,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     style: TextStyle(
                                       fontSize: 14.sp,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.primaryTextColor,
+                                      color: AppColors.textPrimary,
                                     ),
                                   ),
                                   Row(
                                     children: [
                                       IconButton(
-                                        icon: Icon(Icons.arrow_back_ios, size: 16.sp, color: AppColors.primaryColor),
+                                        icon: Icon(Icons.arrow_back_ios, size: 16.sp, color: AppColors.primary),
                                         onPressed: () => changeMonth(-1),
                                         padding: EdgeInsets.zero,
                                         constraints: const BoxConstraints(),
                                       ),
                                       SizedBox(width: 16.w),
                                       IconButton(
-                                        icon: Icon(Icons.arrow_forward_ios, size: 16.sp, color: AppColors.primaryColor),
+                                        icon: Icon(Icons.arrow_forward_ios, size: 16.sp, color: AppColors.primary),
                                         onPressed: () => changeMonth(1),
                                         padding: EdgeInsets.zero,
                                         constraints: const BoxConstraints(),
@@ -788,16 +788,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         margin: EdgeInsets.only(right: 8.w),
                                         decoration: BoxDecoration(
                                           color: isSelected
-                                              ? AppColors.primaryColor
+                                              ? AppColors.primary
                                               : isAvailable
                                                   ? Colors.white
-                                                  : AppColors.neutral100,
+                                                  : AppColors.surfaceSunken,
                                           borderRadius: BorderRadius.circular(12.r),
                                           border: Border.all(
                                             color: isSelected
-                                                ? AppColors.primaryColor
+                                                ? AppColors.primary
                                                 : isAvailable
-                                                    ? AppColors.borderColor
+                                                    ? AppColors.border
                                                     : Colors.transparent,
                                             width: 1.5.w,
                                           ),
@@ -813,8 +813,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                 color: isSelected
                                                     ? Colors.white
                                                     : isAvailable
-                                                        ? AppColors.neutral500
-                                                        : AppColors.neutral400,
+                                                        ? AppColors.textTertiary
+                                                        : AppColors.textTertiary,
                                               ),
                                             ),
                                             SizedBox(height: 4.h),
@@ -826,8 +826,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                 color: isSelected
                                                     ? Colors.white
                                                     : isAvailable
-                                                        ? AppColors.primaryTextColor
-                                                        : AppColors.neutral400,
+                                                        ? AppColors.textPrimary
+                                                        : AppColors.textTertiary,
                                               ),
                                             ),
                                           ],
@@ -848,7 +848,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12.r),
-                            border: Border.all(color: AppColors.borderColor, width: 1.w),
+                            border: Border.all(color: AppColors.border, width: 1.w),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.02),
@@ -878,10 +878,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         width: double.infinity,
                                         padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 12.h),
                                         decoration: BoxDecoration(
-                                          color: isSelected ? AppColors.primaryColor.withOpacity(0.06) : Colors.white,
+                                          color: isSelected ? AppColors.primary.withOpacity(0.06) : Colors.white,
                                           borderRadius: BorderRadius.circular(10.r),
                                           border: Border.all(
-                                            color: isSelected ? AppColors.primaryColor : AppColors.borderColor,
+                                            color: isSelected ? AppColors.primary : AppColors.border,
                                             width: 1.5.w,
                                           ),
                                         ),
@@ -889,7 +889,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                           children: [
                                             Icon(
                                               Icons.schedule,
-                                              color: isSelected ? AppColors.primaryColor : AppColors.neutral500,
+                                              color: isSelected ? AppColors.primary : AppColors.textTertiary,
                                               size: 18.sp,
                                             ),
                                             SizedBox(width: 12.w),
@@ -898,7 +898,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               style: TextStyle(
                                                 fontSize: 13.sp,
                                                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                                color: isSelected ? AppColors.primaryColor : AppColors.primaryTextColor,
+                                                color: isSelected ? AppColors.primary : AppColors.textPrimary,
                                               ),
                                             ),
                                             const Spacer(),
@@ -913,7 +913,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                   });
                                                 }
                                               },
-                                              activeColor: AppColors.primaryColor,
+                                              activeColor: AppColors.primary,
                                               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                             ),
                                           ],
@@ -934,7 +934,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12.r),
-                            border: Border.all(color: AppColors.borderColor, width: 1.w),
+                            border: Border.all(color: AppColors.border, width: 1.w),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.02),
@@ -960,10 +960,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   width: double.infinity,
                                   padding: EdgeInsets.all(16.w),
                                   decoration: BoxDecoration(
-                                    color: selectedPaymentMethod == 'cod' ? AppColors.primaryColor.withOpacity(0.06) : Colors.white,
+                                    color: selectedPaymentMethod == 'cod' ? AppColors.primary.withOpacity(0.06) : Colors.white,
                                     borderRadius: BorderRadius.circular(12.r),
                                     border: Border.all(
-                                      color: selectedPaymentMethod == 'cod' ? AppColors.primaryColor : AppColors.borderColor,
+                                      color: selectedPaymentMethod == 'cod' ? AppColors.primary : AppColors.border,
                                       width: 1.5.w,
                                     ),
                                   ),
@@ -977,14 +977,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                             selectedPaymentMethod = value!;
                                           });
                                         },
-                                        activeColor: AppColors.primaryColor,
+                                        activeColor: AppColors.primary,
                                       ),
                                       SizedBox(width: 8.w),
                                       Image.asset(
                                         'assets/images/case.png',
                                         width: 28.w,
                                         height: 28.h,
-                                        errorBuilder: (_, __, ___) => Icon(Icons.money, size: 28.sp, color: AppColors.primaryColor),
+                                        errorBuilder: (_, __, ___) => Icon(Icons.money, size: 28.sp, color: AppColors.primary),
                                       ),
                                       SizedBox(width: 12.w),
                                       Expanded(
@@ -998,7 +998,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                   style: TextStyle(
                                                     fontSize: 13.sp,
                                                     fontWeight: FontWeight.bold,
-                                                    color: AppColors.primaryTextColor,
+                                                    color: AppColors.textPrimary,
                                                   ),
                                                 ),
                                                 SizedBox(width: 6.w),
@@ -1024,7 +1024,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               Provider.of<LanguageProvider>(context).translate('cod_subtitle'),
                                               style: TextStyle(
                                                 fontSize: 11.sp,
-                                                color: AppColors.neutral500,
+                                                color: AppColors.textTertiary,
                                               ),
                                             ),
                                           ],
@@ -1048,10 +1048,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   width: double.infinity,
                                   padding: EdgeInsets.all(16.w),
                                   decoration: BoxDecoration(
-                                    color: selectedPaymentMethod == 'upi' ? AppColors.primaryColor.withOpacity(0.06) : Colors.white,
+                                    color: selectedPaymentMethod == 'upi' ? AppColors.primary.withOpacity(0.06) : Colors.white,
                                     borderRadius: BorderRadius.circular(12.r),
                                     border: Border.all(
-                                      color: selectedPaymentMethod == 'upi' ? AppColors.primaryColor : AppColors.borderColor,
+                                      color: selectedPaymentMethod == 'upi' ? AppColors.primary : AppColors.border,
                                       width: 1.5.w,
                                     ),
                                   ),
@@ -1068,24 +1068,24 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                 selectedPaymentMethod = value!;
                                               });
                                             },
-                                            activeColor: AppColors.primaryColor,
+                                            activeColor: AppColors.primary,
                                           ),
                                           SizedBox(width: 8.w),
-                                          Icon(Icons.account_balance_wallet_outlined, size: 24.sp, color: AppColors.primaryColor),
+                                          Icon(Icons.account_balance_wallet_outlined, size: 24.sp, color: AppColors.primary),
                                           SizedBox(width: 12.w),
                                           Text(
                                             Provider.of<LanguageProvider>(context).translate('pay_upi'),
                                             style: TextStyle(
                                               fontSize: 13.sp,
                                               fontWeight: FontWeight.bold,
-                                              color: AppColors.primaryTextColor,
+                                              color: AppColors.textPrimary,
                                             ),
                                           ),
                                         ],
                                       ),
                                       if (selectedPaymentMethod == 'upi') ...[
                                         SizedBox(height: 12.h),
-                                        Divider(height: 1.h, color: AppColors.borderColor),
+                                        Divider(height: 1.h, color: AppColors.border),
                                         SizedBox(height: 12.h),
                                         ...upiApps.map((app) {
                                           final isAppSelected = selectedUpiApp == app['id'];
@@ -1107,14 +1107,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                                         selectedUpiApp = value!;
                                                       });
                                                     },
-                                                    activeColor: AppColors.primaryColor,
+                                                    activeColor: AppColors.primary,
                                                   ),
                                                   SizedBox(width: 8.w),
                                                   Container(
                                                     width: 36.w,
                                                     height: 24.h,
                                                     decoration: BoxDecoration(
-                                                      border: Border.all(color: AppColors.borderColor),
+                                                      border: Border.all(color: AppColors.border),
                                                       borderRadius: BorderRadius.circular(4.r),
                                                     ),
                                                     child: Padding(
@@ -1155,7 +1155,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(12.r),
-                            border: Border.all(color: AppColors.borderColor, width: 1.w),
+                            border: Border.all(color: AppColors.border, width: 1.w),
                             boxShadow: [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.02),
@@ -1172,7 +1172,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14.sp,
-                                  color: AppColors.primaryTextColor,
+                                  color: AppColors.textPrimary,
                                 ),
                               ),
                               SizedBox(height: 12.h),
@@ -1196,7 +1196,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 ),
                               ],
                               SizedBox(height: 10.h),
-                              Divider(height: 1.h, color: AppColors.borderColor),
+                              Divider(height: 1.h, color: AppColors.border),
                               SizedBox(height: 10.h),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1206,7 +1206,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     style: TextStyle(
                                       fontSize: 14.sp,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.primaryTextColor,
+                                      color: AppColors.textPrimary,
                                     ),
                                   ),
                                   Text(
@@ -1214,7 +1214,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     style: TextStyle(
                                       fontSize: 16.sp,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.primaryColor,
+                                      color: AppColors.primary,
                                     ),
                                   ),
                                 ],
@@ -1302,11 +1302,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   child: Container(
                     height: 48.h,
                     decoration: BoxDecoration(
-                      // Also greyed out while the bill is unknown, so we never invite a
-                      // tap on a total we could not compute.
+                      // Also disabled while the bill is unknown, so we never
+                      // invite a tap on a total we could not compute.
                       color: (_selectedAddress == null || !_previewReady)
-                          ? Colors.grey
-                          : AppColors.primaryColor,
+                          ? AppColors.disabledSurface
+                          : AppColors.primary,
                       borderRadius: BorderRadius.circular(12.r),
                     ),
                     child: Center(
@@ -1314,13 +1314,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         _isPlacingOrder
                             ? Provider.of<LanguageProvider>(context).translate('placing_order')
                             : !_previewReady
-                                ? (_previewError ?? 'Loading your bill…')
+                                ? Provider.of<LanguageProvider>(context).translate('loading_bill')
                                 : '${Provider.of<LanguageProvider>(context).translate('place_order_btn')}: ₹${_previewTotal.toStringAsFixed(0)} →',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.bold,
-                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.button(color: AppColors.onPrimary),
                       ),
                     ),
                   ),
@@ -1346,7 +1344,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     children: [
                       CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(
-                          AppColors.primaryColor,
+                          AppColors.primary,
                         ),
                       ),
                       SizedBox(height: 16.h),
@@ -1355,7 +1353,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         style: TextStyle(
                           fontSize: 13.sp,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.primaryTextColor,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                     ],
@@ -1391,7 +1389,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   style: TextStyle(
                     fontSize: 14.sp,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.primaryTextColor,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ),
@@ -1406,7 +1404,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         address.id == _selectedAddress?.id
                             ? Icons.radio_button_checked
                             : Icons.radio_button_unchecked,
-                        color: AppColors.primaryColor,
+                        color: AppColors.primary,
                         size: 18.sp,
                       ),
                       title: Text(
@@ -1414,14 +1412,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         style: TextStyle(
                           fontSize: 13.sp,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.primaryTextColor,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                       subtitle: Text(
                         address.fullAddress,
                         style: TextStyle(
                           fontSize: 11.sp,
-                          color: AppColors.neutral600,
+                          color: AppColors.textSecondary,
                         ),
                       ),
                       onTap: () => Navigator.pop(sheetContext, address),
@@ -1444,7 +1442,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   },
                   child: Row(
                     children: [
-                      Icon(Icons.add, size: 16.sp, color: AppColors.primaryColor),
+                      Icon(Icons.add, size: 16.sp, color: AppColors.primary),
                       SizedBox(width: 8.w),
                       Text(
                         Provider.of<LanguageProvider>(context, listen: false)
@@ -1452,7 +1450,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         style: TextStyle(
                           fontSize: 12.sp,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.primaryColor,
+                          color: AppColors.primary,
                         ),
                       ),
                     ],

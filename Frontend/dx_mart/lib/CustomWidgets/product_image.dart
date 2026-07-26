@@ -1,6 +1,5 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:shimmer/shimmer.dart';
 
 import '../core/supabase.dart';
 import '../design/app_colors.dart';
@@ -76,7 +75,7 @@ class ProductImage extends StatelessWidget {
     return image;
   }
 
-  /// A shimmering block while bytes are in flight.
+  /// A visible block while bytes are in flight.
   ///
   /// This used to be `AppColors.backgroundColor` — pure `#FFFFFF` — painted on
   /// cards that are themselves white, so the "placeholder" was invisible and a
@@ -85,15 +84,21 @@ class ProductImage extends StatelessWidget {
   /// instead of 'broken'", which is exactly what it did not do. On the
   /// connections this app is built for, that blank state is most of what the
   /// user actually looks at, so it is worth getting right.
-  Widget _loading() => Shimmer.fromColors(
-        baseColor: AppColors.surfaceSunken,
-        highlightColor: AppColors.surface,
-        period: const Duration(milliseconds: 1200),
-        child: Container(
-          width: width,
-          height: height,
-          color: AppColors.surfaceSunken,
-        ),
+  ///
+  /// **Deliberately static, not shimmering.** It was a `Shimmer` briefly, and
+  /// that hung the app: `Shimmer` drives a repeat-forever `AnimationController`
+  /// per instance, and this widget is the image for every product card, every
+  /// cart line and every category tile. A cart with a product rail below it put
+  /// a dozen of them on screen at once, all invalidating every frame, and the
+  /// emulator went to a 5.5-second frame and an ANR.
+  ///
+  /// Whole-screen skeletons still shimmer — see `AppSkeleton.sweep`, which
+  /// wraps one animation around an entire arrangement rather than one per box,
+  /// and only exists while a screen is genuinely empty.
+  Widget _loading() => Container(
+        width: width,
+        height: height,
+        color: AppColors.surfaceSunken,
       );
 
   /// No image, or the fetch failed. Static rather than shimmering — this state

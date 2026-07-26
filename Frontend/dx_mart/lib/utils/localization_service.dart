@@ -505,6 +505,11 @@ class LocalizationService {
       'hi': 'अभी कोई श्रेणी नहीं',
       'hn': 'Abhi koi category nahi',
     },
+    'loading_bill': {
+      'en': 'Loading your bill…',
+      'hi': 'आपका बिल लोड हो रहा है…',
+      'hn': 'Aapka bill load ho raha hai…',
+    },
     'select_location': {
       'en': 'Select location',
       'hi': 'पता चुनें',

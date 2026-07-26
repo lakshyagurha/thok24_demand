@@ -11,7 +11,9 @@ import '../../SearchProduct/search_product.dart';
 import '../../core/supabase.dart';
 import '../../data/cart_repository.dart';
 import '../../data/catalog_repository.dart';
-import '../../utils/colors.dart';
+import '../../design/app_colors.dart';
+import '../../design/app_type.dart';
+import '../../design/app_gradients.dart';
 import '../../utils/language_provider.dart';
 import '../../CustomWidgets/product_image.dart';
 
@@ -253,7 +255,7 @@ class _CartScreenState extends State<CartScreen> {
           msg: "Code saved. It will be verified when you place the order.",
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
-          backgroundColor: AppColors.primaryColor,
+          backgroundColor: AppColors.primary,
           textColor: Colors.white,
           fontSize: 14.sp,
         );
@@ -504,7 +506,7 @@ class _CartScreenState extends State<CartScreen> {
           label,
           style: TextStyle(
             fontSize: 13.sp,
-            color: AppColors.neutral600,
+            color: AppColors.textSecondary,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -515,7 +517,7 @@ class _CartScreenState extends State<CartScreen> {
                 originalPrice,
                 style: TextStyle(
                   fontSize: 12.sp,
-                  color: AppColors.neutral400,
+                  color: AppColors.textTertiary,
                   decoration: TextDecoration.lineThrough,
                 ),
               ),
@@ -526,11 +528,9 @@ class _CartScreenState extends State<CartScreen> {
               style: TextStyle(
                 fontSize: 13.sp,
                 fontWeight: (isFree || isDiscount) ? FontWeight.bold : FontWeight.w600,
-                color: isFree
-                    ? Colors.green
-                    : isDiscount
-                        ? Colors.green
-                        : AppColors.primaryTextColor,
+                color: (isFree || isDiscount)
+                    ? AppColors.savingsText
+                    : AppColors.textPrimary,
               ),
             ),
           ],
@@ -542,10 +542,10 @@ class _CartScreenState extends State<CartScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.neutral100,
+      backgroundColor: AppColors.surfaceSunken,
       body: isLoading
           ? Center(
-              child: CircularProgressIndicator(color: AppColors.primaryColor),
+              child: CircularProgressIndicator(color: AppColors.primary),
             )
           : cartItems.isEmpty
               ? Center(
@@ -553,14 +553,14 @@ class _CartScreenState extends State<CartScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Icon(Icons.shopping_cart_outlined, size: 70.sp, color: AppColors.neutral300),
+                      Icon(Icons.shopping_cart_outlined, size: 70.sp, color: AppColors.borderStrong),
                       SizedBox(height: 12.h),
                       Text(
                         Provider.of<LanguageProvider>(context).translate('cart_empty'),
                         style: TextStyle(
                           fontSize: 20.sp,
                           fontWeight: FontWeight.bold,
-                          color: AppColors.neutral500,
+                          color: AppColors.textTertiary,
                         ),
                       ),
                       SizedBox(height: 16.h),
@@ -571,11 +571,11 @@ class _CartScreenState extends State<CartScreen> {
                         child: Container(
                           padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 12.h),
                           decoration: BoxDecoration(
-                            color: AppColors.primaryColor,
+                            color: AppColors.primary,
                             borderRadius: BorderRadius.circular(12.r),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.primaryColor.withOpacity(0.2),
+                                color: AppColors.primary.withOpacity(0.2),
                                 blurRadius: 8,
                                 offset: const Offset(0, 4),
                               ),
@@ -627,13 +627,13 @@ class _CartScreenState extends State<CartScreen> {
                                   height: 30.h,
                                   width: 30.w,
                                   decoration: BoxDecoration(
-                                    color: AppColors.primaryColor.withOpacity(0.1),
+                                    color: AppColors.primary.withOpacity(0.1),
                                     shape: BoxShape.circle,
                                   ),
                                   child: Icon(
                                     Icons.arrow_back,
                                     size: 18.sp,
-                                    color: AppColors.primaryColor,
+                                    color: AppColors.primary,
                                   ),
                                 ),
                               ),
@@ -647,14 +647,14 @@ class _CartScreenState extends State<CartScreen> {
                                     style: TextStyle(
                                       fontSize: 16.sp,
                                       fontWeight: FontWeight.bold,
-                                      color: AppColors.primaryTextColor,
+                                      color: AppColors.textPrimary,
                                     ),
                                   ),
                                   Text(
                                     "${cartItems.length} ${Provider.of<LanguageProvider>(context).translate('items_label')}",
                                     style: TextStyle(
                                       fontSize: 11.sp,
-                                      color: AppColors.neutral500,
+                                      color: AppColors.textTertiary,
                                     ),
                                   ),
                                 ],
@@ -673,7 +673,7 @@ class _CartScreenState extends State<CartScreen> {
                                   'assets/svg/search.svg',
                                   width: 18.h,
                                   height: 18.w,
-                                  colorFilter: ColorFilter.mode(AppColors.primaryTextColor, BlendMode.srcIn),
+                                  colorFilter: ColorFilter.mode(AppColors.textPrimary, BlendMode.srcIn),
                                 ),
                               ),
                             ],
@@ -683,7 +683,7 @@ class _CartScreenState extends State<CartScreen> {
                         Expanded(
                           child: SingleChildScrollView(
                             child: Padding(
-                              padding: EdgeInsets.only(bottom: 130.h),
+                              padding: EdgeInsets.only(bottom: 170.h),  // clears the sticky CTA; 130 clipped the bill
                               child: Column(
                                 children: [
                                   SizedBox(height: 14.h),
@@ -695,7 +695,7 @@ class _CartScreenState extends State<CartScreen> {
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(16.r),
                                       border: Border.all(
-                                        color: AppColors.borderColor,
+                                        color: AppColors.border,
                                         width: 1.w,
                                       ),
                                       boxShadow: [
@@ -717,7 +717,7 @@ class _CartScreenState extends State<CartScreen> {
                                                 'assets/svg/time.svg',
                                                 width: 16.w,
                                                 height: 16.h,
-                                                colorFilter: ColorFilter.mode(AppColors.primaryColor, BlendMode.srcIn),
+                                                colorFilter: ColorFilter.mode(AppColors.primary, BlendMode.srcIn),
                                               ),
                                               SizedBox(width: 8.w),
                                               Text(
@@ -725,7 +725,7 @@ class _CartScreenState extends State<CartScreen> {
                                                 style: TextStyle(
                                                   fontSize: 13.sp,
                                                   fontWeight: FontWeight.bold,
-                                                  color: AppColors.primaryColor,
+                                                  color: AppColors.primary,
                                                 ),
                                               ),
                                             ],
@@ -734,7 +734,7 @@ class _CartScreenState extends State<CartScreen> {
                                         Padding(
                                           padding: EdgeInsets.symmetric(horizontal: 16.w),
                                           child: DottedLine(
-                                            dashColor: AppColors.lineColor,
+                                            dashColor: AppColors.border,
                                             lineThickness: 1.5,
                                           ),
                                         ),
@@ -745,7 +745,7 @@ class _CartScreenState extends State<CartScreen> {
                                           physics: const NeverScrollableScrollPhysics(),
                                           separatorBuilder: (context, index) => Padding(
                                             padding: EdgeInsets.symmetric(vertical: 12.h),
-                                            child: Divider(height: 1.h, color: AppColors.borderColor.withOpacity(0.6)),
+                                            child: Divider(height: 1.h, color: AppColors.border.withOpacity(0.6)),
                                           ),
                                           itemBuilder: (context, index) {
                                             final item = cartItems[index];
@@ -771,7 +771,7 @@ class _CartScreenState extends State<CartScreen> {
                                                       decoration: BoxDecoration(
                                                         color: Colors.white,
                                                         borderRadius: BorderRadius.circular(10.r),
-                                                        border: Border.all(color: AppColors.neutral200, width: 1.w),
+                                                        border: Border.all(color: AppColors.border, width: 1.w),
                                                       ),
                                                       child: ClipRRect(
                                                         borderRadius: BorderRadius.circular(9.r),
@@ -792,8 +792,16 @@ class _CartScreenState extends State<CartScreen> {
                                                         top: 0,
                                                         child: Container(
                                                           padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                                                          // Amber, matching the
+                                                          // badge on every card
+                                                          // and on the product
+                                                          // page. It was green
+                                                          // here, and the label
+                                                          // was 7sp — the
+                                                          // smallest live text
+                                                          // in the app.
                                                           decoration: BoxDecoration(
-                                                            color: AppColors.primaryColor,
+                                                            gradient: AppGradients.warm,
                                                             borderRadius: BorderRadius.only(
                                                               topLeft: Radius.circular(9.r),
                                                               bottomRight: Radius.circular(9.r),
@@ -801,10 +809,8 @@ class _CartScreenState extends State<CartScreen> {
                                                           ),
                                                           child: Text(
                                                             '$discountPercentage% OFF',
-                                                            style: TextStyle(
-                                                              fontSize: 7.sp,
-                                                              color: Colors.white,
-                                                              fontWeight: FontWeight.bold,
+                                                            style: AppText.overline(
+                                                              color: AppColors.onDiscount,
                                                             ),
                                                           ),
                                                         ),
@@ -822,7 +828,7 @@ class _CartScreenState extends State<CartScreen> {
                                                         style: TextStyle(
                                                           fontSize: 13.sp,
                                                           fontWeight: FontWeight.bold,
-                                                          color: AppColors.primaryTextColor,
+                                                          color: AppColors.textPrimary,
                                                         ),
                                                         maxLines: 2,
                                                         overflow: TextOverflow.ellipsis,
@@ -832,16 +838,16 @@ class _CartScreenState extends State<CartScreen> {
                                                         variantName,
                                                         style: TextStyle(
                                                           fontSize: 11.sp,
-                                                          color: AppColors.neutral500,
+                                                          color: AppColors.textTertiary,
                                                         ),
                                                       ),
-                                                      if (quantity > 1) ...[
+                                                      ...[
                                                         SizedBox(height: 4.h),
                                                         Text(
                                                           '₹${sellingPrice.toStringAsFixed(0)} ${Provider.of<LanguageProvider>(context).translate('unit_price')}',
                                                           style: TextStyle(
                                                             fontSize: 10.sp,
-                                                            color: AppColors.neutral400,
+                                                            color: AppColors.textTertiary,
                                                           ),
                                                         ),
                                                       ],
@@ -857,7 +863,7 @@ class _CartScreenState extends State<CartScreen> {
                                                       height: 28.h,
                                                       decoration: BoxDecoration(
                                                         borderRadius: BorderRadius.circular(6.r),
-                                                        color: AppColors.primaryColor,
+                                                        color: AppColors.primary,
                                                       ),
                                                       child: Row(
                                                         mainAxisSize: MainAxisSize.min,
@@ -914,7 +920,7 @@ class _CartScreenState extends State<CartScreen> {
                                                               fontWeight: FontWeight.normal,
                                                               fontSize: 11.sp,
                                                               decoration: TextDecoration.lineThrough,
-                                                              color: AppColors.neutral400,
+                                                              color: AppColors.textTertiary,
                                                             ),
                                                           ),
                                                           SizedBox(width: 4.w),
@@ -924,7 +930,7 @@ class _CartScreenState extends State<CartScreen> {
                                                           style: TextStyle(
                                                             fontWeight: FontWeight.bold,
                                                             fontSize: 13.sp,
-                                                            color: AppColors.primaryTextColor,
+                                                            color: AppColors.textPrimary,
                                                           ),
                                                         ),
                                                       ],
@@ -947,7 +953,7 @@ class _CartScreenState extends State<CartScreen> {
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(12.r),
                                       border: Border.all(
-                                        color: selectedCodeName != null ? AppColors.primaryColor : AppColors.borderColor,
+                                        color: selectedCodeName != null ? AppColors.primary : AppColors.border,
                                         width: 1.w,
                                       ),
                                       boxShadow: [
@@ -966,7 +972,7 @@ class _CartScreenState extends State<CartScreen> {
                                         children: [
                                           Icon(
                                             Icons.local_offer_outlined,
-                                            color: AppColors.primaryColor,
+                                            color: AppColors.primary,
                                             size: 22.sp,
                                           ),
                                           SizedBox(width: 12.w),
@@ -981,7 +987,7 @@ class _CartScreenState extends State<CartScreen> {
                                                   style: TextStyle(
                                                     fontSize: 14.sp,
                                                     fontWeight: FontWeight.bold,
-                                                    color: AppColors.primaryTextColor,
+                                                    color: AppColors.textPrimary,
                                                   ),
                                                 ),
                                                 SizedBox(height: 2.h),
@@ -991,7 +997,7 @@ class _CartScreenState extends State<CartScreen> {
                                                       : Provider.of<LanguageProvider>(context).translate('best_offers'),
                                                   style: TextStyle(
                                                     fontSize: 12.sp,
-                                                    color: selectedCodeName != null ? AppColors.successColor : AppColors.neutral500,
+                                                    color: selectedCodeName != null ? AppColors.success : AppColors.textTertiary,
                                                     fontWeight: selectedCodeName != null ? FontWeight.bold : FontWeight.normal,
                                                   ),
                                                 ),
@@ -1025,7 +1031,7 @@ class _CartScreenState extends State<CartScreen> {
                                                 Text(
                                                   Provider.of<LanguageProvider>(context).translate('select'),
                                                   style: TextStyle(
-                                                    color: AppColors.primaryColor,
+                                                    color: AppColors.primary,
                                                     fontSize: 13.sp,
                                                     fontWeight: FontWeight.bold,
                                                   ),
@@ -1033,7 +1039,7 @@ class _CartScreenState extends State<CartScreen> {
                                                 Icon(
                                                   Icons.arrow_forward_ios,
                                                   size: 14.sp,
-                                                  color: AppColors.primaryColor,
+                                                  color: AppColors.primary,
                                                 ),
                                               ],
                                             ),
@@ -1050,7 +1056,7 @@ class _CartScreenState extends State<CartScreen> {
                                       color: Colors.white,
                                       borderRadius: BorderRadius.circular(16.r),
                                       border: Border.all(
-                                        color: AppColors.borderColor,
+                                        color: AppColors.border,
                                         width: 1.w,
                                       ),
                                       boxShadow: [
@@ -1069,7 +1075,7 @@ class _CartScreenState extends State<CartScreen> {
                                           style: TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 14.sp,
-                                            color: AppColors.primaryTextColor,
+                                            color: AppColors.textPrimary,
                                           ),
                                         ),
                                         SizedBox(height: 12.h),
@@ -1100,7 +1106,7 @@ class _CartScreenState extends State<CartScreen> {
                                           ),
                                         ],
                                         SizedBox(height: 12.h),
-                                        Divider(height: 1.h, color: AppColors.borderColor),
+                                        Divider(height: 1.h, color: AppColors.border),
                                         SizedBox(height: 12.h),
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1110,7 +1116,7 @@ class _CartScreenState extends State<CartScreen> {
                                               style: TextStyle(
                                                 fontSize: 15.sp,
                                                 fontWeight: FontWeight.bold,
-                                                color: AppColors.primaryTextColor,
+                                                color: AppColors.textPrimary,
                                               ),
                                             ),
                                             Text(
@@ -1118,7 +1124,7 @@ class _CartScreenState extends State<CartScreen> {
                                               style: TextStyle(
                                                 fontSize: 17.sp,
                                                 fontWeight: FontWeight.bold,
-                                                color: AppColors.primaryTextColor,
+                                                color: AppColors.textPrimary,
                                               ),
                                             ),
                                           ],
@@ -1129,21 +1135,21 @@ class _CartScreenState extends State<CartScreen> {
                                             width: double.infinity,
                                             padding: EdgeInsets.symmetric(vertical: 8.h, horizontal: 12.w),
                                             decoration: BoxDecoration(
-                                              color: AppColors.primaryColor.withOpacity(0.08),
+                                              color: AppColors.primary.withOpacity(0.08),
                                               borderRadius: BorderRadius.circular(8.r),
                                             ),
                                             child: Row(
                                               children: [
                                                 Icon(
                                                   Icons.check_circle_outline,
-                                                  color: AppColors.primaryColor,
+                                                  color: AppColors.primary,
                                                   size: 16.sp,
                                                 ),
                                                 SizedBox(width: 8.w),
                                                 Text(
                                                   '${Provider.of<LanguageProvider>(context).translate('you_save')} ₹${saveAmount.toStringAsFixed(0)} ${Provider.of<LanguageProvider>(context).translate('on_this_order')}',
                                                   style: TextStyle(
-                                                    color: AppColors.primaryColor,
+                                                    color: AppColors.primary,
                                                     fontSize: 11.sp,
                                                     fontWeight: FontWeight.bold,
                                                   ),
@@ -1180,10 +1186,10 @@ class _CartScreenState extends State<CartScreen> {
                                         width: double.infinity,
                                         height: 40.h,
                                         decoration: BoxDecoration(
-                                          color: AppColors.neutral100,
+                                          color: AppColors.surfaceSunken,
                                           border: Border.all(
                                             width: 1.2,
-                                            color: AppColors.primaryColor.withOpacity(0.4),
+                                            color: AppColors.primary.withOpacity(0.4),
                                           ),
                                           borderRadius: BorderRadius.circular(8.r),
                                         ),
@@ -1209,7 +1215,7 @@ class _CartScreenState extends State<CartScreen> {
                                                             color: Colors.white,
                                                             shape: BoxShape.circle,
                                                             border: Border.all(
-                                                              color: AppColors.borderColor,
+                                                              color: AppColors.border,
                                                               width: 1.w,
                                                             ),
                                                           ),
@@ -1233,12 +1239,12 @@ class _CartScreenState extends State<CartScreen> {
                                                 Provider.of<LanguageProvider>(context).translate('see_all_products_btn'),
                                                 style: TextStyle(
                                                   fontSize: 14.sp,
-                                                  color: AppColors.primaryColor,
+                                                  color: AppColors.primary,
                                                   fontWeight: FontWeight.bold,
                                                 ),
                                               ),
                                               SizedBox(width: 6.w),
-                                              Icon(Icons.arrow_forward_ios, size: 12.sp, color: AppColors.primaryColor),
+                                              Icon(Icons.arrow_forward_ios, size: 12.sp, color: AppColors.primary),
                                             ],
                                           ),
                                         ),
@@ -1305,7 +1311,7 @@ class _CartScreenState extends State<CartScreen> {
                                       child: Container(
                                         height: 48.h,
                                         decoration: BoxDecoration(
-                                          color: AppColors.primaryColor,
+                                          color: AppColors.primary,
                                           borderRadius: BorderRadius.circular(12.r),
                                         ),
                                         child: Padding(
@@ -1443,7 +1449,7 @@ class _CartScreenState extends State<CartScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.backgroundColor,
+      backgroundColor: AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16.r)),
       ),
@@ -1500,7 +1506,7 @@ class _CartScreenState extends State<CartScreen> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12.r),
-                              borderSide: BorderSide(color: AppColors.primaryColor, width: 1.5),
+                              borderSide: BorderSide(color: AppColors.primary, width: 1.5),
                             ),
                           ),
                           style: TextStyle(fontSize: 14.sp),
@@ -1530,8 +1536,8 @@ class _CartScreenState extends State<CartScreen> {
                       child: ElevatedButton(
                         onPressed: _applyCouponByCode,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryColor,
-                          foregroundColor: AppColors.primaryTextColor,
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
                           padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12.r),
@@ -1594,13 +1600,13 @@ class _CartScreenState extends State<CartScreen> {
           color: isExpired
               ? Colors.grey.shade300
               : canApply
-                  ? AppColors.primaryColor
-                  : AppColors.primaryColor.withOpacity(0.4),
+                  ? AppColors.primary
+                  : AppColors.primary.withOpacity(0.4),
           width: 1.5.w,
         ),
         boxShadow: [
           BoxShadow(
-            color: (isExpired ? Colors.black : AppColors.primaryColor).withOpacity(0.04),
+            color: (isExpired ? Colors.black : AppColors.primary).withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1617,7 +1623,7 @@ class _CartScreenState extends State<CartScreen> {
                   Text(
                     'Coupon',
                     style: TextStyle(
-                      color: isExpired ? Colors.grey : AppColors.primaryColor,
+                      color: isExpired ? Colors.grey : AppColors.primary,
                       fontWeight: FontWeight.w700,
                       fontSize: 13.sp,
                     ),
@@ -1627,7 +1633,7 @@ class _CartScreenState extends State<CartScreen> {
                     decoration: BoxDecoration(
                       color: isExpired
                           ? Colors.red.withOpacity(0.1)
-                          : AppColors.primaryColor.withOpacity(0.08),
+                          : AppColors.primary.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(4.r),
                     ),
                     child: Padding(
@@ -1637,7 +1643,7 @@ class _CartScreenState extends State<CartScreen> {
                         style: TextStyle(
                           fontSize: 9.sp,
                           fontWeight: FontWeight.w500,
-                          color: isExpired ? Colors.red : AppColors.primaryColor,
+                          color: isExpired ? Colors.red : AppColors.primary,
                         ),
                       ),
                     ),
@@ -1648,7 +1654,7 @@ class _CartScreenState extends State<CartScreen> {
             Padding(
               padding: EdgeInsets.symmetric(horizontal: 12.w),
               child: DottedLine(
-                dashColor: (isExpired ? Colors.grey : AppColors.primaryColor).withOpacity(0.4),
+                dashColor: (isExpired ? Colors.grey : AppColors.primary).withOpacity(0.4),
                 lineThickness: 1.2,
               ),
             ),
@@ -1663,7 +1669,7 @@ class _CartScreenState extends State<CartScreen> {
                       'assets/svg/coupon.svg',
                       width: 16.w,
                       colorFilter: ColorFilter.mode(
-                        isExpired ? Colors.grey : AppColors.primaryColor,
+                        isExpired ? Colors.grey : AppColors.primary,
                         BlendMode.srcIn,
                       ),
                     ),
@@ -1678,7 +1684,7 @@ class _CartScreenState extends State<CartScreen> {
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 12.sp,
-                            color: isExpired ? Colors.grey : AppColors.primaryTextColor,
+                            color: isExpired ? Colors.grey : AppColors.textPrimary,
                           ),
                         ),
                         SizedBox(height: 2.h),
@@ -1709,12 +1715,12 @@ class _CartScreenState extends State<CartScreen> {
                     decoration: BoxDecoration(
                       color: isExpired
                           ? Colors.grey.shade100
-                          : AppColors.primaryColor.withOpacity(0.12),
+                          : AppColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(6.r),
                       border: Border.all(
                         color: isExpired
                             ? Colors.grey.shade300
-                            : AppColors.primaryColor.withOpacity(0.4),
+                            : AppColors.primary.withOpacity(0.4),
                         width: 1.w,
                       ),
                     ),
@@ -1724,7 +1730,7 @@ class _CartScreenState extends State<CartScreen> {
                         coupon['code_name'],
                         style: TextStyle(
                           fontSize: 11.sp,
-                          color: isExpired ? Colors.grey : Colors.green,
+                          color: isExpired ? AppColors.textDisabled : AppColors.savingsText,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
