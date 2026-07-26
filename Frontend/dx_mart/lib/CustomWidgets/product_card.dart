@@ -6,6 +6,7 @@ import '../ProductDetailScreen/product_details_screen.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
 import '../design/app_colors.dart';
+import '../design/app_gradients.dart';
 import '../design/app_radius.dart';
 import '../design/app_space.dart';
 import '../design/app_type.dart';
@@ -693,7 +694,7 @@ class _ProductCardState extends State<ProductCard> {
                                 vertical: AppSpace.h(3),
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.discount,
+                                gradient: AppGradients.warm,
                                 borderRadius: BorderRadius.only(
                                   topLeft: Radius.circular(AppRadius.md.r),
                                   bottomRight: Radius.circular(AppRadius.md.r),

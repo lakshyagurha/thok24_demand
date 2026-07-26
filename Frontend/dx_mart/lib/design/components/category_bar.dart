@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../CustomWidgets/product_image.dart';
 import '../app_colors.dart';
+import '../app_gradients.dart';
 import '../app_radius.dart';
 import '../app_space.dart';
 import '../app_type.dart';
@@ -58,25 +59,31 @@ class CategoryBar extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Filled edge-to-edge rather than inset: the category
+                    // artwork carries its own cream background, which inside a
+                    // padded tile reads as a stray yellow square.
                     Container(
                       width: 56.w,
                       height: 56.w,
-                      padding: EdgeInsets.all(AppSpace.w(6)),
                       decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.primarySurface
-                            : AppColors.surfaceSunken,
+                        gradient: selected ? null : AppGradients.tile,
+                        color: selected ? AppColors.primarySurface : null,
                         borderRadius: AppRadius.mdAll,
                         border: Border.all(
-                          color: selected ? AppColors.primary : Colors.transparent,
-                          width: 1.5,
+                          color:
+                              selected ? AppColors.primary : AppColors.border,
+                          width: selected ? 1.5 : 1,
                         ),
                       ),
-                      child: ProductImage(
-                        path: item.image,
-                        width: 44.w,
-                        height: 44.w,
-                        errorIcon: Icons.category_outlined,
+                      child: ClipRRect(
+                        borderRadius: AppRadius.mdAll,
+                        child: ProductImage(
+                          path: item.image,
+                          width: 56.w,
+                          height: 56.w,
+                          fit: BoxFit.cover,
+                          errorIcon: Icons.category_outlined,
+                        ),
                       ),
                     ),
                     SizedBox(height: AppSpace.h(6)),

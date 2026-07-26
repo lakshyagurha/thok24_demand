@@ -15,6 +15,9 @@ import '../../data/auth_repository.dart';
 import '../../data/catalog_repository.dart';
 import '../../data/models.dart';
 import '../../design/app_colors.dart';
+import '../../design/brand_palette.dart';
+import '../../design/app_gradients.dart';
+import '../../design/app_elevation.dart';
 import '../../design/app_radius.dart';
 import '../../design/app_space.dart';
 import '../../design/app_type.dart';
@@ -352,23 +355,22 @@ class _HomeScreenState extends State<HomeScreen> {
   // Header
   // ---------------------------------------------------------------------------
 
-  /// The navy hero.
+  /// The hero.
   ///
-  /// Previously this was a gradient between two near-white sages
-  /// (`#D2E5DC` → `#EAF2EE`) which, against a white page, read as a faint
-  /// smudge rather than a header — and the loudest thing inside it was the
-  /// delivery time at `18.sp w900`, out-ranking both the brand and the search
-  /// field. Every competitor in this category is pastel; committing to the
-  /// brand navy is the cheapest available point of difference, and white on it
-  /// measures 10.5:1 so nothing is lost in legibility.
+  /// A light brand-mint gradient that dissolves into the page, which is the
+  /// shape Zepto, Blinkit and BigBasket all converge on: the big surface is a
+  /// *tint* of the brand, and the saturated colour is saved for the small
+  /// elements that need to pop against it. A solid dark fill at this size
+  /// swamps the content and reads cheap.
+  ///
+  /// The version this replaces was a gradient too, but between `#D2E5DC` and
+  /// `#EAF2EE` — two near-white sages that, against a white page, registered as
+  /// a smudge rather than a header. The difference here is that the top stop
+  /// carries real brand colour and the page background underneath is
+  /// `neutral50`, so the fade lands somewhere instead of dissolving into white.
   Widget _header(LanguageProvider lang) {
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surfaceDark,
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(AppRadius.lg.r),
-        ),
-      ),
+      decoration: const BoxDecoration(gradient: AppGradients.heroSoft),
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -401,19 +403,23 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// The brand, finally present. There was no logo or wordmark anywhere in the
-  /// app after the splash screen.
+  /// The brand, finally present, and in the logo's own two-tone treatment:
+  /// green mark, warm wordmark. There was no logo anywhere in the app after the
+  /// splash screen.
   Widget _wordmark() {
     return RichText(
       text: TextSpan(
         children: [
           TextSpan(
             text: 'Dx',
-            style: AppText.h1(color: AppColors.onSurfaceDark),
+            style: AppText.h1(color: BrandPalette.green700),
           ),
           TextSpan(
             text: 'Mart',
-            style: AppText.h1(color: AppColors.discount),
+            // The darker amber rather than the base: `#F5A524` on the mint
+            // header measures under 2:1, which is fine for a badge fill and not
+            // for type.
+            style: AppText.h1(color: BrandPalette.amber700),
           ),
         ],
       ),
@@ -426,16 +432,16 @@ class _HomeScreenState extends State<HomeScreen> {
         horizontal: AppSpace.md,
         vertical: AppSpace.xs,
       ),
-      decoration: BoxDecoration(
-        color: AppColors.discount,
-        borderRadius: AppRadius.pillAll,
+      decoration: const BoxDecoration(
+        gradient: AppGradients.primary,
+        borderRadius: BorderRadius.all(Radius.circular(999)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.bolt_rounded, size: 16, color: AppColors.onDiscount),
+          Icon(Icons.bolt_rounded, size: 16, color: AppColors.onPrimary),
           SizedBox(width: AppSpace.w(2)),
-          Text(deliveryTime, style: AppText.labelS(color: AppColors.onDiscount)),
+          Text(deliveryTime, style: AppText.labelS(color: AppColors.onPrimary)),
         ],
       ),
     );
@@ -457,15 +463,13 @@ class _HomeScreenState extends State<HomeScreen> {
         height: AppSpace.w(36),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: AppColors.onSurfaceDark.withValues(alpha: 0.15),
+          color: AppColors.surface,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: AppColors.onSurfaceDark.withValues(alpha: 0.30),
-          ),
+          border: Border.all(color: AppColors.primaryBorder),
         ),
         child: Text(
           initial,
-          style: AppText.label(color: AppColors.onSurfaceDark),
+          style: AppText.label(color: AppColors.primary),
         ),
       ),
     );
@@ -487,25 +491,25 @@ class _HomeScreenState extends State<HomeScreen> {
           Icon(
             Icons.location_on_rounded,
             size: 18,
-            color: AppColors.discount,
+            color: AppColors.primary,
           ),
           SizedBox(width: AppSpace.w(6)),
           Text(
             '${lang.translate('deliver_to')} ',
-            style: AppText.bodyS(color: AppColors.onSurfaceDarkMuted),
+            style: AppText.bodyS(color: AppColors.textSecondary),
           ),
           Flexible(
             child: Text(
               place,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: AppText.label(color: AppColors.onSurfaceDark),
+              style: AppText.label(color: AppColors.textPrimary),
             ),
           ),
           Icon(
             Icons.keyboard_arrow_down_rounded,
             size: 18,
-            color: AppColors.onSurfaceDark,
+            color: AppColors.textSecondary,
           ),
         ],
       ),
@@ -528,6 +532,7 @@ class _HomeScreenState extends State<HomeScreen> {
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: AppRadius.mdAll,
+          boxShadow: AppElevation.raised,
         ),
         child: Row(
           children: [
@@ -624,10 +629,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// subtitle — inside roughly 80dp of usable width. Nobody read them. Here the
   /// number is the largest thing on the card and everything else supports it.
   Widget _offerCards() {
+    // Gradients rather than flat fills: three rectangles of solid paint side by
+    // side is exactly the look this redesign is trying to get away from.
     final offers = <_Offer>[
-      _Offer('40%', 'Farm Fresh', 'Veggies & Fruits', AppColors.primary),
-      _Offer('15%', 'Dairy Hub', 'Milk & Bread', AppColors.secondary),
-      _Offer('20%', 'Saver Deals', 'Grocery Essentials', AppColors.discountText),
+      _Offer('40%', 'Farm Fresh', 'Veggies & Fruits', AppGradients.primary),
+      _Offer('15%', 'Dairy Hub', 'Milk & Bread', AppGradients.secondary),
+      _Offer('20%', 'Saver Deals', 'Grocery Essentials', AppGradients.warm),
     ];
 
     return Padding(
@@ -647,7 +654,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   vertical: AppSpace.md,
                 ),
                 decoration: BoxDecoration(
-                  color: offers[i].tint,
+                  gradient: offers[i].gradient,
                   borderRadius: AppRadius.mdAll,
                 ),
                 child: Column(
@@ -736,20 +743,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // The catalogue's category artwork has a cream background
+                    // baked into the file. Inset inside a white tile that cream
+                    // reads as a stray yellow square; filling the tile with
+                    // `cover` lets it become the tile's own background, so the
+                    // shape looks deliberate instead of like a mistake.
                     AspectRatio(
                       aspectRatio: 1,
-                      child: Container(
-                        padding: AppSpace.all(AppSpace.sm),
+                      child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: AppColors.surface,
+                          gradient: AppGradients.tile,
                           borderRadius: AppRadius.mdAll,
                           border: Border.all(color: AppColors.border),
                         ),
-                        child: ProductImage(
-                          path: c.imageUrl,
-                          width: double.infinity,
-                          height: double.infinity,
-                          errorIcon: Icons.category_outlined,
+                        child: ClipRRect(
+                          borderRadius: AppRadius.mdAll,
+                          child: ProductImage(
+                            path: c.imageUrl,
+                            width: double.infinity,
+                            height: double.infinity,
+                            fit: BoxFit.cover,
+                            errorIcon: Icons.category_outlined,
+                          ),
                         ),
                       ),
                     ),
@@ -853,11 +868,11 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class _Offer {
-  const _Offer(this.amount, this.title, this.subtitle, this.tint);
+  const _Offer(this.amount, this.title, this.subtitle, this.gradient);
   final String amount;
   final String title;
   final String subtitle;
-  final Color tint;
+  final Gradient gradient;
 }
 
 class _Rail {
