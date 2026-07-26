@@ -14,7 +14,9 @@ import '../SearchProduct/search_product.dart';
 import '../SimilarProducts/similar_product.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
-import '../utils/colors.dart';
+import '../design/app_colors.dart';
+import '../design/app_type.dart';
+import '../design/app_gradients.dart';
 import '../utils/language_provider.dart';
 import '../CustomWidgets/product_image.dart';
 
@@ -193,7 +195,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       msg: message,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
-      backgroundColor: AppColors.errorColor,
+      backgroundColor: AppColors.danger,
       textColor: Colors.white,
     );
   }
@@ -306,7 +308,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     final double statusBarHeight = MediaQuery.of(context).padding.top;
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundColor,
+      backgroundColor: AppColors.surface,
       body: Stack(
         children: [
           SingleChildScrollView(
@@ -424,7 +426,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               effect: WormEffect(
                                 dotHeight: 6.h,
                                 dotWidth: 6.w,
-                                activeDotColor: AppColors.primaryColor,
+                                activeDotColor: AppColors.primary,
                                 dotColor: Colors.grey.shade300,
                               ),
                             ),
@@ -466,7 +468,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                   style: TextStyle(
                                     fontSize: 11.sp,
                                     fontWeight: FontWeight.bold,
-                                    color: AppColors.primaryColor,
+                                    color: AppColors.primary,
                                   ),
                                 ),
                               ),
@@ -550,29 +552,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               ],
                             ),
                           ),
-                          SizedBox(width: 8.w),
-                          Container(
-                            padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 4.h),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF5F7F6),
-                              borderRadius: BorderRadius.circular(6.r),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.star, color: Colors.amber, size: 12.sp),
-                                SizedBox(width: 4.w),
-                                Text(
-                                  '4.6 (1.2k)',
-                                  style: TextStyle(
-                                    fontSize: 10.sp,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ],
                       ),
                       SizedBox(height: 10.h),
@@ -627,14 +606,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             Container(
                               padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFFECE5),
+                                gradient: AppGradients.warm,
                                 borderRadius: BorderRadius.circular(4.r),
                               ),
                               child: Text(
                                 '$discount% OFF',
                                 style: TextStyle(
                                   fontSize: 10.sp,
-                                  color: const Color(0xFFFF521B),
+                                  color: AppColors.onDiscount,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -688,7 +667,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                     color: isSelected ? const Color(0xFFE8F5E9) : Colors.white,
                                     borderRadius: BorderRadius.circular(10.r),
                                     border: Border.all(
-                                      color: isSelected ? AppColors.primaryColor : Colors.grey.shade200,
+                                      color: isSelected ? AppColors.primary : Colors.grey.shade200,
                                       width: 1.5.w,
                                     ),
                                   ),
@@ -700,8 +679,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                           left: 0,
                                           child: Container(
                                             padding: EdgeInsets.symmetric(horizontal: 5.w, vertical: 1.5.h),
+                                            // Amber, like every other discount
+                                            // in the app. This ribbon was the
+                                            // fourth treatment: green fill with
+                                            // black87 text at 8sp.
                                             decoration: BoxDecoration(
-                                              color: AppColors.primaryColor,
+                                              gradient: AppGradients.warm,
                                               borderRadius: BorderRadius.only(
                                                 topLeft: Radius.circular(8.r),
                                                 bottomRight: Radius.circular(8.r),
@@ -709,10 +692,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                             ),
                                             child: Text(
                                               '$itemDiscount% OFF',
-                                              style: TextStyle(
-                                                color: Colors.black87,
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 8.sp,
+                                              style: AppText.overline(
+                                                color: AppColors.onDiscount,
                                               ),
                                             ),
                                           ),
@@ -721,7 +702,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                         padding: EdgeInsets.only(
                                           left: 10.w,
                                           right: 10.w,
-                                          top: itemDiscount > 0 ? 18.h : 8.h,
+                                          top: 18.h,  // constant: chips used to shift 10dp when discounted
                                           bottom: 6.h,
                                         ),
                                         child: Column(
@@ -1029,7 +1010,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                           ),
                           child: Center(
                             child: Icon(Icons.verified_user_outlined,
-                                color: AppColors.primaryColor, size: 18.sp),
+                                color: AppColors.primary, size: 18.sp),
                           ),
                         ),
                         SizedBox(width: 12.w),
@@ -1121,7 +1102,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                       Text(
                                         'Coupon',
                                         style: TextStyle(
-                                          color: AppColors.primaryColor,
+                                          color: AppColors.primary,
                                           fontWeight: FontWeight.w700,
                                           fontSize: 15.sp,
                                         ),
@@ -1129,7 +1110,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                       const Spacer(),
                                       Container(
                                         decoration: BoxDecoration(
-                                          color: AppColors.backgroundColor,
+                                          color: AppColors.surface,
                                           borderRadius: BorderRadius.circular(3.r),
                                         ),
                                         child: Padding(
@@ -1151,7 +1132,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                 Padding(
                                   padding: EdgeInsets.only(left: 8.w, right: 6.w),
                                   child: DottedLine(
-                                    dashColor: AppColors.primaryColor,
+                                    dashColor: AppColors.primary,
                                     lineThickness: 1.7,
                                   ),
                                 ),
@@ -1167,7 +1148,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                               SvgPicture.asset(
                                                 'assets/svg/coupon.svg',
                                                 width: 18.w,
-                                                color: AppColors.primaryColor,
+                                                color: AppColors.primary,
                                               ),
                                               SizedBox(width: 4.w),
                                               Text(
@@ -1191,7 +1172,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                       const Spacer(),
                                       Container(
                                         decoration: BoxDecoration(
-                                          color: AppColors.primaryColor.withOpacity(0.15),
+                                          color: AppColors.primary.withOpacity(0.15),
                                           borderRadius: BorderRadius.circular(3.r),
                                         ),
                                         child: Padding(
@@ -1246,7 +1227,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         height: 44.h,
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          border: Border.all(width: 1.w, color: AppColors.primaryColor),
+                          border: Border.all(width: 1.w, color: AppColors.primary),
                           borderRadius: BorderRadius.circular(10.r),
                         ),
                         child: Center(
@@ -1257,12 +1238,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                 Provider.of<LanguageProvider>(context).translate('see_all_products'),
                                 style: TextStyle(
                                   fontSize: 14.sp,
-                                  color: AppColors.primaryColor,
+                                  color: AppColors.primary,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                               SizedBox(width: 6.w),
-                              Icon(Icons.arrow_forward, size: 16.sp, color: AppColors.primaryColor),
+                              Icon(Icons.arrow_forward, size: 16.sp, color: AppColors.primary),
                             ],
                           ),
                         ),
@@ -1353,7 +1334,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                         width: 110.w,
                         height: 38.h,
                         decoration: BoxDecoration(
-                          color: AppColors.primaryColor,
+                          color: AppColors.primary,
                           borderRadius: BorderRadius.circular(8.r),
                         ),
                         child: Row(
@@ -1425,7 +1406,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                             }
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: stock > 0 ? AppColors.primaryColor : Colors.grey.shade400,
+                            backgroundColor: stock > 0 ? AppColors.primary : Colors.grey.shade400,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8.r),
@@ -1457,81 +1438,6 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             ),
           ),
 
-          // Floating View Cart Banner (sitting just above checkout bar)
-          if (cartItemCount > 0)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.slowMiddle,
-              bottom: cartItemCount > 0 ? 80.h : -100.h,
-              left: 80.w,
-              right: 80.w,
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 300),
-                opacity: cartItemCount > 0 ? 1.0 : 0.0,
-                child: InkWell(
-                  onTap: () async {
-                    await Navigator.push(context, MaterialPageRoute(builder: (context) => CartScreen()));
-                    setState(() {
-                      fetchCartQuantities();
-                    });
-                  },
-                  child: Container(
-                    height: 38.h,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryColor,
-                      borderRadius: BorderRadius.circular(30.r),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8.0),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 24.w,
-                            height: 24.w,
-                            decoration: BoxDecoration(
-                              color: AppColors.gray,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                cartItemCount.toString(),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12.sp,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          Flexible(
-                            child: Text(
-                              Provider.of<LanguageProvider>(context).translate('view_cart'),
-                              style: TextStyle(
-                                fontSize: 14.sp,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const Spacer(),
-                          Icon(Icons.arrow_forward_ios_outlined, color: Colors.white, size: 14.sp),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            )
         ],
       ),
     );
