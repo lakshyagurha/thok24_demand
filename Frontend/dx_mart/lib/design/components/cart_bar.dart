@@ -91,7 +91,18 @@ class CartBar extends StatelessWidget {
                       ),
                     ),
                     AppSpace.gapW(AppSpace.md),
+                    // Left (informational) and right (the actual call to
+                    // action) used to compete for space as equally-weighted
+                    // flex children. At a larger OS text-scale setting that
+                    // squeezed "View Cart" down to "Vie..." — the label
+                    // telling the shopper what tapping the bar *does* was the
+                    // one that lost the fight, while "4 items" (which can
+                    // stand to abbreviate) kept its full share. Flipped: the
+                    // action side is weighted higher, so it only starts
+                    // truncating once the count/total has already given up
+                    // most of the room it can spare.
                     Expanded(
+                      flex: 2,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
@@ -116,18 +127,28 @@ class CartBar extends StatelessWidget {
                     ),
                     AppSpace.gapW(AppSpace.sm),
                     Flexible(
-                      child: Text(
-                        label,
-                        style: AppText.button(color: AppColors.onPrimary),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
+                      flex: 3,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              label,
+                              style: AppText.button(color: AppColors.onPrimary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                          AppSpace.gapW(AppSpace.xs),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 20,
+                            color: AppColors.onPrimary,
+                          ),
+                        ],
                       ),
-                    ),
-                    Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 20,
-                      color: AppColors.onPrimary,
                     ),
                   ],
                 ),

@@ -808,45 +808,83 @@ class _ProductCardState extends State<ProductCard> {
                         AppSpace.w(AppSpace.sm),
                         AppSpace.h(AppSpace.sm),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // The name leads now. It used to be rendered last and
-                          // smallest (11sp w400) under the price, while the
-                          // pack size — the least important datum on the card —
-                          // was the only element with a filled pill behind it,
-                          // so it read as the product's title.
-                          Flexible(
-                            child: Text(
-                              productName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppText.h3(),
+                      // The previous version of this block sized itself
+                      // against 236.h and assumed that number was the real
+                      // available height. It never was, for most of this
+                      // card's callers: every GRID call site (Similar
+                      // Products, Search, Wishlist, Category, the detail
+                      // page's "you may also like") sizes its cells from
+                      // `childAspectRatio`, which imposes a TIGHT height on
+                      // this Expanded regardless of what ProductCard.height
+                      // says — that field only ever did anything for the
+                      // horizontal rails on Home, which build their own
+                      // SizedBox around the card. So the previous fix (a
+                      // taller default height + a text-scale clamp) was
+                      // invisible everywhere a grid was involved, which is
+                      // exactly where the clipping was reported from.
+                      //
+                      // Structural fix instead of a size guess: measure the
+                      // text block's natural height at the width this cell
+                      // actually has, and if it doesn't fit — for any
+                      // reason: a long name, a larger OS font-scale setting,
+                      // a tighter aspect ratio some future screen picks —
+                      // scale the whole block down uniformly until it does.
+                      // At normal name lengths and default text scale this
+                      // never engages and nothing changes visually; it is
+                      // the difference between "clipped and overlapping"
+                      // and "one size smaller," which is the failure mode
+                      // worth having.
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          return FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.topLeft,
+                            child: SizedBox(
+                              width: constraints.maxWidth,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // The name leads now. It used to be
+                                  // rendered last and smallest (11sp w400)
+                                  // under the price, while the pack size —
+                                  // the least important datum on the card —
+                                  // was the only element with a filled pill
+                                  // behind it, so it read as the product's
+                                  // title.
+                                  Text(
+                                    productName,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.h3(),
+                                  ),
+                                  SizedBox(height: AppSpace.h(2)),
+                                  Text(
+                                    variantName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppText.caption(),
+                                  ),
+                                  SizedBox(height: AppSpace.h(AppSpace.sm)),
+                                  // A warm plate behind the price with the
+                                  // MRP struck through beside it. A bare
+                                  // price and a bare strikethrough are two
+                                  // numbers the eye has to compare; a plate
+                                  // reads as "this is the deal" before
+                                  // either has been parsed, which is what
+                                  // matters on a shelf of twelve cards.
+                                  PriceBlock(
+                                    sellingPrice: variantSellingPrice,
+                                    mrp: discountPercentage > 0
+                                        ? variantPrice
+                                        : null,
+                                    highlighted: true,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          SizedBox(height: AppSpace.h(2)),
-                          Text(
-                            variantName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppText.caption(),
-                          ),
-                          SizedBox(height: AppSpace.h(AppSpace.sm)),
-                          // A warm plate behind the price with the MRP struck
-                          // through beside it. A bare price and a bare
-                          // strikethrough are two numbers the eye has to
-                          // compare; a plate reads as "this is the deal" before
-                          // either has been parsed, which is what matters on a
-                          // shelf of twelve cards.
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: PriceBlock(
-                              sellingPrice: variantSellingPrice,
-                              mrp: discountPercentage > 0 ? variantPrice : null,
-                              highlighted: true,
-                            ),
-                          ),
-                        ],
+                          );
+                        },
                       ),
                     ),
                   ),

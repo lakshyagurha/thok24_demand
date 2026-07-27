@@ -287,7 +287,7 @@ class _SimilarProductState extends State<SimilarProduct> {
           crossAxisCount: 2,
           crossAxisSpacing: 12.w,
           mainAxisSpacing: 16.h,
-          childAspectRatio: 0.62,
+          childAspectRatio: 0.58,
         ),
         itemCount: list.length,
         itemBuilder: (context, index) {
