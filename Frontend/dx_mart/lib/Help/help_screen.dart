@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/catalog_repository.dart';
+import '../design/components/app_header.dart';
 import '../utils/colors.dart';
 import 'package:flutter/services.dart';
 
@@ -131,26 +132,7 @@ class _HelpScreenState extends State<HelpScreen> {
               child: Row(
                 children: [
                   SizedBox(width: 16.w),
-                  InkWell(
-                    onTap: () {
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      height: 25.h,
-                      width: 28.w,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
-                        borderRadius: BorderRadius.circular(100),
-                      ),
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.only(left: 7.w),
-                          child: Icon(Icons.arrow_back_ios,
-                              size: 15.sp, color: AppColors.iconColor),
-                        ),
-                      ),
-                    ),
-                  ),
+                  AppBackButton(onTap: () => Navigator.pop(context)),
                   SizedBox(width: 16.w),
                   Text(
                     "Help",

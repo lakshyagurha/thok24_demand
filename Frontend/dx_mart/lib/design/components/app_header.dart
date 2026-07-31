@@ -118,6 +118,26 @@ class _CircleAction extends StatelessWidget {
   }
 }
 
+/// The same round back affordance [AppHeader] uses, for the ~10 screens that
+/// build their own header row instead of using [AppHeader] outright. Every
+/// one of them had copy-pasted a 25x28 solid-green rounded rectangle holding
+/// a black `arrow_back_ios` — a ~3.2:1 contrast pairing nudged sideways with
+/// `EdgeInsets.only(left: 7.w)` to fake optical centring. This is that same
+/// light-surface circle with a real 44dp tap target instead.
+class AppBackButton extends StatelessWidget {
+  const AppBackButton({super.key, this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _CircleAction(
+      icon: Icons.arrow_back_rounded,
+      onTap: onTap ?? () => Navigator.maybePop(context),
+    );
+  }
+}
+
 /// A header action: an icon with an optional count badge.
 class HeaderAction extends StatelessWidget {
   const HeaderAction({

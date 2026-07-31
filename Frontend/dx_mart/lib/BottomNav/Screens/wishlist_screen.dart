@@ -4,6 +4,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../CustomWidgets/product_card.dart';
 import '../../core/supabase.dart';
 import '../../data/cart_repository.dart';
+import '../../design/components/app_header.dart';
+import '../../design/components/cart_bar.dart';
 import '../../utils/colors.dart';
 import '../bottomNavScreen.dart';
 import 'cartScreen.dart';
@@ -194,24 +196,10 @@ class _WishlistScreenState extends State<WishlistScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         SizedBox(width: 16.w),
-                        InkWell(
+                        AppBackButton(
                           onTap: () {
                             Navigator.push(context, MaterialPageRoute(builder: (context)=>BottomNavScreen()));
                           },
-                          child: Container(
-                            height: 25.h,
-                            width: 28.w,
-                            decoration: BoxDecoration(
-                              color: AppColors.primaryColor,
-                              borderRadius: BorderRadius.circular(100),
-                            ),
-                            child: Center(
-                              child: Padding(
-                                padding: EdgeInsets.only(left: 7.w),
-                                child: Icon(Icons.arrow_back_ios, size: 15.sp,color: AppColors.iconColor,),
-                              ),
-                            ),
-                          ),
                         ),
                         SizedBox(width: 16.w),
                         Text(
@@ -259,86 +247,18 @@ class _WishlistScreenState extends State<WishlistScreen> {
           ),
 
 
-          // ✅ Floating Cart Button (Only show if cartList is not empty)
-          Consumer<CartProvider>(
-            builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
-              final hasItems = uniqueItemsCount > 0;
-
-              return AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.slowMiddle,
-                bottom: hasItems ? 20.h : -100.h, // Hide below screen
-                left: 80.w,
-                right: 80.w,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 300),
-                  opacity: hasItems ? 1.0 : 0.0, // Fade in/out
-                  child: InkWell(
-                    onTap: () async {
-                      await Navigator.push(context, MaterialPageRoute(builder: (context) => CartScreen()));
-                    },
-                    child: Container(
-                      height: 38.h,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor, // Brand Green
-                        borderRadius: BorderRadius.circular(30.r),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: AppColors.gray,
-                                borderRadius: BorderRadius.circular(50.r),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  uniqueItemsCount.toString(),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14.sp,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            Flexible(
-                              child: Text(
-                                Provider.of<LanguageProvider>(context).translate('view_cart'),
-                                style: TextStyle(
-                                  fontSize: 15.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.primaryTextColor,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const Spacer(),
-                            Icon(Icons.arrow_forward_ios_outlined, color: AppColors.iconColor, size: 16.sp),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          )
-
-
         ],
+      ),
+      bottomNavigationBar: Consumer<CartProvider>(
+        builder: (context, cart, _) => CartBar(
+          itemCount: cart.getUniqueItemsCount(),
+          label: Provider.of<LanguageProvider>(context, listen: false)
+              .translate('view_cart'),
+          onTap: () {
+            Navigator.push(
+                context, MaterialPageRoute(builder: (context) => CartScreen()));
+          },
+        ),
       ),
     );
   }

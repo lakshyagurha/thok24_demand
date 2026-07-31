@@ -137,10 +137,17 @@ class _ProductCardState extends State<ProductCard> {
     // list was built from, so place-order re-checks it against live stock.
     if (delta > 0) {
       final variants = widget.product['variants'] as List?;
-      final variant = variants?.firstWhere(
-        (v) => int.tryParse(v['id']?.toString() ?? '0') == variantId,
-        orElse: () => null,
-      );
+      // Not firstWhere(orElse: () => null): variants holds Map<String, dynamic>, so a
+      // null orElse is a type error at runtime rather than a miss — this is exactly what
+      // was silently throwing out of every ADD/stepper tap on every card, everywhere.
+      Map? variant;
+      for (final v in variants ?? const []) {
+        if (v is Map &&
+            int.tryParse(v['id']?.toString() ?? '0') == variantId) {
+          variant = v;
+          break;
+        }
+      }
       if (variant != null) {
         final stock = int.tryParse(variant['stock']?.toString() ?? '0') ?? 0;
         final current = cart.getQuantity('', productId, variantId.toString());

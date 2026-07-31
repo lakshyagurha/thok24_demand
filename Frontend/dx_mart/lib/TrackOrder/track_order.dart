@@ -5,6 +5,7 @@ import '../Help/help_screen.dart';
 import '../data/catalog_repository.dart';
 import '../data/models.dart';
 import '../data/order_repository.dart';
+import '../design/components/app_header.dart';
 import '../utils/colors.dart';
 
 class TrackOrder extends StatefulWidget {
@@ -120,23 +121,7 @@ class _TrackOrderState extends State<TrackOrder> {
               child: Row(
                 children: [
                   SizedBox(width: 16.w),
-                  InkWell(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      height: 25.h,
-                      width: 28.w,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
-                        borderRadius: BorderRadius.circular(100.r),
-                      ),
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.only(left: 7.w),
-                          child: Icon(Icons.arrow_back_ios,color: AppColors.iconColor, size: 15.sp),
-                        ),
-                      ),
-                    ),
-                  ),
+                  AppBackButton(onTap: () => Navigator.pop(context)),
                   SizedBox(width: 16.w),
                   Text(
                     "Track Order",

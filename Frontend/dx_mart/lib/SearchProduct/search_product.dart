@@ -1,4 +1,3 @@
-import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -7,6 +6,8 @@ import '../BottomNav/Screens/cartScreen.dart';
 import '../CustomWidgets/product_card.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
+import '../design/components/app_header.dart';
+import '../design/components/cart_bar.dart';
 import '../utils/colors.dart';
 import 'package:provider/provider.dart';
 import '../CustomWidgets/cart_provider.dart';
@@ -282,85 +283,21 @@ class _SearchProductState extends State<SearchProduct> {
               ),
             ),
 
-          // ✅ Floating Cart Button (Only show if cartList is not empty)
-          Consumer<CartProvider>(
-            builder: (context, cartProvider, child) {
-              final uniqueItemsCount = cartProvider.getUniqueItemsCount();
-              final hasItems = uniqueItemsCount > 0;
-
-              return AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.slowMiddle,
-                bottom: (hasItems && !_isListening) ? 40.h : -100.h, // Hide below screen
-                left: 80.w,
-                right: 80.w,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 300),
-                  opacity: (hasItems && !_isListening) ? 1.0 : 0.0, // Fade in/out
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => CartScreen()));
-                    },
-                    child: Container(
-                      height: 38.h,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
-                        borderRadius: BorderRadius.circular(30.r),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.15),
-                            blurRadius: 8,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: AppColors.gray,
-                                borderRadius: BorderRadius.circular(50.r),
-                              ),
-                              child: Center(
-                                child: Text(
-                                  uniqueItemsCount.toString(),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14.sp,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const Spacer(),
-                            Flexible(
-                              child: Text(
-                                Provider.of<LanguageProvider>(context).translate('view_cart'),
-                                style: TextStyle(
-                                  fontSize: 15.sp,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.primaryTextColor,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const Spacer(),
-                            Icon(Icons.arrow_forward_ios_outlined, color: AppColors.primaryTextColor, size: 16.sp),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          )
         ],
       ),
+      bottomNavigationBar: _isListening
+          ? null
+          : Consumer<CartProvider>(
+              builder: (context, cart, _) => CartBar(
+                itemCount: cart.getUniqueItemsCount(),
+                label: Provider.of<LanguageProvider>(context, listen: false)
+                    .translate('view_cart'),
+                onTap: () {
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (context) => CartScreen()));
+                },
+              ),
+            ),
     );
   }
 
@@ -368,11 +305,11 @@ class _SearchProductState extends State<SearchProduct> {
   Widget buildAppBar() {
     return Container(
       width: double.infinity,
-      height: 110.h,
       decoration: BoxDecoration(
         color: AppColors.backgroundColor,
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(height: 15.h),
 
@@ -382,25 +319,7 @@ class _SearchProductState extends State<SearchProduct> {
               children: [
                 SizedBox(width: 13.w),
 
-                InkWell(
-                  onTap: () {
-                    Navigator.pop(context);
-                  },
-                  child: Container(
-                    height: 25.h,
-                    width: 28.w,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryColor,
-                      borderRadius: BorderRadius.circular(100),
-                    ),
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.only(left: 7.w),
-                        child: Icon(Icons.arrow_back_ios,color: AppColors.iconColor, size: 15.sp),
-                      ),
-                    ),
-                  ),
-                ),
+                AppBackButton(onTap: () => Navigator.pop(context)),
                 Spacer(),
 
                 Text(Provider.of<LanguageProvider>(context).translate('search'), style: TextStyle(
@@ -419,78 +338,50 @@ class _SearchProductState extends State<SearchProduct> {
             padding: EdgeInsets.symmetric(horizontal: 16.w),
             child: Container(
               width: double.infinity,
-              height: 40.h,
               decoration: BoxDecoration(
                 color: AppColors.backgroundColor,
                 borderRadius: BorderRadius.circular(12.r),
                 border: Border.all(color: AppColors.lineColor, width: 1.5),
               ),
-              padding: EdgeInsets.symmetric(horizontal: 10.w),
+              padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Icon(Icons.search, size: 20.sp, color: AppColors.hintTextColor),
                   SizedBox(width: 6.w),
 
-                  /// ✅ Expanded TextField with Animated Placeholder
+                  /// A single static hint, not a looping typewriter. The
+                  /// animation lived in a Stack next to the real field with
+                  /// its own, different top padding — the moving hint text
+                  /// and the real caret sat on two different baselines,
+                  /// which is what read as "an input under the input."
                   Expanded(
-                    child: Stack(
-                      alignment: Alignment.centerLeft,
-                      children: [
-                        // ✅ Animated Hint (visible only when empty)
-                        if (searchController.text.isEmpty)
-                          IgnorePointer(
-                            child: AnimatedTextKit(
-                              repeatForever: true,
-                              pause: Duration(milliseconds: 2000),
-                              animatedTexts: [
-                                TyperAnimatedText(Provider.of<LanguageProvider>(context).translate('search_grocery'),
-                                    textStyle: TextStyle(
-                                        fontSize: 13.sp,
-                                        fontWeight: FontWeight.w400,
-                                        color: AppColors.hintTextColor),
-                                    speed: Duration(milliseconds: 80)),
-                                TyperAnimatedText(Provider.of<LanguageProvider>(context).translate('search_beauty'),
-                                    textStyle: TextStyle(
-                                        fontSize: 13.sp,
-                                        fontWeight: FontWeight.w400,
-                                        color: AppColors.hintTextColor),
-                                    speed: Duration(milliseconds: 80)),
-                                TyperAnimatedText(Provider.of<LanguageProvider>(context).translate('search_snacks'),
-                                    textStyle: TextStyle(
-                                        fontSize: 13.sp,
-                                        fontWeight: FontWeight.w400,
-                                        color: AppColors.hintTextColor),
-                                    speed: Duration(milliseconds: 80)),
-                              ],
-                            ),
-                          ),
-
-                        // ✅ TextField
-                        Padding(
-                          padding:  EdgeInsets.only(top: 8.h),
-                          child: TextField(
-                            controller: searchController,
-                            textInputAction: TextInputAction.search,
-                            style: TextStyle(
-                              fontSize: 14.sp,
-                              fontWeight: FontWeight.w400,
-                              color: Colors.black,
-                            ),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.only(bottom: 8.h),
-                            ),
-                            onChanged: (value) {
-                              setState(() {}); // update clear button
-                            },
-                            onSubmitted: (value) {
-                              fetchProducts(search: value);
-                            },
-                          ),
+                    child: TextField(
+                      controller: searchController,
+                      textInputAction: TextInputAction.search,
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.black,
+                      ),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        isDense: true,
+                        isCollapsed: true,
+                        hintText: Provider.of<LanguageProvider>(context)
+                            .translate('search_placeholder'),
+                        hintStyle: TextStyle(
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.w400,
+                          color: AppColors.hintTextColor,
                         ),
-                      ],
+                      ),
+                      onChanged: (value) {
+                        setState(() {}); // update clear button
+                      },
+                      onSubmitted: (value) {
+                        fetchProducts(search: value);
+                      },
                     ),
                   ),
 

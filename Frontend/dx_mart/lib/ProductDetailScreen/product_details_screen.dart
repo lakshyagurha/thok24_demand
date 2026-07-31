@@ -1206,7 +1206,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   SizedBox(height: 16.h),
                   buildSection(Provider.of<LanguageProvider>(context).translate('similar_products'), products),
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16.w),
+                    padding: EdgeInsets.fromLTRB(16.w, 16.h, 16.w, 0),
                     child: InkWell(
                       onTap: () async {
                         await Navigator.push(

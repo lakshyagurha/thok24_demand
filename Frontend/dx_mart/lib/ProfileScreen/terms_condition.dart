@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../design/components/app_header.dart';
 import '../utils/colors.dart';
 
 class TermsCondition extends StatefulWidget {
@@ -39,23 +40,7 @@ class _TermsConditionState extends State<TermsCondition> {
               child: Row(
                 children: [
                   SizedBox(width: 16.w),
-                  InkWell(
-                    onTap: () => Navigator.pop(context),
-                    child: Container(
-                      height: 25.h,
-                      width: 28.w,
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryColor,
-                        borderRadius: BorderRadius.circular(100.r),
-                      ),
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.only(left: 7.w),
-                          child: Icon(Icons.arrow_back_ios, color: AppColors.iconColor, size: 15.sp),
-                        ),
-                      ),
-                    ),
-                  ),
+                  AppBackButton(onTap: () => Navigator.pop(context)),
                   SizedBox(width: 16.w),
                   Text(
                     "Terms & Conditions",
