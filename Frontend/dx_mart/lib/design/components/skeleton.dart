@@ -52,6 +52,16 @@ class AppSkeleton extends StatelessWidget {
 
 /// The skeleton of a single product card, matched to the real card's geometry
 /// so nothing jumps when the data lands.
+///
+/// The real [ProductCard] survives a tight `GridView` cell (its height set by
+/// `childAspectRatio`, not its own declared height) via a `FittedBox` that
+/// shrinks its text block. This skeleton has no such text to shrink, so
+/// instead it sizes the image block to whatever height is actually on offer
+/// — via [LayoutBuilder], not a `width`-derived square — and gives the fixed,
+/// small text-line block priority. A caller passing a tight height (any grid)
+/// or a generous one (the horizontal rail below, at a fixed 250.h) both just
+/// work, rather than this overflowing whenever a caller's aspect ratio left
+/// less headroom than a square image plus three text lines needs.
 class ProductCardSkeleton extends StatelessWidget {
   const ProductCardSkeleton({super.key, this.width});
 
@@ -59,21 +69,36 @@ class ProductCardSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final w = width ?? 150.w;
-    return SizedBox(
-      width: w,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppSkeleton(width: w, height: w, radius: AppRadius.mdAll),
-          SizedBox(height: AppSpace.h(AppSpace.sm)),
-          AppSkeleton(width: w * 0.45, height: AppSpace.h(12)),
-          SizedBox(height: AppSpace.h(AppSpace.sm)),
-          AppSkeleton(width: w * 0.9, height: AppSpace.h(12)),
-          SizedBox(height: AppSpace.h(6)),
-          AppSkeleton(width: w * 0.6, height: AppSpace.h(12)),
-        ],
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = width ?? constraints.maxWidth.clamp(1.0, 150.w);
+        final textBlockHeight = AppSpace.h(AppSpace.sm) +
+            AppSpace.h(12) +
+            AppSpace.h(AppSpace.sm) +
+            AppSpace.h(12) +
+            AppSpace.h(6) +
+            AppSpace.h(12);
+        final availableHeight =
+            constraints.hasBoundedHeight ? constraints.maxHeight : w + textBlockHeight;
+        final imageHeight = (availableHeight - textBlockHeight).clamp(0.0, w);
+
+        return SizedBox(
+          width: w,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AppSkeleton(width: w, height: imageHeight, radius: AppRadius.mdAll),
+              SizedBox(height: AppSpace.h(AppSpace.sm)),
+              AppSkeleton(width: w * 0.45, height: AppSpace.h(12)),
+              SizedBox(height: AppSpace.h(AppSpace.sm)),
+              AppSkeleton(width: w * 0.9, height: AppSpace.h(12)),
+              SizedBox(height: AppSpace.h(6)),
+              AppSkeleton(width: w * 0.6, height: AppSpace.h(12)),
+            ],
+          ),
+        );
+      },
     );
   }
 }

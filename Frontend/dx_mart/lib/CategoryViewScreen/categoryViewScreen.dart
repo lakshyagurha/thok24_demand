@@ -372,7 +372,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
             crossAxisCount: 2,
             mainAxisSpacing: AppSpace.h(AppSpace.md),
             crossAxisSpacing: AppSpace.w(AppSpace.md),
-            childAspectRatio: 0.66,
+            childAspectRatio: 0.58,
           ),
           itemBuilder: (_, _) => const ProductCardSkeleton(),
         ),
