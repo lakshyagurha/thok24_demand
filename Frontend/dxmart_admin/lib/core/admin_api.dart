@@ -147,6 +147,26 @@ class AdminApi {
     return _row(body);
   }
 
+  /// Writes a new `sort_order` for several categories in one call.
+  ///
+  /// Reordering one shelf renumbers every sibling below it. As individual [update]
+  /// calls that is N round trips, and a failure halfway leaves the tree visibly
+  /// half-ordered. The function's `reorder` action is deliberately narrower than
+  /// `update`: it writes one integer column on `main_category` only, so a reorder
+  /// cannot be steered into editing a name or a price.
+  static Future<int> reorderCategories(
+    List<({int id, int sortOrder})> order,
+  ) async {
+    if (order.isEmpty) return 0;
+    final body = await _invoke({
+      'action': 'reorder',
+      'order': [
+        for (final e in order) {'id': e.id, 'sort_order': e.sortOrder},
+      ],
+    });
+    return (_row(body)['updated'] as num?)?.toInt() ?? 0;
+  }
+
   // ---------------------------------------------------------------------------
 
   static Map<String, dynamic> _row(Map<String, dynamic> body) {
@@ -246,6 +266,10 @@ class AdminTables {
   static const String userProfiles = 'user_profiles';
   static const String deliveryAddress = 'delivery_address';
 
+  /// Per-category data-quality report: stock, leaf-ness and naming-rule violations.
+  /// Backs the warning badges on the category tree screen.
+  static const String categoryHealth = 'v_category_health';
+
   static const List<String> orderStatuses = [
     'pending',
     'packed',
@@ -295,14 +319,192 @@ class AdminCatalog {
       );
     }
 
+    // The category name, which the list has always tried to render.
+    //
+    // `product_management_screen.dart` did `'C : ' + product['main_category_name']`
+    // against a key nothing populated, so the product list threw on its first row.
+    // The name is joined here rather than patched at the call site because the stock
+    // screen wants the same thing.
+    final categories = await categoryRows();
+    final nameById = {
+      for (final c in categories) c['id'].toString(): (c['name'] ?? '').toString(),
+    };
+    final parentById = {
+      for (final c in categories)
+        c['id'].toString(): c['parent_id']?.toString(),
+    };
+
     return products.map((p) {
       final id = p['id'].toString();
+      final categoryId = p['main_category_id']?.toString();
+      final parentId = categoryId == null ? null : parentById[categoryId];
       return {
         ...p,
         'variants': variantsByProduct[id] ?? const [],
         'images': imagesByProduct[id] ?? const [],
+        // Never null: an unresolvable id must show as such, not crash the row.
+        'main_category_name': nameById[categoryId] ?? 'Uncategorised',
+        'umbrella_id': parentId,
+        'umbrella_name': parentId == null ? '' : (nameById[parentId] ?? ''),
       };
     }).toList();
+  }
+
+  /// Every category row, including inactive ones.
+  ///
+  /// The admin sees the whole table on purpose — retired and staging categories are
+  /// exactly what an operator needs to be able to find. The consumer app calls
+  /// `category_tree()` instead, which filters them out.
+  static Future<List<Map<String, dynamic>>> categoryRows() =>
+      AdminApi.list(AdminTables.mainCategory, limit: 500);
+
+  /// The category table assembled into a tree, umbrellas first, each sorted by
+  /// `sort_order` then name.
+  ///
+  /// Built from the flat `list` rather than from the `category_tree()` RPC because the
+  /// admin needs the inactive nodes the RPC deliberately drops.
+  static Future<List<AdminCategory>> categoryTree() async {
+    final rows = await categoryRows();
+    final all = rows.map(AdminCategory.fromMap).toList();
+    final byId = {for (final c in all) c.id: c};
+
+    for (final c in all) {
+      final parent = c.parentId == null ? null : byId[c.parentId];
+      parent?.children.add(c);
+    }
+    int order(AdminCategory a, AdminCategory b) {
+      final s = a.sortOrder.compareTo(b.sortOrder);
+      return s != 0 ? s : a.name.compareTo(b.name);
+    }
+
+    for (final c in all) {
+      c.children.sort(order);
+    }
+    final roots = all.where((c) => c.parentId == null).toList()..sort(order);
+    return roots;
+  }
+
+  /// Active SKU count per category id, for the tree screen's badges.
+  static Future<Map<int, int>> categoryHealth() async {
+    final rows = await AdminApi.list(AdminTables.categoryHealth, limit: 500);
+    return {
+      for (final r in rows)
+        (r['id'] as num).toInt(): (r['active_products'] as num?)?.toInt() ?? 0,
+    };
+  }
+}
+
+/// A category as the admin sees it: the whole row, inactive nodes included.
+class AdminCategory {
+  AdminCategory({
+    required this.id,
+    required this.name,
+    this.nameHi,
+    this.nameHn,
+    this.parentId,
+    this.slug,
+    this.level = 2,
+    this.sortOrder = 0,
+    this.isActive = true,
+    this.iconUrl,
+    this.image,
+  });
+
+  final int id;
+  final String name;
+  final String? nameHi;
+  final String? nameHn;
+  final int? parentId;
+  final String? slug;
+  final int level;
+  final int sortOrder;
+  final bool isActive;
+  final String? iconUrl;
+  final String? image;
+
+  final List<AdminCategory> children = [];
+
+  bool get isUmbrella => level == 1;
+
+  /// Only a node with no children may hold products.
+  ///
+  /// The database deliberately does not enforce this — doing so would deadlock the
+  /// day someone adds a sub-shelf under a shelf that already has stock. It is enforced
+  /// here, in the picker, which is where the choice is actually made.
+  bool get isLeaf => children.isEmpty;
+
+  /// Everything beneath this node, depth-first.
+  List<AdminCategory> get descendants => [
+        for (final c in children) ...[c, ...c.descendants],
+      ];
+
+  String get displayPath => name;
+
+  factory AdminCategory.fromMap(Map<String, dynamic> m) => AdminCategory(
+        id: (m['id'] as num).toInt(),
+        name: (m['name'] ?? '').toString(),
+        nameHi: m['name_hi']?.toString(),
+        nameHn: m['name_hn']?.toString(),
+        parentId: (m['parent_id'] as num?)?.toInt(),
+        slug: m['slug']?.toString(),
+        level: (m['level'] as num?)?.toInt() ?? 2,
+        sortOrder: (m['sort_order'] as num?)?.toInt() ?? 0,
+        isActive: m['is_active'] as bool? ?? true,
+        iconUrl: m['icon_url']?.toString(),
+        image: m['image']?.toString(),
+      );
+}
+
+/// The naming rules the taxonomy is held to, enforced in the form rather than only
+/// written down in the plan.
+///
+/// Mirrors the assertions in `20260731000002_category_tree_seed.sql`: a name that fails
+/// here would also fail the migration's own checks on the next replay.
+class CategoryNameRules {
+  const CategoryNameRules._();
+
+  static const int maxLength = 22;
+
+  /// Returns null when [name] is acceptable, or the reason it is not.
+  static String? validateName(String name, {Iterable<String> takenLower = const []}) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return 'Name is required';
+    if (trimmed.length > maxLength) {
+      return 'Max $maxLength characters (currently ${trimmed.length})';
+    }
+    if ('&'.allMatches(trimmed).length > 1) {
+      return 'Use at most one "&"';
+    }
+    if (takenLower.contains(trimmed.toLowerCase())) {
+      return 'A category with this name already exists';
+    }
+    return null;
+  }
+
+  static String? validateHindi(String v) =>
+      v.trim().isEmpty ? 'Hindi name is required' : null;
+
+  static String? validateHinglish(String v) =>
+      v.trim().isEmpty ? 'Hinglish name is required' : null;
+
+  static String? validateSlug(String slug, {Iterable<String> taken = const []}) {
+    final s = slug.trim();
+    if (s.isEmpty) return 'Slug is required';
+    if (!RegExp(r'^[a-z0-9]+(-[a-z0-9]+)*$').hasMatch(s)) {
+      return 'Lowercase letters, numbers and single hyphens only';
+    }
+    if (taken.contains(s)) return 'This slug is already used';
+    return null;
+  }
+
+  /// `Atta, Rice & Dal` -> `atta-rice-dal`. Matches the slugs already seeded.
+  static String slugify(String name) {
+    final s = name
+        .toLowerCase()
+        .replaceAll('&', ' ')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    return s;
   }
 }
 

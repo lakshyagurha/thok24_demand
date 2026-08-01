@@ -6,6 +6,7 @@ import '../BannerManagment/banner_management_screen.dart';
 import '../CouponCodeManagment/coupanCodeScreen.dart';
 import '../Dashboard/dashboard_screen.dart';
 import '../LocationScreen/locationManagementScreen.dart';
+import '../MainCategory/category_tree_screen.dart';
 import '../MainCategory/main_category.dart';
 import '../Order/order_management_screen.dart';
 import '../Product/product_management_screen.dart';
@@ -29,6 +30,11 @@ class _HomeScreenState extends State<HomeScreen> {
       'icon': Icons.dashboard,
       'label': 'Dashboard',
       'screen': const DashboardScreen(),
+    },
+    {
+      'icon': Icons.account_tree_rounded,
+      'label': 'Category Tree',
+      'screen': const CategoryTreeScreen(),
     },
     {
       'icon': Icons.category_rounded,

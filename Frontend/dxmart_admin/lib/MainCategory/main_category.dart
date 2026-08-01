@@ -33,21 +33,91 @@ class _MainCategoryState extends State<MainCategory> {
   String? _initialCategoryName;
   String? _initialCategoryImage;
 
+  // --- Taxonomy fields ------------------------------------------------------
+  //
+  // Before these existed the form wrote name/name_hi/name_hn and nothing else, which
+  // no longer inserts: a row with no parent must be level 1, and the depth trigger
+  // rejects anything else. The parent picker is what decides the level, so it is
+  // required, not decorative.
+  final TextEditingController _slugController = TextEditingController();
+  final TextEditingController _sortOrderController = TextEditingController();
+
+  /// null = create an umbrella (level 1). Otherwise the chosen parent's id.
+  int? _parentId;
+  bool _isActive = true;
+  List<AdminCategory> _tree = [];
+  Map<int, AdminCategory> _byId = {};
+
+  /// Set once the operator edits the slug by hand, so it stops tracking the name.
+  /// A slug is a stable handle: silently rewriting it on every rename is how links
+  /// and saved references break.
+  bool _slugTouched = false;
+
   @override
   void initState() {
     super.initState();
     _fetchCategories();
     _searchController.addListener(_filterCategories);
+    _categoryTextController.addListener(_syncSlugFromName);
   }
 
   @override
   void dispose() {
+    _categoryTextController.removeListener(_syncSlugFromName);
     _categoryTextController.dispose();
     _categoryTextControllerHi.dispose();
     _categoryTextControllerHn.dispose();
+    _slugController.dispose();
+    _sortOrderController.dispose();
     _searchController.removeListener(_filterCategories);
     _searchController.dispose();
     super.dispose();
+  }
+
+  /// Keeps the slug in step with the name while creating, and stops as soon as the
+  /// operator types their own — or the moment they open an existing category, whose
+  /// slug is already referenced elsewhere.
+  void _syncSlugFromName() {
+    if (_slugTouched || _selectedCategoryIdForEdit != null) return;
+    final next = CategoryNameRules.slugify(_categoryTextController.text);
+    if (_slugController.text != next) _slugController.text = next;
+  }
+
+  /// Slugs and names already in use, excluding the row being edited so saving a
+  /// category without renaming it does not collide with itself.
+  Iterable<String> get _takenSlugs => _byId.values
+      .where((c) => c.id.toString() != _selectedCategoryIdForEdit)
+      .map((c) => c.slug ?? '')
+      .where((s) => s.isNotEmpty);
+
+  Iterable<String> get _takenNamesLower => _byId.values
+      .where((c) => c.id.toString() != _selectedCategoryIdForEdit)
+      .map((c) => c.name.toLowerCase());
+
+  /// Parents an operator may choose.
+  ///
+  /// Depth is capped at 3 by a check constraint, so a level-3 node can never be a
+  /// parent — offering it would only produce a write the database refuses. Editing a
+  /// node also cannot reparent it under itself or its own descendants, which would be
+  /// a cycle.
+  List<AdminCategory> get _parentOptions {
+    final editingId = int.tryParse(_selectedCategoryIdForEdit ?? '');
+    final banned = <int>{};
+    if (editingId != null) {
+      banned.add(editingId);
+      final self = _byId[editingId];
+      if (self != null) {
+        banned.addAll(self.descendants.map((c) => c.id));
+      }
+    }
+    return _byId.values
+        .where((c) => c.level < 3 && !banned.contains(c.id))
+        .toList()
+      ..sort((a, b) {
+        final byLevel = a.level.compareTo(b.level);
+        if (byLevel != 0) return byLevel;
+        return a.sortOrder.compareTo(b.sortOrder);
+      });
   }
 
   Future<void> _autoTranslateCategory() async {
@@ -87,11 +157,19 @@ class _MainCategoryState extends State<MainCategory> {
   Future<void> _fetchCategories() async {
     setState(() => _isLoadingList = true);
     try {
-      final rows = await AdminApi.list(AdminTables.mainCategory, limit: 200);
+      final rows = await AdminCatalog.categoryRows();
+      final tree = await AdminCatalog.categoryTree();
       if (!mounted) return;
       setState(() {
         _categoryList = rows;
         _filteredCategoryList = List.from(_categoryList);
+        _tree = tree;
+        _byId = {
+          for (final c in [
+            for (final u in tree) ...[u, ...u.descendants],
+          ])
+            c.id: c,
+        };
         _isLoadingList = false;
       });
     } catch (e) {
@@ -100,9 +178,50 @@ class _MainCategoryState extends State<MainCategory> {
     }
   }
 
+  /// The first rule the form breaks, or null if it is safe to save.
+  ///
+  /// These mirror the assertions in the seed migration, so a category saved here would
+  /// also survive that migration's own checks. Hindi and Hinglish are required because
+  /// half the audience reads them: an English-only category is invisible to that half,
+  /// and auto-translate is gone (see [_autoTranslateCategory]).
+  String? _validateForm() {
+    final nameError = CategoryNameRules.validateName(
+      _categoryTextController.text,
+      takenLower: _takenNamesLower,
+    );
+    if (nameError != null) return nameError;
+
+    final hiError = CategoryNameRules.validateHindi(_categoryTextControllerHi.text);
+    if (hiError != null) return hiError;
+
+    final hnError =
+        CategoryNameRules.validateHinglish(_categoryTextControllerHn.text);
+    if (hnError != null) return hnError;
+
+    final slugError = CategoryNameRules.validateSlug(
+      _slugController.text,
+      taken: _takenSlugs,
+    );
+    if (slugError != null) return slugError;
+
+    if (_sortOrderController.text.trim().isNotEmpty &&
+        int.tryParse(_sortOrderController.text.trim()) == null) {
+      return 'Sort order must be a whole number';
+    }
+
+    // Depth is capped at 3 by a check constraint. Refusing here means the operator
+    // gets a sentence rather than a Postgres error.
+    final parent = _parentId == null ? null : _byId[_parentId];
+    if (parent != null && parent.level >= 3) {
+      return 'Categories cannot be more than three levels deep';
+    }
+    return null;
+  }
+
   Future<void> _uploadCategory() async {
-    if (_categoryTextController.text.isEmpty) {
-      _showSnackBar("Please enter main name!", AppColors.warningColor);
+    final problem = _validateForm();
+    if (problem != null) {
+      _showSnackBar(problem, AppColors.warningColor);
       return;
     }
 
@@ -115,11 +234,23 @@ class _MainCategoryState extends State<MainCategory> {
         imagePath = await AdminApi.uploadImage(_imageDataBytes!);
       }
 
+      // Level is derived, never typed: a child sits exactly one below its parent, and
+      // the depth trigger rejects anything else.
+      final parent = _parentId == null ? null : _byId[_parentId];
+      final level = parent == null ? 1 : parent.level + 1;
+
       final values = {
-        "name": _categoryTextController.text,
-        "name_hi": _categoryTextControllerHi.text,
-        "name_hn": _categoryTextControllerHn.text,
+        "name": _categoryTextController.text.trim(),
+        "name_hi": _categoryTextControllerHi.text.trim(),
+        "name_hn": _categoryTextControllerHn.text.trim(),
+        "parent_id": _parentId,
+        "level": level,
+        "slug": _slugController.text.trim(),
+        "sort_order": int.tryParse(_sortOrderController.text.trim()) ??
+            _nextSortOrderUnder(_parentId),
+        "is_active": _isActive,
         if (imagePath != null) "image": imagePath,
+        if (imagePath != null) "icon_url": imagePath,
       };
 
       if (_selectedCategoryIdForEdit == null) {
@@ -198,42 +329,83 @@ class _MainCategoryState extends State<MainCategory> {
     );
   }
 
+  /// Next free slot among a parent's children, so a new category lands at the end
+  /// rather than colliding with a sibling's sort_order — two siblings sharing one is
+  /// an arbitrary display order, which is the bug the column exists to prevent.
+  int _nextSortOrderUnder(int? parentId) {
+    final siblings = parentId == null
+        ? _tree
+        : (_byId[parentId]?.children ?? const <AdminCategory>[]);
+    if (siblings.isEmpty) return 1;
+    return siblings.map((c) => c.sortOrder).reduce((a, b) => a > b ? a : b) + 1;
+  }
+
   void _resetForm() {
     _categoryTextController.clear();
     _categoryTextControllerHi.clear();
     _categoryTextControllerHn.clear();
+    _slugController.clear();
+    _sortOrderController.clear();
     setState(() {
       _imageDataBytes = null;
       _imageFileName = null;
       _selectedCategoryIdForEdit = null;
       _initialCategoryName = null;
       _initialCategoryImage = null;
+      _parentId = null;
+      _isActive = true;
+      _slugTouched = false;
     });
   }
 
   void _startEdit(Map<String, dynamic> category) {
     setState(() {
-      _selectedCategoryIdForEdit = category['id'];
+      _selectedCategoryIdForEdit = category['id'].toString();
       _initialCategoryName = category['name'];
       _initialCategoryImage = category['image'];
       _categoryTextController.text = category['name'] ?? '';
       _categoryTextControllerHi.text = category['name_hi'] ?? '';
       _categoryTextControllerHn.text = category['name_hn'] ?? '';
+      _slugController.text = category['slug']?.toString() ?? '';
+      _sortOrderController.text = category['sort_order']?.toString() ?? '';
+      _parentId = (category['parent_id'] as num?)?.toInt();
+      _isActive = category['is_active'] as bool? ?? true;
+      // An existing slug is a stable handle; never let it track a rename.
+      _slugTouched = true;
     });
   }
 
   void _showDeleteDialog(String categoryId) {
+    // Deleting a category is the one genuinely destructive action on this screen.
+    // `products.main_category_id` cascades, so deleting a stocked category deletes
+    // every product on it — and each product cascades again to its variants, images,
+    // info, highlights and hand-built Hindi voice aliases. Retiring is the answer
+    // almost every time, so the dialog offers that instead of just warning.
+    final id = int.tryParse(categoryId);
+    final node = id == null ? null : _byId[id];
+    if (node != null && node.children.isNotEmpty) {
+      _showSnackBar(
+        'Move or delete its ${node.children.length} sub-categories first.',
+        AppColors.warningColor,
+      );
+      return;
+    }
+
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surfaceColor,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          "Confirm Delete",
+          "Delete this category?",
           style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
-        content: const Text(
-          "This category will be permanently deleted. This action cannot be undone.",
+        content: Text(
+          "Any products filed here will be deleted with it, along with their "
+          "variants, images and voice aliases. This cannot be undone.\n\n"
+          "To take it out of the app without losing anything, turn off "
+          "\"Visible in the app\" instead.",
+          style: GoogleFonts.poppins(fontSize: 13),
         ),
         actions: [
           TextButton(
@@ -257,6 +429,23 @@ class _MainCategoryState extends State<MainCategory> {
       ),
     );
   }
+
+  InputDecoration _fieldDecoration(String label) => InputDecoration(
+        labelText: label,
+        labelStyle: GoogleFonts.poppins(color: AppColors.secondaryTextColor),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: AppColors.borderColor),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.primaryColor, width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
+      );
 
   Widget _buildCategoryForm() {
     return Container(
@@ -381,6 +570,109 @@ class _MainCategoryState extends State<MainCategory> {
               ),
             ),
           ),
+          const SizedBox(height: 24),
+
+          // --- Placement in the tree --------------------------------------
+          DropdownButtonFormField<int?>(
+            value: _parentId,
+            isExpanded: true,
+            decoration: _fieldDecoration('Parent'),
+            items: [
+              DropdownMenuItem<int?>(
+                value: null,
+                child: Text(
+                  'None — this is a top-level section',
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primaryTextColor,
+                  ),
+                ),
+              ),
+              for (final c in _parentOptions)
+                DropdownMenuItem<int?>(
+                  value: c.id,
+                  child: Text(
+                    c.level == 1 ? c.name : '    ${c.name}',
+                    style: GoogleFonts.poppins(
+                      color: c.isActive
+                          ? AppColors.primaryTextColor
+                          : AppColors.secondaryTextColor,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: (v) => setState(() => _parentId = v),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _parentId == null
+                ? 'Top-level sections group the shelves beneath them. Products are '
+                    'never filed directly on one.'
+                : 'Products can be filed here once it has no sub-categories of its own.',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: AppColors.secondaryTextColor,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: _slugController,
+                  onChanged: (_) => _slugTouched = true,
+                  decoration: _fieldDecoration('Slug').copyWith(
+                    helperText: 'Stable handle. Avoid changing it later.',
+                    helperStyle: GoogleFonts.poppins(
+                      fontSize: 11,
+                      color: AppColors.secondaryTextColor,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  controller: _sortOrderController,
+                  keyboardType: TextInputType.number,
+                  decoration: _fieldDecoration('Sort order').copyWith(
+                    hintText: 'auto',
+                    hintStyle: GoogleFonts.poppins(
+                      color: AppColors.secondaryTextColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _isActive,
+            activeColor: AppColors.primaryColor,
+            title: Text(
+              'Visible in the app',
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w500,
+                color: AppColors.primaryTextColor,
+              ),
+            ),
+            subtitle: Text(
+              // The single visibility switch. Before it existed the home screen hid
+              // Electronics by substring-matching its English name in Dart.
+              'Turn off to retire a category without deleting it. Deleting one '
+              'would take its products with it.',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: AppColors.secondaryTextColor,
+              ),
+            ),
+            onChanged: (v) => setState(() => _isActive = v),
+          ),
+
           const SizedBox(height: 24),
           Text(
             "Category Image",

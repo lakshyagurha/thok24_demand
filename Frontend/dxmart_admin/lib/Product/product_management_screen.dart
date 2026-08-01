@@ -79,6 +79,15 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
   List _mainCategoryList = [];
   String? _filterCategoryId;
 
+  /// The category tree, and the flat leaf list a product may actually be filed on.
+  List<AdminCategory> _categoryTree = [];
+  Map<int, AdminCategory> _categoryById = {};
+  List<AdminCategory> _leafCategories = [];
+
+  /// This page of products before the search/category filters narrow it, so counts
+  /// that describe the catalogue do not change when the operator filters the view.
+  List<Map<String, dynamic>> _unfilteredProducts = [];
+
   @override
   void initState() {
     super.initState();
@@ -145,13 +154,17 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                 .where((r) => '${r['name'] ?? ''}'.toLowerCase().contains(q))
                 .toList();
       if (_filterCategoryId != null && _filterCategoryId != 'all') {
+        // A `u<id>` value is an umbrella: match anything on any of its shelves, since
+        // no product is ever filed on the umbrella itself.
+        final ids = _filterCategoryIds();
         filtered = filtered
-            .where((r) => r['main_category_id'].toString() == _filterCategoryId)
+            .where((r) => ids.contains(r['main_category_id']?.toString()))
             .toList();
       }
 
       if (mounted) {
         setState(() {
+          _unfilteredProducts = rows;
           products = filtered;
           totalProducts = filtered.length;
           selectedTypesMap.clear();
@@ -172,10 +185,31 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 
   Future<void> _fetchMainCategories() async {
     try {
-      final data = await AdminApi.list(AdminTables.mainCategory, limit: 200);
+      final tree = await AdminCatalog.categoryTree();
       if (!mounted) return;
       setState(() {
-        _mainCategoryList = data;
+        _categoryTree = tree;
+        final all = [for (final u in tree) u, ...tree.expand((u) => u.descendants)];
+        _categoryById = {for (final c in all) c.id: c};
+        // Only leaves may hold a product. The database enforces level >= 2 but
+        // deliberately not leaf-ness -- that would deadlock the day someone adds a
+        // sub-shelf under a shelf that already has stock -- so the rule lives here,
+        // where the choice is actually made.
+        _leafCategories = all
+            .where((c) => !c.isUmbrella && c.isLeaf)
+            .toList()
+          ..sort((a, b) {
+            final ua = _umbrellaNameOf(a);
+            final ub = _umbrellaNameOf(b);
+            final byUmbrella = ua.compareTo(ub);
+            return byUmbrella != 0
+                ? byUmbrella
+                : a.sortOrder.compareTo(b.sortOrder);
+          });
+        // Kept so the rest of this screen's existing lookups keep working.
+        _mainCategoryList = [
+          for (final c in _leafCategories) {'id': c.id, 'name': c.name},
+        ];
       });
     } catch (e) {
       _showSnackBar(
@@ -183,6 +217,54 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         AppColors.errorColor,
       );
     }
+  }
+
+  /// The category ids the current filter selection covers.
+  Set<String> _filterCategoryIds() {
+    final value = _filterCategoryId;
+    if (value == null || value == 'all') return const {};
+    if (value.startsWith('u')) {
+      final umbrellaId = int.tryParse(value.substring(1));
+      final umbrella = umbrellaId == null ? null : _categoryById[umbrellaId];
+      if (umbrella == null) return {value};
+      return {
+        for (final c in umbrella.descendants) c.id.toString(),
+      };
+    }
+    return {value};
+  }
+
+  String _umbrellaNameOf(AdminCategory c) =>
+      c.parentId == null ? '' : (_categoryById[c.parentId]?.name ?? '');
+
+  /// `Grocery & Kitchen › Atta, Rice & Dal`, so a shelf is never ambiguous in a flat
+  /// dropdown. Several shelves read alike out of context.
+  String _categoryPath(AdminCategory c) {
+    final umbrella = _umbrellaNameOf(c);
+    return umbrella.isEmpty ? c.name : '$umbrella › ${c.name}';
+  }
+
+  /// Products parked on the admin-only staging shelf.
+  ///
+  /// Not an "Others" bucket: `Uncategorised` is inactive, so it never renders in the
+  /// consumer app. It exists so an operator who cannot place a product has somewhere
+  /// visible to put it, and so that pile is a work queue rather than a customer-facing
+  /// shelf. Surfaced as a badge because an invisible queue is one nobody clears.
+  ///
+  /// Counted from the unfiltered page, not from [products]: counting the filtered list
+  /// would make the badge disappear the moment the operator filtered by any other
+  /// category — exactly when they are least likely to notice the queue.
+  int get _uncategorisedCount {
+    final staging = _categoryById.values
+        .where((c) => c.slug == 'uncategorised')
+        .map((c) => c.id)
+        .toSet();
+    if (staging.isEmpty) return 0;
+    return _unfilteredProducts
+        .where((p) => staging.contains(
+              int.tryParse(p['main_category_id']?.toString() ?? ''),
+            ))
+        .length;
   }
 
   /// The PHP backend proxied an external translation service (translate_api.php) that
@@ -550,6 +632,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
           '${d['value'] ?? ''}',
           '${d['value_hi'] ?? ''}',
           '${d['value_hn'] ?? ''}',
+          detailId: d['id']?.toString(),
         );
       }
       for (final d in highlightsPayload.cast<Map<String, dynamic>>()) {
@@ -562,6 +645,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
           '${d['value'] ?? ''}',
           '${d['value_hi'] ?? ''}',
           '${d['value_hn'] ?? ''}',
+          detailId: d['id']?.toString(),
         );
       }
 
@@ -622,7 +706,10 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         await AdminApi.update(AdminTables.productVariants, variantId, values);
       }
     } catch (e) {
-      debugPrint('Error saving variant "$name": $e');
+      _showSnackBar(
+        e is AdminApiException ? e.message : 'Could not save variant "$name": $e',
+        AppColors.errorColor,
+      );
     }
   }
 
@@ -637,7 +724,10 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         'image_url': path,
       });
     } catch (e) {
-      debugPrint('Error uploading image: $e');
+      _showSnackBar(
+        e is AdminApiException ? e.message : 'Could not upload image: $e',
+        AppColors.errorColor,
+      );
     }
   }
 
@@ -1275,12 +1365,27 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         ],
         const SizedBox(height: 16),
 
+        // Leaf shelves only, each labelled with its umbrella.
+        //
+        // A product may not sit on an umbrella — the database refuses the write — and
+        // it may not sit on a node that has children, which the database deliberately
+        // does not enforce. Offering only leaves is what stops both, and the
+        // `Umbrella › Shelf` label is what makes a flat list of 34 unambiguous.
         DropdownButtonFormField<String>(
           value: validatedMainCategoryId,
-          items: _mainCategoryList.map((mc) {
+          isExpanded: true,
+          items: _leafCategories.map((c) {
             return DropdownMenuItem(
-              value: mc['id'].toString(),
-              child: Text(mc['name'], style: GoogleFonts.poppins()),
+              value: c.id.toString(),
+              child: Text(
+                c.isActive ? _categoryPath(c) : '${_categoryPath(c)}  (hidden)',
+                style: GoogleFonts.poppins(
+                  color: c.isActive
+                      ? AppColors.primaryTextColor
+                      : AppColors.secondaryTextColor,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
             );
           }).toList(),
           onChanged: (val) {
@@ -1290,7 +1395,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
           },
           style: GoogleFonts.poppins(),
           decoration: InputDecoration(
-            labelText: 'Main Category',
+            labelText: 'Category (shelf)',
             labelStyle: GoogleFonts.poppins(
               color: AppColors.secondaryTextColor,
             ),
@@ -1421,19 +1526,34 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                       ),
                     ),
                   ),
-                  ..._mainCategoryList.map<DropdownMenuItem<String>>((
-                    category,
-                  ) {
-                    return DropdownMenuItem<String>(
-                      value: category['id'].toString(),
+                  // Umbrellas filter their whole subtree; shelves filter themselves.
+                  // Indentation is the tree: a flat list of 40 names with no
+                  // structure is exactly what made the old taxonomy unnavigable.
+                  for (final umbrella in _categoryTree) ...[
+                    DropdownMenuItem<String>(
+                      value: 'u${umbrella.id}',
                       child: Text(
-                        category['name'],
+                        umbrella.name,
                         style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
                           color: AppColors.primaryTextColor,
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ),
+                    for (final shelf in umbrella.children)
+                      DropdownMenuItem<String>(
+                        value: shelf.id.toString(),
+                        child: Text(
+                          '    ${shelf.name}',
+                          style: GoogleFonts.poppins(
+                            color: shelf.isActive
+                                ? AppColors.primaryTextColor
+                                : AppColors.secondaryTextColor,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
                 ],
                 onChanged: (String? newValue) {
                   setState(() {
@@ -1465,6 +1585,44 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                 fetchProducts();
               },
               tooltip: 'Clear filter',
+            ),
+          // The staging queue, surfaced. A pile of unplaced products that nobody can
+          // see is a pile nobody clears — and every product sitting on Uncategorised
+          // is a product no shopper can reach, since that shelf never renders.
+          if (_uncategorisedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: ActionChip(
+                avatar: const Icon(
+                  Icons.inbox_rounded,
+                  size: 16,
+                  color: AppColors.warningColor,
+                ),
+                label: Text(
+                  '$_uncategorisedCount unfiled',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.warningColor,
+                  ),
+                ),
+                backgroundColor: AppColors.warningColor.withOpacity(0.10),
+                side: BorderSide(
+                  color: AppColors.warningColor.withOpacity(0.35),
+                ),
+                tooltip: 'Show products waiting to be filed',
+                onPressed: () {
+                  final staging = _categoryById.values
+                      .where((c) => c.slug == 'uncategorised')
+                      .firstOrNull;
+                  if (staging == null) return;
+                  setState(() {
+                    _filterCategoryId = staging.id.toString();
+                    currentPage = 1;
+                  });
+                  fetchProducts();
+                },
+              ),
             ),
         ],
       ),
@@ -2560,8 +2718,14 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                               color: AppColors.backgroundColor,
                               borderRadius: BorderRadius.circular(4),
                             ),
+                            // Interpolated, not concatenated. `main_category_name`
+                            // was never populated by productsWithDetail(), so
+                            // `'C : ' + null` threw on the first row and took the
+                            // whole product list with it. The join now supplies it;
+                            // interpolation means an unresolvable id degrades to a
+                            // readable cell instead of a crash.
                             child: Text(
-                              'C : ' + product['main_category_name'],
+                              'C : ${product['main_category_name'] ?? '—'}',
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 color: AppColors.primaryTextColor,
@@ -2869,10 +3033,11 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     String attributeHn,
     String value,
     String valueHi,
-    String valueHn,
-  ) async {
+    String valueHn, {
+    String? detailId,
+  }) async {
     try {
-      await AdminApi.insert(table, {
+      final values = {
         'product_id': int.tryParse(productId) ?? productId,
         'attribute': attribute,
         'attribute_hi': attributeHi,
@@ -2880,9 +3045,22 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         'value': value,
         'value_hi': valueHi,
         'value_hn': valueHn,
-      });
+      };
+      // Without this branch every edit re-inserted the same attribute instead of
+      // updating it, so re-saving a product repeatedly left duplicate info/highlight
+      // rows behind on every save.
+      if (detailId == null || detailId.isEmpty) {
+        await AdminApi.insert(table, values);
+      } else {
+        await AdminApi.update(table, detailId, values);
+      }
     } catch (e) {
-      debugPrint('Error saving detail (Attribute: $attribute): $e');
+      _showSnackBar(
+        e is AdminApiException
+            ? e.message
+            : 'Could not save "$attribute": $e',
+        AppColors.errorColor,
+      );
     }
   }
 
@@ -2899,7 +3077,31 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     });
   }
 
-  void _removeVariantField(int index) {
+  /// Removes a variant field from the form. If it was a saved variant (has a server
+  /// id), deletes it there too.
+  ///
+  /// This used to only ever mutate the local controller lists, leaving
+  /// `_existingVariantIds` untouched. Two consequences: a removed variant was never
+  /// actually deleted server-side (it just silently stopped being edited), and on
+  /// save the id list -- now longer than the controller lists -- was still read by
+  /// the *same* index as the controllers, so an id meant for the removed variant got
+  /// applied to whatever variant shifted into its slot, corrupting a different
+  /// variant's price/stock on the next save.
+  Future<void> _removeVariantField(int index) async {
+    final existingId = _existingVariantIds.length > index
+        ? _existingVariantIds[index]
+        : null;
+    if (existingId != null && existingId.isNotEmpty) {
+      try {
+        await AdminApi.delete(AdminTables.productVariants, existingId);
+      } catch (e) {
+        _showSnackBar(
+          e is AdminApiException ? e.message : 'Could not remove variant: $e',
+          AppColors.errorColor,
+        );
+        return;
+      }
+    }
     setState(() {
       _variantNameControllers[index].dispose();
       if (_variantNameControllersHi.length > index)
@@ -2922,6 +3124,8 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
       _variantStockControllers.removeAt(index);
       if (_showVariantTranslations.length > index)
         _showVariantTranslations.removeAt(index);
+      if (_existingVariantIds.length > index)
+        _existingVariantIds.removeAt(index);
     });
   }
 
@@ -2937,7 +3141,22 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     });
   }
 
-  void _removeInfoField(int index) {
+  /// See [_removeVariantField] -- same bug, same fix, for `product_info` rows.
+  Future<void> _removeInfoField(int index) async {
+    final existingId = _existingInfoIds.length > index
+        ? _existingInfoIds[index]
+        : null;
+    if (existingId != null && existingId.isNotEmpty) {
+      try {
+        await AdminApi.delete(AdminTables.productInfo, existingId);
+      } catch (e) {
+        _showSnackBar(
+          e is AdminApiException ? e.message : 'Could not remove detail: $e',
+          AppColors.errorColor,
+        );
+        return;
+      }
+    }
     setState(() {
       _infoAttributeControllers[index].dispose();
       if (_infoAttributeControllersHi.length > index)
@@ -2962,6 +3181,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         _infoValueControllersHn.removeAt(index);
       if (_showInfoTranslations.length > index)
         _showInfoTranslations.removeAt(index);
+      if (_existingInfoIds.length > index) _existingInfoIds.removeAt(index);
     });
   }
 
@@ -2977,7 +3197,22 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
     });
   }
 
-  void _removeHighlightField(int index) {
+  /// See [_removeVariantField] -- same bug, same fix, for `product_highlights` rows.
+  Future<void> _removeHighlightField(int index) async {
+    final existingId = _existingHighlightIds.length > index
+        ? _existingHighlightIds[index]
+        : null;
+    if (existingId != null && existingId.isNotEmpty) {
+      try {
+        await AdminApi.delete(AdminTables.productHighlights, existingId);
+      } catch (e) {
+        _showSnackBar(
+          e is AdminApiException ? e.message : 'Could not remove highlight: $e',
+          AppColors.errorColor,
+        );
+        return;
+      }
+    }
     setState(() {
       _highlightAttributeControllers[index].dispose();
       if (_highlightAttributeControllersHi.length > index)
@@ -3002,6 +3237,8 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         _highlightValueControllersHn.removeAt(index);
       if (_showHighlightTranslations.length > index)
         _showHighlightTranslations.removeAt(index);
+      if (_existingHighlightIds.length > index)
+        _existingHighlightIds.removeAt(index);
     });
   }
 
