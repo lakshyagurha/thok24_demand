@@ -13,7 +13,7 @@
 
     <!-- Some feedback constants Flutter's HapticFeedback API sends fall back to the raw
          Vibrator API on devices/OEM skins that don't natively support them, and that
-         fallback silently no-ops without this permission -- no crash, no exception,
+         fallback silently no-ops without this permission: no crash, no exception,
          it just doesn't vibrate. -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
