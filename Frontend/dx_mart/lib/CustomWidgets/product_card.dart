@@ -11,6 +11,7 @@ import '../design/app_gradients.dart';
 import '../design/app_radius.dart';
 import '../design/app_space.dart';
 import '../design/app_type.dart';
+import '../design/haptics.dart';
 import '../utils/responsive_helper.dart';
 import 'cart_provider.dart';
 import 'product_image.dart';
@@ -79,6 +80,7 @@ class _ProductCardState extends State<ProductCard> {
     }
     if (isWishlistLoading) return;
 
+    AppHaptics.tap();
     setState(() => isWishlistLoading = true);
     try {
       await context.read<WishlistProvider>().toggle(_productId);
@@ -192,11 +194,15 @@ class _ProductCardState extends State<ProductCard> {
     if (mounted) setState(() {});
   }
 
-  Future<void> addToCart(int variantId, String imagePath) =>
-      _changeBy(variantId, 1, imagePath: imagePath);
+  Future<void> addToCart(int variantId, String imagePath) {
+    AppHaptics.tap();
+    return _changeBy(variantId, 1, imagePath: imagePath);
+  }
 
-  Future<void> updateQuantityBy(int variantId, int delta) =>
-      _changeBy(variantId, delta);
+  Future<void> updateQuantityBy(int variantId, int delta) {
+    AppHaptics.selection();
+    return _changeBy(variantId, delta);
+  }
 
   Future<void> removeFromCart(int variantId) async {
     final quantity = context.read<CartProvider>().getQuantity(
@@ -205,6 +211,7 @@ class _ProductCardState extends State<ProductCard> {
           variantId.toString(),
         );
     if (quantity <= 0) return;
+    AppHaptics.tap();
     await _changeBy(variantId, -quantity);
   }
 

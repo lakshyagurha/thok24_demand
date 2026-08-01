@@ -26,6 +26,7 @@ import '../../design/components/category_bar.dart';
 import '../../design/components/section_header.dart';
 import '../../design/components/skeleton.dart';
 import '../../design/components/trust_strip.dart';
+import '../../design/haptics.dart';
 import '../../utils/language_provider.dart';
 import '../bottomNavScreen.dart';
 import 'cartScreen.dart';
@@ -288,7 +289,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Expanded(
             child: RefreshIndicator(
-        onRefresh: _loadAllData,
+        onRefresh: () {
+          AppHaptics.selection();
+          return _loadAllData();
+        },
         color: AppColors.primary,
         child: CustomScrollView(
           controller: _scrollController,

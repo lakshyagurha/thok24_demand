@@ -5,6 +5,7 @@ import '../app_gradients.dart';
 import '../app_radius.dart';
 import '../app_space.dart';
 import '../app_type.dart';
+import '../haptics.dart';
 
 /// The quantity control.
 ///
@@ -57,6 +58,9 @@ class QtyStepper extends StatelessWidget {
                 ? Icons.delete_outline_rounded
                 : Icons.remove_rounded,
             onTap: atMinimum && onRemove != null ? onRemove! : onDecrement,
+            haptic: atMinimum && onRemove != null
+                ? AppHaptics.tap
+                : AppHaptics.selection,
             compact: compact,
           ),
           SizedBox(
@@ -81,6 +85,7 @@ class QtyStepper extends StatelessWidget {
           _Step(
             icon: Icons.add_rounded,
             onTap: onIncrement,
+            haptic: AppHaptics.selection,
             compact: compact,
           ),
         ],
@@ -90,16 +95,25 @@ class QtyStepper extends StatelessWidget {
 }
 
 class _Step extends StatelessWidget {
-  const _Step({required this.icon, required this.onTap, required this.compact});
+  const _Step({
+    required this.icon,
+    required this.onTap,
+    required this.haptic,
+    required this.compact,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final VoidCallback haptic;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return InkResponse(
-      onTap: onTap,
+      onTap: () {
+        haptic();
+        onTap();
+      },
       radius: AppSpace.w(20),
       child: SizedBox(
         width: AppSpace.w(compact ? 32 : 38),

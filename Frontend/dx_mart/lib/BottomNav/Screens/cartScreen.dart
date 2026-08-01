@@ -14,6 +14,7 @@ import '../../data/catalog_repository.dart';
 import '../../design/app_colors.dart';
 import '../../design/app_type.dart';
 import '../../design/app_gradients.dart';
+import '../../design/haptics.dart';
 import '../../utils/language_provider.dart';
 import '../../CustomWidgets/product_image.dart';
 
@@ -221,6 +222,7 @@ class _CartScreenState extends State<CartScreen> {
   // Add this method to apply coupon by code
   Future<void> _applyCouponByCode() async {
     if (_couponController.text.isEmpty) {
+      AppHaptics.error();
       Fluttertoast.showToast(
         msg: "Please enter coupon code",
         toastLength: Toast.LENGTH_SHORT,
@@ -251,6 +253,7 @@ class _CartScreenState extends State<CartScreen> {
         // the order is placed.
         setState(() => selectedCodeName = typed);
         _couponController.clear();
+        AppHaptics.tap();
         Fluttertoast.showToast(
           msg: "Code saved. It will be verified when you place the order.",
           toastLength: Toast.LENGTH_SHORT,
@@ -261,6 +264,7 @@ class _CartScreenState extends State<CartScreen> {
         );
       }
     } catch (e) {
+      AppHaptics.error();
       Fluttertoast.showToast(
         msg: "Error applying coupon",
         toastLength: Toast.LENGTH_SHORT,
@@ -277,6 +281,7 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _removeCoupon() {
+    AppHaptics.tap();
     setState(() {
       selectedCodeName = null;
       selectedDiscount = 0.0;
@@ -445,6 +450,7 @@ class _CartScreenState extends State<CartScreen> {
   void _applyCoupon(Map<String, dynamic> coupon) {
     // Check if coupon is expired
     if (_isCouponExpired(coupon['expiry_date'])) {
+      AppHaptics.error();
       Fluttertoast.showToast(
         msg: "Coupon has expired",
         toastLength: Toast.LENGTH_SHORT,
@@ -466,6 +472,7 @@ class _CartScreenState extends State<CartScreen> {
     // with itself too.
     final minAmount = double.tryParse(coupon['min_amount']?.toString() ?? '0') ?? 0.0;
     if (totalSellingAmount < minAmount) {
+      AppHaptics.error();
       Fluttertoast.showToast(
         msg: "Add products worth ₹${(minAmount - totalSellingAmount).toStringAsFixed(0)} more to apply this coupon",
         toastLength: Toast.LENGTH_SHORT,
@@ -486,6 +493,7 @@ class _CartScreenState extends State<CartScreen> {
 
     Navigator.pop(context);
 
+    AppHaptics.success();
     Fluttertoast.showToast(
       msg: "Coupon Applied: ${coupon['code_name']}",
       toastLength: Toast.LENGTH_SHORT,
@@ -871,8 +879,10 @@ class _CartScreenState extends State<CartScreen> {
                                                           GestureDetector(
                                                             onTap: () {
                                                               if (quantity > 1) {
+                                                                AppHaptics.selection();
                                                                 changeQuantityBy(cartItemId, -1);
                                                               } else {
+                                                                AppHaptics.tap();
                                                                 removeItem(cartItemId);
                                                               }
                                                             },
@@ -895,6 +905,7 @@ class _CartScreenState extends State<CartScreen> {
                                                           ),
                                                           GestureDetector(
                                                             onTap: () {
+                                                              AppHaptics.selection();
                                                               changeQuantityBy(cartItemId, 1);
                                                             },
                                                             child: Padding(

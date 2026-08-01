@@ -7,6 +7,7 @@ import '../core/supabase.dart';
 import '../data/models.dart';
 import '../data/order_repository.dart';
 import '../design/components/app_header.dart';
+import '../design/haptics.dart';
 import '../utils/colors.dart';
 
 class DeliveryAddressScreen extends StatefulWidget {
@@ -173,6 +174,11 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
 
   void _showSnackBar(String message, Color color) {
     if (!mounted) return;
+    if (color == AppColors.successColor) {
+      AppHaptics.success();
+    } else if (color == AppColors.errorColor || color == AppColors.warningColor) {
+      AppHaptics.error();
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message, style: const TextStyle(color: Colors.white)),
@@ -296,6 +302,7 @@ class _DeliveryAddressScreenState extends State<DeliveryAddressScreen> {
 
                 return GestureDetector(
                   onTap: () async {
+                    AppHaptics.selection();
                     // Only the id. `selected_address_full` used to be written here too —
                     // the user's full street address on disk, never read back by
                     // anything, and never cleared on sign-out. The id is enough: it is

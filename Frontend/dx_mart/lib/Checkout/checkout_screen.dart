@@ -17,6 +17,7 @@ import '../data/models.dart';
 import '../data/order_repository.dart';
 import '../design/app_colors.dart';
 import '../design/app_type.dart';
+import '../design/haptics.dart';
 import '../utils/language_provider.dart';
 
 /// Checkout.
@@ -320,6 +321,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       await context.read<CartProvider>().refreshCartData();
 
       if (!mounted) return;
+      AppHaptics.success();
       _showSuccessDialog(order);
     } on DataException catch (e) {
       // Bad, expired or below-minimum coupons land here with a message meant for the
@@ -340,6 +342,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void _showError(String message) {
+    AppHaptics.error();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -498,6 +501,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   void updateSelectedDate(DateTime date) {
+    AppHaptics.selection();
     setState(() {
       selectedDate = date;
     });
@@ -869,6 +873,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     padding: EdgeInsets.only(bottom: 8.h),
                                     child: InkWell(
                                       onTap: () {
+                                        AppHaptics.selection();
                                         setState(() {
                                           selectedIndex = index;
                                           selectedTimeSlot = timeSlots[index];
@@ -907,6 +912,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                               groupValue: selectedIndex,
                                               onChanged: (val) {
                                                 if (val != null) {
+                                                  AppHaptics.selection();
                                                   setState(() {
                                                     selectedIndex = val;
                                                     selectedTimeSlot = timeSlots[val];
@@ -952,6 +958,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               // COD FIRST - highlighted as recommended
                               InkWell(
                                 onTap: () {
+                                  AppHaptics.selection();
                                   setState(() {
                                     selectedPaymentMethod = 'cod';
                                   });
@@ -973,6 +980,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         value: 'cod',
                                         groupValue: selectedPaymentMethod,
                                         onChanged: (value) {
+                                          AppHaptics.selection();
                                           setState(() {
                                             selectedPaymentMethod = value!;
                                           });
@@ -1040,6 +1048,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               // UPI options Collapsible Card
                               InkWell(
                                 onTap: () {
+                                  AppHaptics.selection();
                                   setState(() {
                                     selectedPaymentMethod = 'upi';
                                   });
@@ -1064,6 +1073,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                             value: 'upi',
                                             groupValue: selectedPaymentMethod,
                                             onChanged: (value) {
+                                              AppHaptics.selection();
                                               setState(() {
                                                 selectedPaymentMethod = value!;
                                               });

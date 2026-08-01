@@ -13,6 +13,7 @@ import '../../design/app_type.dart';
 import '../../design/components/app_header.dart';
 import '../../design/components/skeleton.dart';
 import '../../design/components/states.dart';
+import '../../design/haptics.dart';
 import '../../utils/language_provider.dart';
 import '../../CustomWidgets/product_image.dart';
 
@@ -180,7 +181,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: () => _fetchTree(force: true),
+      onRefresh: () {
+        AppHaptics.selection();
+        return _fetchTree(force: true);
+      },
       color: AppColors.primary,
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(

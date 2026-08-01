@@ -1,6 +1,7 @@
 import 'package:dotted_line/dotted_line.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import '../../design/haptics.dart';
 import '../../utils/colors.dart';
 
 class BahiKhataBill extends StatelessWidget {
@@ -140,8 +141,10 @@ class BahiKhataBill extends StatelessWidget {
                           GestureDetector(
                             onTap: () {
                               if (quantity > 1) {
+                                AppHaptics.selection();
                                 onQuantityChanged(cartItemId, quantity - 1);
                               } else {
+                                AppHaptics.tap();
                                 onItemRemoved(cartItemId);
                               }
                             },
@@ -161,6 +164,7 @@ class BahiKhataBill extends StatelessWidget {
                           SizedBox(width: 4.w),
                           GestureDetector(
                             onTap: () {
+                              AppHaptics.selection();
                               onQuantityChanged(cartItemId, quantity + 1);
                             },
                             child: Padding(

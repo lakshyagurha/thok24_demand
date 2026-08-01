@@ -10,6 +10,7 @@ import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
 import '../data/models.dart';
 import '../design/components/app_header.dart';
+import '../design/haptics.dart';
 import '../utils/colors.dart';
 
 
@@ -154,6 +155,7 @@ class _CouponScreenState extends State<CouponScreen> {
 
                     return InkWell(
                       onTap: () {
+                        AppHaptics.tap();
                         Clipboard.setData(
                           ClipboardData(text: coupon.codeName),
                         );

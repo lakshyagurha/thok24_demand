@@ -6,6 +6,7 @@ import '../../core/supabase.dart';
 import '../../data/cart_repository.dart';
 import '../../design/components/app_header.dart';
 import '../../design/components/cart_bar.dart';
+import '../../design/haptics.dart';
 import '../../utils/colors.dart';
 import '../bottomNavScreen.dart';
 import 'cartScreen.dart';
@@ -146,7 +147,10 @@ class _WishlistScreenState extends State<WishlistScreen> {
             ),
           )
               : RefreshIndicator(
-            onRefresh: _refreshWishlist,
+            onRefresh: () {
+              AppHaptics.selection();
+              return _refreshWishlist();
+            },
             child: isLoading
                 ? Center(child: CircularProgressIndicator())
                 : wishlistProducts.isEmpty

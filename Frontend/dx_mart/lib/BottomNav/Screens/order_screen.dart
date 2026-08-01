@@ -7,6 +7,7 @@ import '../../TrackOrder/track_order.dart';
 import '../../core/supabase.dart';
 import '../../data/models.dart';
 import '../../data/order_repository.dart';
+import '../../design/haptics.dart';
 import '../../utils/colors.dart';
 import '../bottomNavScreen.dart';
 import '../../CustomWidgets/product_image.dart';
@@ -806,7 +807,10 @@ class _OrderList extends StatelessWidget {
       // error `orders` is empty, so this branch ran, and it returned a bare Center with
       // no way to retry. A user whose order history failed to load had to kill the app.
       return RefreshIndicator(
-        onRefresh: onRefresh,
+        onRefresh: () {
+          AppHaptics.selection();
+          return onRefresh();
+        },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
@@ -844,7 +848,10 @@ class _OrderList extends StatelessWidget {
     return RefreshIndicator(
       // Actually re-reads from the server now, rather than waiting 400ms and showing
       // the same list back.
-      onRefresh: onRefresh,
+      onRefresh: () {
+        AppHaptics.selection();
+        return onRefresh();
+      },
       child: ListView.builder(
         padding: EdgeInsets.only(top: 8.h, bottom: 20.h),
         itemCount: orders.length,

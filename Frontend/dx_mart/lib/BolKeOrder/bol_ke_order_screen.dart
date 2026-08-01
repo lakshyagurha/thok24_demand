@@ -9,6 +9,7 @@ import '../../core/supabase.dart';
 import '../../data/cart_repository.dart';
 import '../../data/catalog_repository.dart';
 import '../../data/order_repository.dart';
+import '../../design/haptics.dart';
 import '../../utils/colors.dart';
 import '../../utils/language_provider.dart';
 import 'models/chat_message.dart';
@@ -182,6 +183,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
       return;
     }
 
+    AppHaptics.tap();
     setState(() {
       _isListening = true;
       _avatarState = RamuBhaiState.listening;
@@ -202,6 +204,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
   }
 
   void _stopListening() {
+    AppHaptics.selection();
     _speech.stop();
     setState(() {
       _isListening = false;
@@ -246,7 +249,10 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
 
     // Refresh history if order confirmed, or just reload history in general
     if (botResponse.messageType == MessageType.orderConfirmed) {
+      AppHaptics.success();
       _fetchLastPurchased();
+    } else if (botResponse.messageType == MessageType.cartSummary) {
+      AppHaptics.tap();
     }
 
     setState(() {
