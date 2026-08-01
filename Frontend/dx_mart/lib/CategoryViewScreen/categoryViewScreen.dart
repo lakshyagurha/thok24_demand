@@ -61,7 +61,19 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
   final CatalogRepository _catalog = const CatalogRepository();
 
   late int selectedCategoryId;
+
+  /// The shelves shown in the left rail: the siblings of the current shelf, i.e. the
+  /// children of one umbrella — not every category in the shop.
+  ///
+  /// The rail used to list all twelve rows of a flat table, which meant sliding
+  /// sideways from "Dairy" landed you in "Electronics". Scoping it to one umbrella is
+  /// what makes the rail a set of related aisles rather than the whole store index.
   List<Category> categories = [];
+
+  /// The whole tree, for the breadcrumb and the umbrella switcher.
+  List<Category> _tree = [];
+  Category? _umbrella;
+
   List<Product> products = [];
   bool _isLoadingProducts = false;
   bool _isLoadingCategories = true;
@@ -113,25 +125,57 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
 
   Future<void> _initializeData() async {
     await fetchCategories();
-    if (selectedCategoryId == 0 && categories.isNotEmpty) {
-      // Agar categoryId 0 hai to pehli category select karo
-      setState(() => selectedCategoryId = categories.first.id);
-    }
     if (selectedCategoryId != 0) {
       await fetchProductsByCategory(selectedCategoryId);
     }
   }
 
+  /// Loads the tree and resolves which umbrella the caller landed in.
+  ///
+  /// [widget.categoryId] may be either a shelf (from the Category tab, a product page
+  /// or a banner) or an umbrella (from the home rail). Both are handled here rather
+  /// than at each call site: an umbrella resolves to its first stocked shelf, because
+  /// products never hang off an umbrella and selecting one directly would show an
+  /// empty grid.
   Future<void> fetchCategories() async {
     setState(() {
       _isLoadingCategories = true;
     });
 
     try {
-      final rows = await _catalog.categories();
+      final tree = await _catalog.categoryTreeCached();
       if (!mounted) return;
+
+      final requested = selectedCategoryId;
+      Category? umbrella;
+      int resolved = requested;
+
+      final node = CatalogRepository.findInTree(tree, requested);
+      if (node != null && node.isUmbrella) {
+        umbrella = node;
+        // Prefer a shelf that actually has stock, so opening an umbrella never
+        // lands on "no products found" while its siblings are full.
+        final stocked = node.children.where((c) => !c.isEmpty);
+        resolved = (stocked.isNotEmpty ? stocked.first : node.children.first).id;
+      } else {
+        umbrella = CatalogRepository.umbrellaOf(tree, requested);
+        // Unknown id (a stale link, or a category retired since): fall back to the
+        // first umbrella rather than rendering an empty shell.
+        if (umbrella == null && tree.isNotEmpty) {
+          umbrella = tree.first;
+          final stocked = umbrella.children.where((c) => !c.isEmpty);
+          resolved = (stocked.isNotEmpty
+                  ? stocked.first
+                  : umbrella.children.first)
+              .id;
+        }
+      }
+
       setState(() {
-        categories = rows;
+        _tree = tree;
+        _umbrella = umbrella;
+        categories = umbrella?.children ?? const [];
+        selectedCategoryId = resolved;
         _isLoadingCategories = false;
       });
     } catch (e) {
@@ -142,6 +186,80 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
         _isLoadingCategories = false;
       });
     }
+  }
+
+  /// Switches to another umbrella and opens its first stocked shelf.
+  void _switchUmbrella(Category umbrella) {
+    final stocked = umbrella.children.where((c) => !c.isEmpty);
+    final target =
+        stocked.isNotEmpty ? stocked.first : umbrella.children.first;
+    setState(() {
+      _umbrella = umbrella;
+      categories = umbrella.children;
+      selectedCategoryId = target.id;
+    });
+    fetchProductsByCategory(target.id);
+  }
+
+  /// The umbrella picker. Without it the only way from "Grocery & Kitchen" to
+  /// "Household Essentials" is back out to the Category tab and in again.
+  void _showUmbrellaSheet(String code, LanguageProvider lang) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg.r)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: AppSpace.all(AppSpace.base),
+              child: Text(
+                lang.translate('all_categories'),
+                style: AppText.h3(color: AppColors.textPrimary),
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final u in _tree)
+                    ListTile(
+                      leading: Icon(
+                        u.id == _umbrella?.id
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                        color: u.id == _umbrella?.id
+                            ? AppColors.primary
+                            : AppColors.textSecondary,
+                        size: 20,
+                      ),
+                      title: Text(
+                        u.localizedName(code),
+                        style: AppText.label(color: AppColors.textPrimary),
+                      ),
+                      subtitle: Text(
+                        u.productCount == 0
+                            ? lang.translate('coming_soon')
+                            : '${u.productCount} ${lang.translate('items')}',
+                        style: AppText.caption(color: AppColors.textSecondary),
+                      ),
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        if (u.id != _umbrella?.id) _switchUmbrella(u);
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> fetchProductsByCategory(int categoryId) async {
@@ -197,6 +315,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
               ),
             ],
           ),
+          _breadcrumb(code, lang),
           const Divider(height: 1),
           Expanded(
             child: Row(
@@ -221,6 +340,79 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
             await fetchCartQuantity();
           },
         ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Breadcrumb
+  // ---------------------------------------------------------------------------
+
+  /// `Grocery & Kitchen › Atta, Rice & Dal`, where the umbrella half is tappable.
+  ///
+  /// With a two-level tree the shopper can otherwise be three taps deep with only a
+  /// shelf name to go on, and no idea which part of the shop they are standing in.
+  /// The umbrella is a button, not decoration: it opens the switcher, which is the
+  /// only sideways route between umbrellas without backing all the way out.
+  Widget _breadcrumb(String code, LanguageProvider lang) {
+    final umbrella = _umbrella;
+    if (umbrella == null) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      color: AppColors.surface,
+      padding: EdgeInsets.symmetric(
+        horizontal: AppSpace.w(AppSpace.gutter),
+        vertical: AppSpace.h(AppSpace.sm),
+      ),
+      child: Row(
+        children: [
+          Flexible(
+            child: InkWell(
+              onTap: () => _showUmbrellaSheet(code, lang),
+              borderRadius: AppRadius.smAll,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: AppSpace.w(AppSpace.xs),
+                  vertical: AppSpace.h(2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        umbrella.localizedName(code),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.caption(color: AppColors.primary),
+                      ),
+                    ),
+                    Icon(
+                      Icons.expand_more_rounded,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: AppSpace.w(2)),
+            child: Text(
+              '›',
+              style: AppText.caption(color: AppColors.textSecondary),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              selectedCategoryName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.caption(color: AppColors.textSecondary),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -321,14 +513,21 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
                                   : AppColors.border,
                             ),
                           ),
+                          // Unstocked shelves stay in the rail — hiding them would
+                          // make the aisle look shorter than it is — but they are
+                          // dimmed so the shopper can see where the stock is before
+                          // tapping through to find out.
                           child: ClipRRect(
                             borderRadius: AppRadius.mdAll,
-                            child: ProductImage(
-                              path: c.imageUrl,
-                              width: 46.w,
-                              height: 46.w,
-                              fit: BoxFit.cover,
-                              errorIcon: Icons.category_outlined,
+                            child: Opacity(
+                              opacity: c.isEmpty ? 0.4 : 1,
+                              child: ProductImage(
+                                path: c.imageUrl,
+                                width: 46.w,
+                                height: 46.w,
+                                fit: BoxFit.cover,
+                                errorIcon: Icons.category_outlined,
+                              ),
                             ),
                           ),
                         ),

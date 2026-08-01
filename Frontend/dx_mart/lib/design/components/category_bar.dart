@@ -101,14 +101,21 @@ class CategoryBar extends StatelessWidget {
                   width: selected ? 1.5 : 1,
                 ),
               ),
+              // The umbrella icons are served from Storage and may not be uploaded
+              // yet; ProductImage falls back to `errorIcon` on a failed load, not
+              // only on a null path, so a missing asset degrades to a clean glyph
+              // rather than a broken-image box.
               child: ClipRRect(
                 borderRadius: AppRadius.mdAll,
-                child: ProductImage(
-                  path: item.image,
-                  width: _tile.w,
-                  height: _tile.w,
-                  fit: BoxFit.cover,
-                  errorIcon: Icons.category_outlined,
+                child: Opacity(
+                  opacity: item.productCount == 0 ? 0.45 : 1,
+                  child: ProductImage(
+                    path: item.image,
+                    width: _tile.w,
+                    height: _tile.w,
+                    fit: BoxFit.cover,
+                    errorIcon: Icons.category_outlined,
+                  ),
                 ),
               ),
             ),
@@ -173,9 +180,15 @@ class CategoryBarItem {
     required this.id,
     required this.label,
     required this.image,
+    this.productCount = 0,
   });
 
   final int id;
   final String label;
   final String? image;
+
+  /// Active SKUs beneath this entry. Zero means the umbrella is seeded but not yet
+  /// stocked, which the tile shows rather than hides — the shopper finds out before
+  /// tapping instead of after.
+  final int productCount;
 }

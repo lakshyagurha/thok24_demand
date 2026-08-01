@@ -27,6 +27,7 @@ import '../../design/components/section_header.dart';
 import '../../design/components/skeleton.dart';
 import '../../design/components/trust_strip.dart';
 import '../../utils/language_provider.dart';
+import '../bottomNavScreen.dart';
 import 'cartScreen.dart';
 import 'profileScreen.dart';
 
@@ -189,22 +190,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// The six umbrellas, from the cached tree.
+  ///
+  /// This used to fetch the flat category list and then hide anything whose English
+  /// name contained "electronic", "appliance", "fashion", "clothing" or "wear" — a
+  /// taxonomy problem patched in one screen's widget tree, which is why the same
+  /// category was hidden here and still tappable in the Category tab. Visibility is
+  /// now `is_active` in the database, applied by `category_tree()` before the rows are
+  /// ever sent, so there is nothing left to filter client-side.
   Future<void> _fetchCategories() async {
     try {
-      final all = await _catalog.categories();
+      final tree = await _catalog.categoryTreeCached(
+        onRefreshed: (fresh) {
+          if (mounted) setState(() => _categoryList = fresh);
+        },
+      );
       if (!mounted) return;
-      setState(() {
-        // Filtered on the canonical English name so the same categories are hidden
-        // whichever language the app is in.
-        _categoryList = all.where((category) {
-          final name = category.name.toLowerCase();
-          return !name.contains('electronic') &&
-                 !name.contains('appliance') &&
-                 !name.contains('fashion') &&
-                 !name.contains('clothing') &&
-                 !name.contains('wear');
-        }).toList();
-      });
+      setState(() => _categoryList = tree);
     } catch (e) {
       debugPrint("Error fetching categories: $e");
     }
@@ -302,19 +304,24 @@ class _HomeScreenState extends State<HomeScreen> {
               SliverPersistentHeader(
                 pinned: true,
                 delegate: _PinnedCategoryBar(
+                  // Six umbrellas, not twelve shelves. The rail is the top of the
+                  // hierarchy now: tapping one opens its shelves rather than jumping
+                  // straight into one arbitrary shelf's product grid.
                   items: [
-                    for (final c in _categoryList.take(12))
+                    for (final c in _categoryList)
                       CategoryBarItem(
                         id: c.id,
                         label: c.localizedName(code),
                         image: c.imageUrl,
+                        productCount: c.productCount,
                       ),
                   ],
                   onSelected: (item) => _openCategory(item.id, item.label),
-                  onViewAll: () => _openCategory(
-                    _categoryList.first.id,
-                    _categoryList.first.localizedName(code),
-                  ),
+                  // "All" belongs on the Categories tab, which shows the whole tree.
+                  // It used to open the *first* category, so the one tile promising
+                  // everything delivered the least.
+                  onViewAll: () => BottomNavScreen.openTab.value =
+                      BottomNavScreen.categoriesTab,
                 ),
               ),
 

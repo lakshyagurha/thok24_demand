@@ -3,9 +3,11 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../BottomNav/Screens/cartScreen.dart';
+import '../CategoryViewScreen/categoryViewScreen.dart';
 import '../CustomWidgets/product_card.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
+import '../data/models.dart';
 import '../design/components/app_header.dart';
 import '../design/components/cart_bar.dart';
 import '../utils/colors.dart';
@@ -24,6 +26,14 @@ class SearchProduct extends StatefulWidget {
 class _SearchProductState extends State<SearchProduct> {
   TextEditingController searchController = TextEditingController();
   List products = [];
+
+  /// Category matches for the current term.
+  ///
+  /// Searching "dairy" used to return only products whose *name* contained "dairy" —
+  /// so it found the dairy whitener and missed the entire Dairy, Bread & Eggs shelf.
+  /// Shown above the products because a matching aisle is a better answer than a
+  /// partial name match: one tap gets the whole shelf.
+  List<Category> categoryHits = [];
   bool isLoading = false;
   String currentSearchTerm = "";
   bool hasSearched = false;
@@ -120,14 +130,29 @@ class _SearchProductState extends State<SearchProduct> {
     try {
       final repo = const CatalogRepository();
       // An empty query means "show the catalog", not "search for nothing".
-      final result = search.trim().isEmpty
-          ? await repo.products(limit: 20)
-          : await repo.search(search);
+      final isBrowse = search.trim().isEmpty;
+      // Categories are matched in memory against the cached tree, so this adds no
+      // round trip to the search.
+      final results = await Future.wait([
+        isBrowse ? repo.products(limit: 20) : repo.search(search),
+        if (!isBrowse) repo.searchCategories(search),
+      ]);
       if (!mounted) return;
-      setState(() => products = result.map((p) => p.toCardMap()).toList());
+      setState(() {
+        products = (results[0] as List<Product>)
+            .map((p) => p.toCardMap())
+            .toList();
+        categoryHits =
+            isBrowse ? const [] : (results[1] as List<Category>);
+      });
     } catch (e) {
       debugPrint('Search failed: $e');
-      if (mounted) setState(() => products = []);
+      if (mounted) {
+        setState(() {
+          products = [];
+          categoryHits = [];
+        });
+      }
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -200,11 +225,16 @@ class _SearchProductState extends State<SearchProduct> {
 
               SizedBox(height: 10.h),
 
-              // ✅ Products Grid or No Results
+              // ✅ Matching categories, then the products grid
+              if (categoryHits.isNotEmpty) buildCategoryHits(),
+
               if (products.isNotEmpty)
                 Expanded(child: buildSection(products)),
 
-              if (hasSearched && products.isEmpty && !isLoading)
+              if (hasSearched &&
+                  products.isEmpty &&
+                  categoryHits.isEmpty &&
+                  !isLoading)
                 Expanded(
                   child: Center(
                     child: Text(
@@ -410,6 +440,94 @@ class _SearchProductState extends State<SearchProduct> {
           )
         ],
       ),
+    );
+  }
+
+  /// Matching aisles, as a horizontal chip row above the product grid.
+  ///
+  /// A row rather than a list so it costs a fixed strip of height no matter how many
+  /// match — the products are still the main answer and must not be pushed off screen.
+  Widget buildCategoryHits() {
+    final lang = Provider.of<LanguageProvider>(context);
+    final code = lang.currentLanguage;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.h),
+          child: Text(
+            lang.translate('categories'),
+            style: TextStyle(
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w600,
+              color: AppColors.hintTextColor,
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 36.h,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.symmetric(horizontal: 16.w),
+            itemCount: categoryHits.length,
+            separatorBuilder: (_, _) => SizedBox(width: 8.w),
+            itemBuilder: (context, i) {
+              final c = categoryHits[i];
+              return GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CategoryViewScreen(
+                      categoryId: c.id,
+                      categoryName: c.localizedName(code),
+                    ),
+                  ),
+                ),
+                child: Container(
+                  padding: EdgeInsets.symmetric(horizontal: 12.w),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18.r),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        c.isUmbrella
+                            ? Icons.widgets_outlined
+                            : Icons.label_outline,
+                        size: 14.sp,
+                        color: AppColors.primaryColor,
+                      ),
+                      SizedBox(width: 6.w),
+                      Text(
+                        c.localizedName(code),
+                        style: TextStyle(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      SizedBox(width: 4.w),
+                      Text(
+                        '${c.productCount}',
+                        style: TextStyle(
+                          fontSize: 11.sp,
+                          color: AppColors.hintTextColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        SizedBox(height: 8.h),
+      ],
     );
   }
 

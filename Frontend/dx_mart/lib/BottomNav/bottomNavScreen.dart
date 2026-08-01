@@ -13,6 +13,18 @@ import 'Screens/wishlist_screen.dart';
 class BottomNavScreen extends StatefulWidget {
   const BottomNavScreen({super.key});
 
+  /// Index of the Categories tab, for [openTab].
+  static const int categoriesTab = 1;
+
+  /// Lets a child screen move the shell to another tab.
+  ///
+  /// Home's "All" tile belongs on the Categories *tab*, not on a pushed copy of it:
+  /// pushing would stack a second categories screen over the shell, hide the bottom
+  /// bar, and leave the user with a back arrow where the nav should be. A notifier
+  /// rather than an InheritedWidget because the caller is inside an IndexedStack
+  /// child and only ever needs to write.
+  static final ValueNotifier<int?> openTab = ValueNotifier<int?>(null);
+
   @override
   State<BottomNavScreen> createState() => _BottomNavScreenState();
 }
@@ -51,6 +63,7 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
   @override
   void initState() {
     super.initState();
+    BottomNavScreen.openTab.addListener(_onOpenTabRequested);
 
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent, // Transparent to blend seamlessly with our gradient
@@ -58,6 +71,22 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
       systemNavigationBarColor: Colors.white,
       systemNavigationBarIconBrightness: Brightness.dark,
     ));
+  }
+
+  void _onOpenTabRequested() {
+    final target = BottomNavScreen.openTab.value;
+    if (target == null || !mounted) return;
+    BottomNavScreen.openTab.value = null; // one-shot
+    setState(() {
+      _currentIndex = target;
+      _visited.add(target);
+    });
+  }
+
+  @override
+  void dispose() {
+    BottomNavScreen.openTab.removeListener(_onOpenTabRequested);
+    super.dispose();
   }
 
   Widget _buildNavIcon(String asset, int index) {

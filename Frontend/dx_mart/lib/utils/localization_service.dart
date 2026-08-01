@@ -505,6 +505,38 @@ class LocalizationService {
       'hi': 'अभी कोई श्रेणी नहीं',
       'hn': 'Abhi koi category nahi',
     },
+
+    // --- Category taxonomy -------------------------------------------------
+    // A seeded-but-unstocked shelf. It renders rather than hides: the whole tree
+    // was seeded on purpose so the shop reads as a shop, and an aisle we have not
+    // filled yet is a promise, not a bug.
+    'coming_soon': {
+      'en': 'Coming soon',
+      'hi': 'जल्द आ रहा है',
+      'hn': 'Jald aa raha hai',
+    },
+    // An umbrella: "Grocery & Kitchen", "Snacks & Drinks".
+    'browse_section': {
+      'en': 'sections',
+      'hi': 'विभाग',
+      'hn': 'sections',
+    },
+    // A shelf under an umbrella: "Atta, Rice & Dal".
+    'subcategories': {
+      'en': 'subcategories',
+      'hi': 'उपश्रेणियाँ',
+      'hn': 'subcategories',
+    },
+    'all_categories': {
+      'en': 'All categories',
+      'hi': 'सभी श्रेणियाँ',
+      'hn': 'Saari categories',
+    },
+    'in_category': {
+      'en': 'in',
+      'hi': 'में',
+      'hn': 'mein',
+    },
     'loading_bill': {
       'en': 'Loading your bill…',
       'hi': 'आपका बिल लोड हो रहा है…',

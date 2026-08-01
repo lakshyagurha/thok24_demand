@@ -6,6 +6,15 @@ import '../core/supabase.dart';
 /// PHP JSON (`product_name`, `selling_price`, `image_url`, ...) so migrating a screen is
 /// a change of *source*, not a rewrite of its widget tree.
 
+/// A node in the category tree.
+///
+/// The catalog is two levels: **umbrellas** (level 1, e.g. "Grocery & Kitchen") over
+/// **shelves** (level 2, e.g. "Atta, Rice & Dal"). Products attach to shelves only —
+/// the database refuses to file one on an umbrella. A third level is supported by the
+/// schema and by [children] but none exists yet, so nothing here should assume depth 2.
+///
+/// [productCount] is subtree-wide, so an umbrella knows how much it holds without the
+/// caller summing its shelves, and a shelf with zero is exactly the "Coming soon" case.
 class Category {
   Category({
     required this.id,
@@ -13,6 +22,14 @@ class Category {
     this.nameHi,
     this.nameHn,
     this.image,
+    this.parentId,
+    this.slug,
+    this.level = 2,
+    this.iconUrl,
+    this.sortOrder = 0,
+    this.isActive = true,
+    this.productCount = 0,
+    this.children = const [],
   });
 
   final int id;
@@ -20,6 +37,31 @@ class Category {
   final String? nameHi;
   final String? nameHn;
   final String? image;
+
+  final int? parentId;
+  final String? slug;
+
+  /// 1 = umbrella, 2 = shelf, 3 = sub-shelf.
+  final int level;
+
+  /// Artwork path. Falls back to [image], the legacy column, which is still populated
+  /// on every shelf that predates the taxonomy.
+  final String? iconUrl;
+
+  final int sortOrder;
+  final bool isActive;
+
+  /// Active SKUs in this node **and everything under it**.
+  final int productCount;
+
+  final List<Category> children;
+
+  bool get isUmbrella => level == 1;
+
+  /// Nothing to show yet. The tile still renders — per the decision to seed the whole
+  /// tree up front, an empty shelf is a promise, not a dead end — but it renders as
+  /// "Coming soon" and does not navigate into a blank product grid.
+  bool get isEmpty => productCount == 0;
 
   /// Name in the user's language, falling back to English. `name_hn` is romanized
   /// Hinglish, which some users read more comfortably than Devanagari.
@@ -29,7 +71,19 @@ class Category {
         _ => name,
       };
 
-  String get imageUrl => Db.imageUrl(image);
+  /// The stored path this node renders from, before a host is applied.
+  ///
+  /// Separate from [imageUrl] so the fallback can be reasoned about — and tested —
+  /// without a live Supabase client. `icon_url` is the taxonomy field; `image` is the
+  /// legacy column, still populated on every shelf that predates it.
+  String? get iconPath => (iconUrl?.isNotEmpty == true) ? iconUrl : image;
+
+  String get imageUrl => Db.imageUrl(iconPath);
+
+  /// Every shelf under this node, flattened. Depth-first so display order is preserved.
+  List<Category> get descendants => [
+        for (final c in children) ...[c, ...c.descendants],
+      ];
 
   factory Category.fromMap(Map<String, dynamic> m) => Category(
         id: m['id'] as int,
@@ -37,7 +91,51 @@ class Category {
         nameHi: m['name_hi'] as String?,
         nameHn: m['name_hn'] as String?,
         image: m['image'] as String?,
+        parentId: m['parent_id'] as int?,
+        slug: m['slug'] as String?,
+        level: (m['level'] as num?)?.toInt() ?? 2,
+        iconUrl: m['icon_url'] as String?,
+        sortOrder: (m['sort_order'] as num?)?.toInt() ?? 0,
+        isActive: m['is_active'] as bool? ?? true,
       );
+
+  /// A node of the `category_tree()` RPC payload, recursively.
+  ///
+  /// The RPC emits `icon_url` already coalesced over the legacy `image` column, so
+  /// there is no second field to reconcile here.
+  factory Category.fromTreeNode(Map<String, dynamic> m) => Category(
+        id: (m['id'] as num).toInt(),
+        name: (m['name'] ?? '') as String,
+        nameHi: m['name_hi'] as String?,
+        nameHn: m['name_hn'] as String?,
+        parentId: (m['parent_id'] as num?)?.toInt(),
+        slug: m['slug'] as String?,
+        level: (m['level'] as num?)?.toInt() ?? 1,
+        iconUrl: m['icon_url'] as String?,
+        sortOrder: (m['sort_order'] as num?)?.toInt() ?? 0,
+        isActive: m['is_active'] as bool? ?? true,
+        productCount: (m['product_count'] as num?)?.toInt() ?? 0,
+        children: [
+          for (final c in (m['children'] as List? ?? const []))
+            Category.fromTreeNode(Map<String, dynamic>.from(c as Map)),
+        ],
+      );
+
+  /// Round-trips through [fromTreeNode]. Used by the on-disk cache.
+  Map<String, dynamic> toTreeNode() => {
+        'id': id,
+        'name': name,
+        'name_hi': nameHi,
+        'name_hn': nameHn,
+        'parent_id': parentId,
+        'slug': slug,
+        'level': level,
+        'icon_url': iconUrl,
+        'sort_order': sortOrder,
+        'is_active': isActive,
+        'product_count': productCount,
+        'children': [for (final c in children) c.toTreeNode()],
+      };
 }
 
 class Variant {

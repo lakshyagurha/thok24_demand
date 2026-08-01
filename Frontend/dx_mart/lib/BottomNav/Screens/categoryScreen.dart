@@ -16,6 +16,18 @@ import '../../design/components/states.dart';
 import '../../utils/language_provider.dart';
 import '../../CustomWidgets/product_image.dart';
 
+/// The Categories tab: the whole shop, one screen.
+///
+/// This used to be a flat grid of twelve tiles — which were not categories but
+/// *shelves*, with no umbrella above them and no way to tell that eight of the twelve
+/// were empty. Tapping one of those eight opened a blank product grid.
+///
+/// Now it is sectioned: one section per umbrella, its shelves in a three-column grid
+/// beneath it, with the section header pinned while that section scrolls so the shopper
+/// always knows which part of the shop they are in. Empty shelves still render — the
+/// tree was seeded whole on purpose, so the shop looks like a shop rather than like four
+/// categories — but they are visibly marked *Coming soon* and do not navigate into
+/// nothing.
 class CategoryScreen extends StatefulWidget {
   const CategoryScreen({super.key});
 
@@ -26,7 +38,7 @@ class CategoryScreen extends StatefulWidget {
 class _CategoryScreenState extends State<CategoryScreen> {
   final CatalogRepository _catalog = const CatalogRepository();
 
-  List<Category> _categoryList = [];
+  List<Category> _tree = [];
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
@@ -36,50 +48,61 @@ class _CategoryScreenState extends State<CategoryScreen> {
     super.initState();
     // Names are localized from the model at render time, so one fetch covers every
     // language instead of one round trip per language switch.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchCategories());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fetchTree());
   }
 
-  Future<void> _fetchCategories() async {
+  Future<void> _fetchTree({bool force = false}) async {
     setState(() {
-      _isLoading = true;
+      _isLoading = _tree.isEmpty;
       _hasError = false;
     });
 
     try {
-      final categories = await _catalog.categories();
+      // Cache-first: on a warm launch this returns without touching the network and
+      // the screen paints real tiles in its first frame. The refresh, if the copy is
+      // stale, lands afterwards and usually changes nothing.
+      final tree = force
+          ? await _catalog.categoryTree()
+          : await _catalog.categoryTreeCached(
+              onRefreshed: (fresh) {
+                if (mounted) setState(() => _tree = fresh);
+              },
+            );
       if (!mounted) return;
       setState(() {
-        _categoryList = categories;
+        _tree = tree;
         _isLoading = false;
       });
     } on DataException catch (e) {
       if (!mounted) return;
-      _showSnackBar("Error: ${e.message}", AppColors.danger);
       setState(() {
         _isLoading = false;
-        _hasError = true;
+        // A cached tree is still worth showing; only a first-ever load is an error.
+        _hasError = _tree.isEmpty;
         _errorMessage = e.message;
       });
+      if (_tree.isEmpty) _showSnackBar("Error: ${e.message}", AppColors.danger);
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar("Connection error: $e", AppColors.danger);
       setState(() {
         _isLoading = false;
-        _hasError = true;
+        _hasError = _tree.isEmpty;
         _errorMessage = "Connection error: $e";
       });
+      if (_tree.isEmpty) _showSnackBar("Connection error: $e", AppColors.danger);
     }
   }
 
-  void _onCategoryTap(Category category) {
-    // Category tap पर CategoryViewScreen में navigate करें
-    final lang = Provider.of<LanguageProvider>(context, listen: false).currentLanguage;
+  int get _shelfCount =>
+      _tree.fold<int>(0, (sum, u) => sum + u.descendants.length);
+
+  void _openShelf(Category shelf, String code) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => CategoryViewScreen(
-          categoryId: category.id,
-          categoryName: category.localizedName(lang),
+          categoryId: shelf.id,
+          categoryName: shelf.localizedName(code),
         ),
       ),
     );
@@ -112,14 +135,15 @@ class _CategoryScreenState extends State<CategoryScreen> {
         children: [
           AppHeader(
             title: lang.translate('categories'),
-            subtitle: _isLoading || _hasError
+            subtitle: _isLoading || _hasError || _tree.isEmpty
                 ? null
-                : '${_categoryList.length} ${lang.translate('categories').toLowerCase()}',
+                : '${_tree.length} ${lang.translate('browse_section')} · '
+                    '$_shelfCount ${lang.translate('subcategories')}',
             showBack: false,
             actions: [
               HeaderAction(
                 icon: Icons.refresh_rounded,
-                onTap: _fetchCategories,
+                onTap: () => _fetchTree(force: true),
               ),
             ],
           ),
@@ -131,33 +155,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
   }
 
   Widget _body(LanguageProvider lang, String code) {
-    if (_isLoading) {
-      return AppSkeleton.sweep(
-        child: GridView.builder(
-          padding: AppSpace.all(AppSpace.gutter),
-          itemCount: 12,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: AppSpace.h(AppSpace.base),
-            crossAxisSpacing: AppSpace.w(AppSpace.md),
-            childAspectRatio: 0.74,
-          ),
-          itemBuilder: (_, _) => Column(
-            children: [
-              Expanded(
-                child: AppSkeleton(
-                  width: double.infinity,
-                  height: double.infinity,
-                  radius: AppRadius.mdAll,
-                ),
-              ),
-              AppSpace.gapH(AppSpace.sm),
-              AppSkeleton(width: 60.w, height: AppSpace.h(10)),
-            ],
-          ),
-        ),
-      );
-    }
+    if (_isLoading && _tree.isEmpty) return _skeleton();
 
     if (_hasError) {
       return AppEmptyState(
@@ -167,62 +165,104 @@ class _CategoryScreenState extends State<CategoryScreen> {
             ? lang.translate('check_connection')
             : _errorMessage,
         actionLabel: lang.translate('retry'),
-        onAction: _fetchCategories,
+        onAction: () => _fetchTree(force: true),
         tone: StateTone.error,
       );
     }
 
-    if (_categoryList.isEmpty) {
+    if (_tree.isEmpty) {
       return AppEmptyState(
         icon: Icons.category_outlined,
         title: lang.translate('no_categories'),
         actionLabel: lang.translate('retry'),
-        onAction: _fetchCategories,
+        onAction: () => _fetchTree(force: true),
       );
     }
 
-    // Three across rather than four.
-    //
-    // The old screen put twelve tiles into a four-column grid at an 0.60 aspect
-    // ratio and left the bottom two-thirds of the screen empty, so a page whose
-    // whole job is "show me everything you sell" managed to look like the
-    // catalogue was nearly bare. Three columns give each tile a usable image
-    // and a two-line label, and twelve of them fill the viewport.
     return RefreshIndicator(
-      onRefresh: _fetchCategories,
+      onRefresh: () => _fetchTree(force: true),
       color: AppColors.primary,
-      child: GridView.builder(
-        padding: AppSpace.all(AppSpace.gutter),
+      child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
-        itemCount: _categoryList.length,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 3,
-          mainAxisSpacing: AppSpace.h(AppSpace.base),
-          crossAxisSpacing: AppSpace.w(AppSpace.md),
-          childAspectRatio: 0.74,
-        ),
-        itemBuilder: (context, i) {
-          final c = _categoryList[i];
-          final name = c.localizedName(code);
+        slivers: [
+          for (final umbrella in _tree) ...[
+            // Pinned so the umbrella name stays on screen for as long as its own
+            // shelves do. With 34 tiles in one scroll, an unpinned header means the
+            // shopper is three swipes into a grid with no idea which section it is.
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _SectionHeaderDelegate(
+                title: umbrella.localizedName(code),
+                count: umbrella.productCount,
+                itemsLabel: lang.translate('items'),
+                comingSoonLabel: lang.translate('coming_soon'),
+              ),
+            ),
+            SliverPadding(
+              padding: AppSpace.only(
+                left: AppSpace.gutter,
+                right: AppSpace.gutter,
+                bottom: AppSpace.lg,
+              ),
+              sliver: SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: AppSpace.h(AppSpace.base),
+                  crossAxisSpacing: AppSpace.w(AppSpace.md),
+                  childAspectRatio: 0.70,
+                ),
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) => _shelfTile(
+                    umbrella.children[i],
+                    code,
+                    lang,
+                  ),
+                  childCount: umbrella.children.length,
+                ),
+              ),
+            ),
+          ],
+          SliverToBoxAdapter(child: SizedBox(height: AppSpace.h(AppSpace.xxl))),
+        ],
+      ),
+    );
+  }
 
-          return InkWell(
-            onTap: () => _onCategoryTap(c),
-            borderRadius: AppRadius.mdAll,
-            child: Column(
-              children: [
-                Expanded(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: AppGradients.tile,
-                      borderRadius: AppRadius.mdAll,
-                      border: Border.all(color: AppColors.border),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: AppRadius.mdAll,
+  Widget _shelfTile(Category shelf, String code, LanguageProvider lang) {
+    final name = shelf.localizedName(code);
+    final empty = shelf.isEmpty;
+
+    return InkWell(
+      // An empty shelf does not navigate. The old screen let all twelve tiles
+      // through and eight of them landed on "no products found", which reads as a
+      // broken app rather than as a shop that has not stocked that aisle yet.
+      onTap: empty
+          ? () => _showSnackBar(
+                '$name — ${lang.translate('coming_soon')}',
+                AppColors.textSecondary,
+              )
+          : () => _openShelf(shelf, code),
+      borderRadius: AppRadius.mdAll,
+      child: Column(
+        children: [
+          Expanded(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: AppGradients.tile,
+                borderRadius: AppRadius.mdAll,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: AppRadius.mdAll,
+                    child: Opacity(
+                      opacity: empty ? 0.35 : 1,
                       child: ProductImage(
-                        path: c.imageUrl,
+                        path: shelf.imageUrl,
                         width: double.infinity,
                         height: double.infinity,
                         fit: BoxFit.cover,
@@ -230,23 +270,156 @@ class _CategoryScreenState extends State<CategoryScreen> {
                       ),
                     ),
                   ),
-                ),
-                AppSpace.gapH(AppSpace.sm),
-                SizedBox(
-                  height: AppSpace.h(32),
-                  child: Text(
-                    name,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.labelS(color: AppColors.textPrimary),
-                  ),
-                ),
-              ],
+                  if (empty)
+                    Center(
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: AppSpace.w(AppSpace.sm),
+                          vertical: AppSpace.h(3),
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface.withValues(alpha: 0.92),
+                          borderRadius: AppRadius.smAll,
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: Text(
+                          lang.translate('coming_soon'),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppText.overline(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          );
-        },
+          ),
+          AppSpace.gapH(AppSpace.sm),
+          SizedBox(
+            height: AppSpace.h(32),
+            child: Text(
+              name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.labelS(
+                color: empty ? AppColors.textSecondary : AppColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
+
+  Widget _skeleton() {
+    return AppSkeleton.sweep(
+      child: ListView(
+        padding: AppSpace.all(AppSpace.gutter),
+        children: [
+          for (var section = 0; section < 3; section++) ...[
+            AppSkeleton(width: 140.w, height: AppSpace.h(14)),
+            AppSpace.gapH(AppSpace.base),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: 6,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: AppSpace.h(AppSpace.base),
+                crossAxisSpacing: AppSpace.w(AppSpace.md),
+                childAspectRatio: 0.70,
+              ),
+              itemBuilder: (_, _) => Column(
+                children: [
+                  Expanded(
+                    child: AppSkeleton(
+                      width: double.infinity,
+                      height: double.infinity,
+                      radius: AppRadius.mdAll,
+                    ),
+                  ),
+                  AppSpace.gapH(AppSpace.sm),
+                  AppSkeleton(width: 60.w, height: AppSpace.h(10)),
+                ],
+              ),
+            ),
+            AppSpace.gapH(AppSpace.lg),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Pinned umbrella heading.
+///
+/// Sized in logical pixels rather than with ScreenUtil's `.h` inside the extent
+/// getters: a SliverPersistentHeaderDelegate must report a *constant* extent, and one
+/// that changes with the text scale mid-scroll makes the sliver jump.
+class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
+  _SectionHeaderDelegate({
+    required this.title,
+    required this.count,
+    required this.itemsLabel,
+    required this.comingSoonLabel,
+  });
+
+  final String title;
+  final int count;
+  final String itemsLabel;
+  final String comingSoonLabel;
+
+  static const double _extent = 46;
+
+  @override
+  double get minExtent => _extent;
+
+  @override
+  double get maxExtent => _extent;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlaps) {
+    return Container(
+      height: _extent,
+      color: AppColors.background,
+      padding: EdgeInsets.symmetric(horizontal: AppSpace.w(AppSpace.gutter)),
+      alignment: Alignment.centerLeft,
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 16,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          AppSpace.gapW(AppSpace.sm),
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.h3(color: AppColors.textPrimary),
+            ),
+          ),
+          Text(
+            count == 0 ? comingSoonLabel : '$count $itemsLabel',
+            style: AppText.caption(color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _SectionHeaderDelegate old) =>
+      old.title != title ||
+      old.count != count ||
+      old.itemsLabel != itemsLabel ||
+      old.comingSoonLabel != comingSoonLabel;
 }

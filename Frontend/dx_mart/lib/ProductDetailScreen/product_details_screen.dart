@@ -14,6 +14,7 @@ import '../SearchProduct/search_product.dart';
 import '../SimilarProducts/similar_product.dart';
 import '../core/supabase.dart';
 import '../data/catalog_repository.dart';
+import '../data/models.dart';
 import '../design/app_colors.dart';
 import '../design/app_type.dart';
 import '../design/app_gradients.dart';
@@ -47,6 +48,16 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   late Map<String, dynamic> _localProduct;
   String _lastFetchedLang = '';
 
+  /// The shelf this product sits on, and the umbrella above it.
+  ///
+  /// The breadcrumb here read `_localProduct['subcategory']`, `['category_id']` and
+  /// `['category']` — three keys from the PHP payload that nothing has populated since
+  /// the Supabase migration. The result was a card reading "Explore all 's Items" that
+  /// navigated to a null category. Both are resolved from the category tree instead,
+  /// which is already cached on disk by the time any product page opens.
+  Category? _shelf;
+  Category? _umbrella;
+
   @override
   void initState() {
     super.initState();
@@ -56,9 +67,25 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     // the voice bot) and as a String elsewhere, and an implicit int -> String cast here
     // threw in initState, killing the whole screen.
     CATEGORY_ID = widget.product['main_category_id']?.toString() ?? '';
+    _resolveCategory();
     fetchDeliveryTime();
     _fetchCoupons();
     fetchAllProductsFromCategory();
+  }
+
+  Future<void> _resolveCategory() async {
+    final id = int.tryParse(CATEGORY_ID);
+    if (id == null) return;
+    try {
+      final tree = await const CatalogRepository().categoryTreeCached();
+      if (!mounted) return;
+      setState(() {
+        _shelf = CatalogRepository.findInTree(tree, id);
+        _umbrella = CatalogRepository.umbrellaOf(tree, id);
+      });
+    } catch (e) {
+      debugPrint('breadcrumb category lookup failed: $e');
+    }
   }
 
   @override
@@ -301,9 +328,14 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             .contains('nutrition'))
         .toList();
 
-    final String subCategoryName = _localProduct['subcategory'] ?? '';
-    final String category_id = _localProduct['category_id'] ?? '';
-    final String category_name = _localProduct['category'] ?? '';
+    // Resolved from the category tree in [_resolveCategory]. Before the taxonomy
+    // landed these came from dead PHP-era keys and were always empty.
+    final activeLang =
+        Provider.of<LanguageProvider>(context).currentLanguage;
+    final String subCategoryName = _shelf?.localizedName(activeLang) ?? '';
+    final String category_id = (_shelf?.id ?? '').toString();
+    final String category_name = subCategoryName;
+    final String umbrellaName = _umbrella?.localizedName(activeLang) ?? '';
 
     final double statusBarHeight = MediaQuery.of(context).padding.top;
 
@@ -908,7 +940,52 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   ),
                 ),
 
-                // Explore all items from Brand
+                // Breadcrumb: which part of the shop this product came from.
+                if (umbrellaName.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 4.h),
+                    child: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            umbrellaName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.sp,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4.w),
+                          child: Text(
+                            '›',
+                            style: TextStyle(
+                              fontSize: 11.sp,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        Flexible(
+                          child: Text(
+                            subCategoryName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.sp,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                // Explore all items from this shelf. Hidden until the category
+                // resolves, so it never renders as "Explore all 's Items".
+                if (subCategoryName.isNotEmpty)
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 6.h),
                   child: InkWell(

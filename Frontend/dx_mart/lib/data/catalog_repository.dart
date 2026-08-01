@@ -1,4 +1,11 @@
+import 'dart:async';
+
+// `show` on purpose: foundation also exports a `Category` annotation, which would
+// otherwise shadow the model of the same name in every reference below.
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../core/supabase.dart';
+import 'category_cache.dart';
 import 'models.dart';
 
 /// Catalog reads: categories, products, variants, images, search, banners, coupons.
@@ -20,18 +27,144 @@ class CatalogRepository {
     product_variants(id, product_id, name, name_hi, name_hn, price, selling_price, stock)
   ''';
 
+  /// The whole browsable tree — 6 umbrellas, each carrying its shelves — in one call.
+  ///
+  /// This replaces "fetch the flat category list, then open each category to find out
+  /// whether it has anything in it". `product_count` arrives with the tree, so the
+  /// Category tab can tell a stocked shelf from an empty one without a second request.
+  ///
+  /// Inactive nodes never appear: the RPC filters them, so `is_active` is the single
+  /// visibility switch and there is nothing for the client to re-filter. The hardcoded
+  /// "hide anything whose name contains 'electronic'" list on the home screen existed
+  /// only because that switch did not exist yet.
+  Future<List<Category>> categoryTree() async {
+    final payload = await Db.client.rpc('category_tree');
+    final tree = [
+      for (final n in (payload as List? ?? const []))
+        Category.fromTreeNode(Map<String, dynamic>.from(n as Map)),
+    ];
+    await CategoryCache.save(tree);
+    return tree;
+  }
+
+  /// Stale-while-revalidate: hands back the cached tree immediately when there is one,
+  /// then refreshes in the background and calls [onRefreshed] only if the tree actually
+  /// changed. Falls through to a plain fetch on a cold install.
+  ///
+  /// Callers get a painted screen on the first frame; the network cost is paid off
+  /// screen. [onRefreshed] fires at most once per call.
+  Future<List<Category>> categoryTreeCached({
+    void Function(List<Category> fresh)? onRefreshed,
+  }) async {
+    final cached = await CategoryCache.load();
+    if (cached == null) return categoryTree();
+
+    if (CategoryCache.isStale) {
+      // Deliberately not awaited: a stale-but-usable tree is already being returned.
+      unawaited(() async {
+        try {
+          final fresh = await categoryTree();
+          if (onRefreshed != null && CategoryCache.differs(cached, fresh)) {
+            onRefreshed(fresh);
+          }
+        } catch (e) {
+          // Offline with a cached tree is a working app, not an error state.
+          debugPrint('category tree refresh failed: $e');
+        }
+      }());
+    }
+    return cached;
+  }
+
+  /// Every active shelf, flat and in display order. For callers that want a list of
+  /// places a product can live rather than the hierarchy — the admin-facing shape.
+  Future<List<Category>> shelves() async {
+    final tree = await categoryTreeCached();
+    return [
+      for (final umbrella in tree) ...umbrella.descendants,
+    ];
+  }
+
+  /// The umbrella a shelf sits under, or null if [shelf] is itself an umbrella.
+  static Category? umbrellaOf(List<Category> tree, int shelfId) {
+    for (final u in tree) {
+      if (u.id == shelfId) return null;
+      if (u.descendants.any((c) => c.id == shelfId)) return u;
+    }
+    return null;
+  }
+
+  /// Finds any node in the tree by id, at any level.
+  static Category? findInTree(List<Category> tree, int id) {
+    for (final u in tree) {
+      if (u.id == id) return u;
+      for (final c in u.descendants) {
+        if (c.id == id) return c;
+      }
+    }
+    return null;
+  }
+
+  /// Category name matches for the search screen, so searching "dairy" offers the
+  /// shelf and not only the products whose *name* happens to contain it.
+  ///
+  /// Matched in memory against the cached tree rather than over the network: the tree
+  /// is already local, it is 40 rows, and a search screen should not wait on a round
+  /// trip it does not need. All three name variants are matched, so "डेयरी" and
+  /// "dairy" both find the same shelf.
+  Future<List<Category>> searchCategories(String query) async {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+
+    final tree = await categoryTreeCached();
+    final hits = <Category>[];
+    for (final umbrella in tree) {
+      for (final node in [umbrella, ...umbrella.descendants]) {
+        final matched = node.name.toLowerCase().contains(q) ||
+            (node.nameHi ?? '').toLowerCase().contains(q) ||
+            (node.nameHn ?? '').toLowerCase().contains(q);
+        // An empty shelf is not a useful search result — it leads nowhere.
+        if (matched && !node.isEmpty) hits.add(node);
+      }
+    }
+    // Stocked shelves first, then umbrellas, so the most specific answer leads.
+    hits.sort((a, b) {
+      if (a.level != b.level) return b.level.compareTo(a.level);
+      return b.productCount.compareTo(a.productCount);
+    });
+    return hits;
+  }
+
+  /// Flat list of active shelves. Kept for callers that predate the tree.
+  ///
+  /// Now filtered to `level = 2` and `is_active`: since the taxonomy landed, the raw
+  /// table also holds 6 umbrellas and 4 hidden rows, and an unfiltered read would put
+  /// "Unfiled" and two retired categories in front of a shopper.
   Future<List<Category>> categories() async {
     final rows = await Db.client
         .from('main_category')
-        .select('id, name, name_hi, name_hn, image')
-        .order('id');
+        .select(
+          'id, name, name_hi, name_hn, image, parent_id, slug, level, '
+          'icon_url, sort_order, is_active',
+        )
+        .eq('level', 2)
+        .eq('is_active', true)
+        .order('sort_order');
     return rows.map((r) => Category.fromMap(r)).toList();
   }
 
+  /// Withdrawn SKUs are excluded from every read below.
+  ///
+  /// `products.is_active` is a soft withdrawal — the row, its variants, images and
+  /// hand-built Hindi voice aliases all stay, because deleting a product cascades and
+  /// takes that vocabulary with it. Nothing filtered on it when the column landed, so
+  /// a withdrawn product went on rendering everywhere: in its category, in search, in
+  /// "similar products" and in the home rails.
   Future<List<Product>> products({int limit = 100, int offset = 0}) async {
     final rows = await Db.client
         .from('products')
         .select(_productGraph)
+        .eq('is_active', true)
         .order('id')
         .range(offset, offset + limit - 1);
     return rows.map((r) => Product.fromMap(r)).toList();
@@ -42,25 +175,45 @@ class CatalogRepository {
   /// and image graph — in one response, on a connection where that is the difference
   /// between usable and not. 40 is comfortably more than any current category holds;
   /// pass [offset] to page beyond it.
+  ///
+  /// Pass [includeDescendants] to open an umbrella: products hang off shelves, never
+  /// off an umbrella, so filtering on an umbrella's own id returns nothing. With it,
+  /// the id set is resolved from the cached tree and matched with `in`, which keeps
+  /// this one round trip.
   Future<List<Product>> productsByCategory(
     int categoryId, {
     int limit = 40,
     int offset = 0,
+    bool includeDescendants = false,
   }) async {
-    final rows = await Db.client
-        .from('products')
-        .select(_productGraph)
-        .eq('main_category_id', categoryId)
+    var q = Db.client.from('products').select(_productGraph);
+
+    if (includeDescendants) {
+      final tree = await categoryTreeCached();
+      final node = findInTree(tree, categoryId);
+      final ids = node == null
+          ? [categoryId]
+          : [node.id, ...node.descendants.map((c) => c.id)];
+      q = q.inFilter('main_category_id', ids);
+    } else {
+      q = q.eq('main_category_id', categoryId);
+    }
+
+    final rows = await q
+        .eq('is_active', true)
         .order('id')
         .range(offset, offset + limit - 1);
     return rows.map((r) => Product.fromMap(r)).toList();
   }
 
+  /// A withdrawn product resolves to null, so a stale link or an old wishlist row
+  /// lands on "not found" rather than on a page that can still be added to a cart.
   Future<Product?> product(int id) async {
     final row = await Db.client
         .from('products')
         .select(_productGraph)
         .eq('id', id)
+        .eq('is_active', true)
         .maybeSingle();
     return row == null ? null : Product.fromMap(row);
   }
@@ -78,6 +231,7 @@ class CatalogRepository {
         .from('products')
         .select(_productGraph)
         .ilike('types', '%$type%')
+        .eq('is_active', true)
         .order('id')
         .limit(limit);
     return rows.map((r) => Product.fromMap(r)).toList();
@@ -101,6 +255,7 @@ class CatalogRepository {
         .from('products')
         .select(_productGraph)
         .or('name.ilike.%$safe%,name_hi.ilike.%$safe%,name_hn.ilike.%$safe%')
+        .eq('is_active', true)
         .limit(50);
     final results = rows.map((r) => Product.fromMap(r)).toList();
     if (results.isNotEmpty) return results;
@@ -118,7 +273,8 @@ class CatalogRepository {
     final byAlias = await Db.client
         .from('products')
         .select(_productGraph)
-        .inFilter('id', ids);
+        .inFilter('id', ids)
+        .eq('is_active', true);
     return byAlias.map((r) => Product.fromMap(r)).toList();
   }
 
@@ -128,6 +284,7 @@ class CatalogRepository {
         .select(_productGraph)
         .eq('main_category_id', categoryId)
         .neq('id', productId)
+        .eq('is_active', true)
         .limit(10);
     return rows.map((r) => Product.fromMap(r)).toList();
   }
