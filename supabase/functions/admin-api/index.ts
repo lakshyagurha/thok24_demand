@@ -36,6 +36,9 @@ const READABLE = new Set([
   "order_items",
   "user_profiles",
   "delivery_address",
+  // Read-only view. Backs the category tree screen's warning badges (empty shelves,
+  // missing icons, naming-rule violations) without the client re-deriving any of it.
+  "v_category_health",
 ]);
 
 type Body = {
@@ -44,6 +47,7 @@ type Body = {
     | "insert"
     | "update"
     | "delete"
+    | "reorder"
     | "order_status"
     | "set_setting"
     | "set_user_status"
@@ -54,6 +58,8 @@ type Body = {
   filters?: Record<string, unknown>;
   limit?: number;
   offset?: number;
+  /** `reorder` only: the new sort_order for each category, in one call. */
+  order?: { id: number; sort_order: number }[];
   order_id?: number;
   status?: string;
   key?: string;
@@ -151,6 +157,51 @@ Deno.serve(async (req) => {
         const { error } = await admin.from(table).delete().eq("id", body.id);
         if (error) throw error;
         return json({ success: true }, 200, req);
+      }
+
+      case "reorder": {
+        // Drag-to-reorder in the category tree screen. Without this, moving one shelf
+        // up rewrites sort_order on every sibling below it, which as individual update
+        // calls is N round trips and leaves the tree visibly half-ordered if one fails.
+        //
+        // Deliberately narrower than `update`: it writes exactly one integer column on
+        // one table, so it cannot be steered into editing prices or names.
+        if (!Array.isArray(body.order) || body.order.length === 0) {
+          return json(
+            { success: false, message: "order must be a non-empty array" },
+            400,
+            req,
+          );
+        }
+        if (body.order.length > 200) {
+          return json({ success: false, message: "order too large" }, 400, req);
+        }
+
+        const rows: { id: number; sort_order: number }[] = [];
+        for (const entry of body.order) {
+          const id = Number(entry?.id);
+          const sortOrder = Number(entry?.sort_order);
+          if (!Number.isInteger(id) || !Number.isInteger(sortOrder)) {
+            return json(
+              { success: false, message: "each entry needs integer id and sort_order" },
+              400,
+              req,
+            );
+          }
+          rows.push({ id, sort_order: sortOrder });
+        }
+
+        // Sequential rather than a single upsert: an upsert would need every NOT NULL
+        // column in the payload, and sending `name` back through a reorder call is how
+        // a reorder quietly becomes a rename.
+        for (const row of rows) {
+          const { error } = await admin
+            .from("main_category")
+            .update({ sort_order: row.sort_order })
+            .eq("id", row.id);
+          if (error) throw error;
+        }
+        return json({ success: true, data: { updated: rows.length } }, 200, req);
       }
 
       case "order_status": {
