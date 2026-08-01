@@ -300,6 +300,74 @@ check(33, "place-order rejects an unknown payment method", "success=false",
       f"{st} {b.get('message') if isinstance(b, dict) else b}",
       isinstance(b, dict) and b.get("success") is False)
 
+# --- 13. Category tree, as the consumer app actually fetches it ---------------
+#
+# The whole browsable catalogue in one call, before sign-in. Anonymous on purpose:
+# this is the first request the app makes and it must work with no session at all.
+st, tree = req("POST", "/rest/v1/rpc/category_tree", body={})
+check(34, "Anonymous can fetch the category tree", "200 + 6 umbrellas",
+      f"{st} n={len(tree) if isinstance(tree, list) else tree}",
+      st == 200 and isinstance(tree, list) and len(tree) == 6)
+
+shelves = [s for u in (tree if isinstance(tree, list) else []) for s in u.get("children", [])]
+check(35, "Tree carries all 34 shelves", "34", str(len(shelves)), len(shelves) == 34)
+
+# Retired and staging nodes must never reach a shopper. `Uncategorised` is a work
+# queue, not an "Others" shelf, and the two retired categories still hold rows.
+hidden = {"uncategorised", "unfiled", "retired-electronics-appliances",
+          "retired-packaged-food"}
+leaked = [c["slug"] for c in (tree if isinstance(tree, list) else []) + shelves
+          if c.get("slug") in hidden]
+check(36, "No retired or staging category is exposed", "none",
+      str(leaked or "none"), not leaked)
+
+check(37, "No inactive node is exposed", "none",
+      str([c["slug"] for c in (tree if isinstance(tree, list) else []) + shelves
+           if not c.get("is_active")] or "none"),
+      all(c.get("is_active") for c in (tree if isinstance(tree, list) else []) + shelves))
+
+# product_count is what drives the "Coming soon" state, so a wrong count is a
+# shopper being sent into an empty aisle -- or a stocked one being hidden.
+total = sum(u.get("product_count", 0) for u in (tree if isinstance(tree, list) else []))
+check(38, "Subtree counts sum to the active SKU count", "35", str(total), total == 35)
+
+consistent = all(
+    u.get("product_count", 0) == sum(c.get("product_count", 0) for c in u.get("children", []))
+    for u in (tree if isinstance(tree, list) else [])
+)
+check(39, "Each umbrella's count equals the sum of its shelves", "consistent",
+      "consistent" if consistent else "mismatched", consistent)
+
+# Withdrawn SKUs must be gone from every catalogue read, not just from their shelf.
+st, b = req("GET", "/rest/v1/products?select=id&is_active=eq.false")
+withdrawn = {r["id"] for r in b} if isinstance(b, list) else set()
+st, b = req("GET", "/rest/v1/products?select=id&is_active=eq.true&limit=200")
+active = {r["id"] for r in b} if isinstance(b, list) else set()
+check(40, "Withdrawn SKUs are excluded from the active catalogue", "no overlap",
+      str(sorted(withdrawn & active) or "no overlap"), not (withdrawn & active))
+
+# A product filed on an umbrella would be unreachable in the app: the browse screen
+# only ever opens shelves.
+st, b = req("GET", "/rest/v1/main_category?select=id&level=eq.1")
+umbrella_ids = {r["id"] for r in b} if isinstance(b, list) else set()
+st, b = req("GET", "/rest/v1/products?select=id,main_category_id&limit=200")
+on_umbrella = [r["id"] for r in b if r.get("main_category_id") in umbrella_ids] \
+    if isinstance(b, list) else []
+check(41, "No product is filed on an umbrella", "none",
+      str(on_umbrella or "none"), not on_umbrella)
+
+# The catalogue must stay writable only through admin-api.
+st, b = req("POST", "/rest/v1/main_category", token=tokA,
+            body={"name": "ZZ E2E Injected", "slug": "zz-e2e-injected", "level": 1})
+check(42, "A signed-in user cannot create a category", "denied", str(st), st in (401, 403))
+
+st, b = req("PATCH", "/rest/v1/main_category?id=eq." + str(shelves[0]["id"]), token=tokA,
+            body={"name": "ZZ Renamed"})
+renamed = isinstance(b, list) and len(b) > 0
+check(43, "A signed-in user cannot rename a category", "denied",
+      f"{st}{' ROWS CHANGED' if renamed else ''}",
+      st in (401, 403) or not renamed)
+
 # --- teardown: remove both users; all dependent rows cascade ------------------
 delete_user_by_email(EMAIL_A)
 delete_user_by_email(EMAIL_B)

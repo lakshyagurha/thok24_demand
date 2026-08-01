@@ -791,26 +791,58 @@ written down.
       deployed: v3 predated them, so those admin screens were calling actions the live function
       did not implement.
 
-### Phase 5 — Consumer app
-- [ ] 5.1 `models.dart` + `catalog_repository.dart` + new `category_cache.dart`
-- [ ] 5.2 Home: remove the hardcoded filter; L1 rail
-- [ ] 5.3 Rebuild `categoryScreen.dart` as sectioned browse with Coming-soon tiles
-- [ ] 5.4 `categoryViewScreen.dart`: L2 rail + sticky breadcrumb + back behaviour
-- [ ] 5.5 Search returns categories; product detail breadcrumb fixed
-- [ ] 5.6 Localisation keys in en/hi/hn
+### Phase 5 — Consumer app — DONE 2026-08-01
+- [x] 5.1 `models.dart` + `catalog_repository.dart` + new `category_cache.dart`
+- [x] 5.2 Home: remove the hardcoded filter; L1 rail — "All" now opens the Categories
+      tab instead of the *first* category, via a one-shot notifier on `BottomNavScreen`
+- [x] 5.3 Rebuild `categoryScreen.dart` as sectioned browse with Coming-soon tiles
+      — pinned per-umbrella headers; an empty shelf does not navigate
+- [x] 5.4 `categoryViewScreen.dart`: L2 rail + sticky breadcrumb + back behaviour
+      — the rail is scoped to the current umbrella; the breadcrumb's umbrella half
+      opens a switcher, the only sideways route between umbrellas
+- [x] 5.5 Search returns categories; product detail breadcrumb fixed
+- [x] 5.6 Localisation keys in en/hi/hn (`coming_soon`, `browse_section`,
+      `subcategories`, `all_categories`, `in_category`)
+- [x] **5.7 (not in the original plan) every product read now filters `is_active`.**
+      Nothing did. The two SKUs withdrawn in Phase 3 went on rendering in their
+      category, in search, in similar-products and in the home rails — the backfill
+      was only half-applied as far as the app was concerned.
 
-### Phase 6 — Admin app
-- [ ] 6.1 Category Tree screen
-- [ ] 6.2 Category form: parent, sort, active, slug, validation
-- [ ] 6.3 **Fix the L2572 crash**; cascading leaf-only product picker; bulk recategorise; Uncategorised queue
-- [ ] 6.4 `admin_api.dart` tree helpers + category-name join
+### Phase 6 — Admin app — DONE 2026-08-01
+- [x] 6.1 Category Tree screen — `dxmart_admin/lib/MainCategory/category_tree_screen.dart`,
+      registered in the nav rail above the existing Category form
+- [x] 6.2 Category form: parent, sort, active, slug, validation.
+      **This was load-bearing, not cosmetic:** the form wrote only name/hi/hn, and after
+      migration 01 a parentless row must be level 1, so *every* insert was being rejected
+      by the depth trigger. `level` is now derived from the parent.
+- [x] 6.3 **Fixed the L2572 crash**; cascading leaf-only product picker; tree filter;
+      Uncategorised queue badge
+- [ ] 6.3b Bulk recategorise — **deliberately not done.** It needs a multi-select mode
+      the product screen does not have, and that screen currently also carries
+      unrelated in-progress edits. Single-product recategorisation works; this is a
+      convenience, not a gap in the taxonomy.
+- [x] 6.4 `admin_api.dart` tree helpers + category-name join + `reorderCategories`
 
-### Phase 7 — Verify
-- [ ] 7.1 `supabase/tests/category_tree_verification.sql` — self-cleaning, rolls back, in the style of the existing `rls_live_verification.sql`
-- [ ] 7.2 Re-run `supabase/tests/rls_live_verification.sql` — all 21 checks still pass
-- [ ] 7.3 Extend `supabase/tools/cutover_e2e.py` with category-tree checks as an anonymous client
-- [ ] 7.4 Manual pass on device: home → browse → shelf → product → back, in all three languages
-- [ ] 7.5 Cold-launch timing: category screen interactive < 300 ms from cache
+### Phase 7 — Verify — DONE 2026-08-01
+- [x] 7.1 `supabase/tests/category_tree_verification.sql` — 26 checks, all PASS.
+      Self-cleaning: the four negative tests attempt genuinely forbidden writes and the
+      transaction rolls back (re-checked afterwards — 44 categories, 0 leftover rows).
+- [x] 7.2 Re-ran `supabase/tests/rls_live_verification.sql` — **21/21 still PASS**, plus
+      `dart run tool/verify_rls.dart` 15/15 as a real anonymous client
+- [x] 7.3 Extended `supabase/tools/cutover_e2e.py` with checks 34–43; all 10 verified
+      green against the live project. (The full 43-check run also needs
+      `SUPABASE_SERVICE_ROLE_KEY`, which only creates and deletes the two test users.)
+- [x] 7.4a `flutter test` — 9 model tests (parsing, localisation, cache round trip
+      including Devanagari); `dart run tool/verify_category_tree.dart` — 17 live checks;
+      `flutter analyze` clean on both apps; `flutter build apk --debug` and
+      `flutter build web --debug` both green
+- [ ] 7.4b Manual pass on device in all three languages — **blocked, not skipped.**
+      No SMS provider is configured (cutover Blocker A), so no consumer can sign in at
+      all, and `splashScreen.dart` gates on `Db.isSignedIn`. This is the same blocker
+      that gates the cutover itself.
+- [ ] 7.5 Cold-launch timing < 300 ms from cache — needs a device, so gated behind 7.4b.
+      The mechanism it measures is in place and unit-tested: the tree is served from
+      `shared_preferences` before any network call, and refreshed off screen.
 
 ---
 

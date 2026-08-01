@@ -237,6 +237,44 @@ project; it was completely empty before this work.
     the live MariaDB — the consumer Help screen and delivery-time display were blank
     without them.
 
+## 3b. Category taxonomy (branch `category-taxonomy`, completed 2026-08-01)
+
+Full plan and checklist: `docs/category-system-plan.md`. Summary of what is now true:
+
+- **The catalog has a real tree.** `public.main_category` gained a self-referencing
+  `parent_id` plus `slug`, `level`, `icon_url`, `sort_order`, `is_active`. **6 umbrellas
+  over 34 shelves**, 0 L3. Depth is data, not schema — adding a level later is an INSERT.
+  A trigger enforces `level = parent.level + 1` (which also makes cycles impossible) and a
+  second refuses to file a product on an umbrella.
+- **35 active SKUs across 10 shelves, 0 orphaned.** Two consumer gadgets were withdrawn
+  via `products.is_active = false`, and two categories retired the same way. **Nothing was
+  deleted** — deleting a category cascades to its products, and each product cascades to
+  its variants, images and hand-built Hindi voice aliases.
+- **`public.category_tree()`** returns the whole browsable tree as nested JSON with a
+  subtree product count per node, granted to `anon`. It is the single visibility switch:
+  inactive nodes never appear, so no client re-filters anything.
+- **`admin-api` is at v4**, adding a `reorder` action (one integer column on one table)
+  and read access to `v_category_health`.
+- **Both apps are migrated.** Consumer: sectioned browse, per-umbrella rail, breadcrumbs,
+  category results in search, SWR disk cache. Admin: a category tree screen, a leaf-only
+  cascading product picker, and a category form that now writes parent/slug/sort/active.
+
+**Rules that are now load-bearing — do not undo these:**
+- Every catalog read filters `products.is_active`. Nothing did before, and the two
+  withdrawn SKUs rendered everywhere.
+- A product may only be filed on a **leaf** at level ≥ 2. The database enforces level ≥ 2;
+  leaf-ness is enforced in the admin picker on purpose, because a hard constraint would
+  deadlock adding a sub-shelf under a stocked shelf.
+- `Uncategorised` (under a hidden `Unfiled` root) is a **staging queue, not an "Others"
+  bucket**. Both are `is_active = false` and never reach the app. If it ever holds >2% of
+  active SKUs, the tree is wrong.
+- Retire with `is_active = false`; never delete a category or a product.
+
+**Still open:** the six L1 icon assets (`category/icon_*.png` in the `product-images`
+bucket) do not exist yet — the app falls back to a placeholder on image-load error, so
+this is cosmetic and self-healing once the PNGs are uploaded. A manual device pass is
+blocked by the same missing SMS provider that blocks the cutover.
+
 **Key architectural rule now in force:** no client may write `orders`, and no repository method
 accepts a user id. Identity comes from the verified JWT; RLS enforces ownership in the database.
 If something appears to need a client-supplied `user_id`, that is a bug, not a requirement.
