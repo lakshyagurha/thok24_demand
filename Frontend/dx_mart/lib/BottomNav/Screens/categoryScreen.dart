@@ -98,6 +98,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
       _tree.fold<int>(0, (sum, u) => sum + u.descendants.length);
 
   void _openShelf(Category shelf, String code) {
+    AppHaptics.tap();
     Navigator.push(
       context,
       MaterialPageRoute(

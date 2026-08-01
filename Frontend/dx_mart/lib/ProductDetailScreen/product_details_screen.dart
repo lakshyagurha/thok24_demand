@@ -18,6 +18,7 @@ import '../data/models.dart';
 import '../design/app_colors.dart';
 import '../design/app_type.dart';
 import '../design/app_gradients.dart';
+import '../design/haptics.dart';
 import '../utils/language_provider.dart';
 import '../CustomWidgets/product_image.dart';
 
@@ -202,7 +203,10 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
     }
   }
 
-  Future<void> addToCart() => changeQuantityBy(1);
+  Future<void> addToCart() {
+    AppHaptics.tap();
+    return changeQuantityBy(1);
+  }
 
   Future<void> removeFromCart() async {
     final variants = _localProduct['variants'];
@@ -214,6 +218,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
       variant['id'].toString(),
     );
     if (quantity <= 0) return;
+    AppHaptics.tap();
     await changeQuantityBy(-quantity);
   }
 
@@ -1426,6 +1431,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               ),
                               onPressed: () {
                                 if (currentQuantity > 1) {
+                                  AppHaptics.selection();
                                   changeQuantityBy(-1);
                                 } else {
                                   removeFromCart();
@@ -1448,6 +1454,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                                 color: Colors.white,
                               ),
                               onPressed: () {
+                                AppHaptics.selection();
                                 changeQuantityBy(1);
                               },
                             ),

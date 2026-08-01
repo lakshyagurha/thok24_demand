@@ -5,6 +5,7 @@ import '../app_elevation.dart';
 import '../app_radius.dart';
 import '../app_space.dart';
 import '../app_type.dart';
+import '../haptics.dart';
 
 /// The one cart bar.
 ///
@@ -68,7 +69,10 @@ class CartBar extends StatelessWidget {
             borderRadius: AppRadius.mdAll,
             clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: onTap,
+              onTap: () {
+                AppHaptics.tap();
+                onTap();
+              },
               child: Padding(
                 padding: AppSpace.symmetric(
                   horizontal: AppSpace.base,

@@ -1292,6 +1292,7 @@ class _CartScreenState extends State<CartScreen> {
                           child: InkWell(
                             onTap: () {
                               if (totalSellingAmount < minium_amount) {
+                                AppHaptics.error();
                                 final langP = Provider.of<LanguageProvider>(context, listen: false);
                                 Fluttertoast.showToast(
                                   msg: "${langP.translate('min_order_err')} ₹${minium_amount.toStringAsFixed(0)}",
@@ -1304,6 +1305,7 @@ class _CartScreenState extends State<CartScreen> {
                                 return;
                               }
 
+                              AppHaptics.tap();
                               Navigator.push(
                                 context,
                                           MaterialPageRoute(

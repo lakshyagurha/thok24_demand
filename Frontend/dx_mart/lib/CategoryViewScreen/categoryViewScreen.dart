@@ -17,6 +17,7 @@ import '../design/components/app_header.dart';
 import '../design/components/cart_bar.dart';
 import '../design/components/skeleton.dart';
 import '../design/components/states.dart';
+import '../design/haptics.dart';
 import 'package:provider/provider.dart';
 import '../utils/language_provider.dart';
 import '../CustomWidgets/cart_provider.dart';
@@ -250,7 +251,10 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
                       ),
                       onTap: () {
                         Navigator.pop(sheetContext);
-                        if (u.id != _umbrella?.id) _switchUmbrella(u);
+                        if (u.id != _umbrella?.id) {
+                          AppHaptics.selection();
+                          _switchUmbrella(u);
+                        }
                       },
                     ),
                 ],
@@ -471,6 +475,7 @@ class _CategoryViewScreenState extends State<CategoryViewScreen> {
           return InkWell(
             onTap: () {
               if (selected) return;
+              AppHaptics.selection();
               setState(() => selectedCategoryId = c.id);
               fetchProductsByCategory(c.id);
             },
