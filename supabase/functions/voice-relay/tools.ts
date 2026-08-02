@@ -40,10 +40,15 @@ export const TOOL_DECLARATIONS = [
   },
   {
     name: "add_to_cart",
+    // Deliberately NOT declared NON_BLOCKING. That was the original plan, to keep a
+    // ~150ms database write off the speech path, but in testing the model treated a
+    // non-blocking cart write as optional: it announced "cart mein daal diya hai" and
+    // made no tool call at all. A blocking call costs a little latency and buys the
+    // guarantee that speech and cart state cannot diverge.
     description:
-      "Add a quantity of one variant to the cart. Pick the variant that matches the size the " +
+      "Add a quantity of one variant to the cart. This is the ONLY way anything enters the " +
+      "cart; saying an item is added does not add it. Pick the variant matching the size the " +
       "customer asked for. Returns the authoritative line and the new cart total.",
-    behavior: "NON_BLOCKING",
     parameters: {
       type: "OBJECT",
       properties: {
@@ -58,7 +63,6 @@ export const TOOL_DECLARATIONS = [
     name: "update_cart_item",
     description:
       "Set an existing cart line to an exact quantity. Use quantity 0 to remove it entirely.",
-    behavior: "NON_BLOCKING",
     parameters: {
       type: "OBJECT",
       properties: {
