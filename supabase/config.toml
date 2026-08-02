@@ -19,3 +19,17 @@ verify_jwt = false
 # compares against the Authorization header itself.
 [functions.send-order-email]
 verify_jwt = true
+
+# The realtime voice socket.
+#
+# verify_jwt MUST stay false: the platform gateway cannot pass a WebSocket upgrade
+# through its JWT check and returns 502 before the function is ever invoked (observed
+# directly — the failing request logs with function_id null). Supabase documents
+# --no-verify-jwt as the requirement for WebSocket functions.
+#
+# Authentication is therefore done entirely inside the function: requireUser() runs as
+# the very first thing, before the upgrade is accepted, and an anon key alone does not
+# pass it. That check is the only thing standing between an anonymous caller and
+# GEMINI_API_KEY-backed traffic billed to us. Do not remove it.
+[functions.voice-relay]
+verify_jwt = false
