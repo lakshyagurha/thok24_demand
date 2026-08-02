@@ -20,6 +20,11 @@ verify_jwt = false
 [functions.send-order-email]
 verify_jwt = true
 
+# Mints the LiveKit join token. A plain POST, so verify_jwt works normally here —
+# none of the WebSocket-upgrade trouble that forced voice-relay to disable it.
+[functions.voice-token]
+verify_jwt = true
+
 # The realtime voice socket.
 #
 # verify_jwt MUST stay false: the platform gateway cannot pass a WebSocket upgrade
