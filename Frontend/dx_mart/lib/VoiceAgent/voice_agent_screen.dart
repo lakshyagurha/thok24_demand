@@ -1,40 +1,48 @@
-import 'dart:math' as math;
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:provider/provider.dart';
 
+import '../CustomWidgets/cart_provider.dart';
+import '../CustomWidgets/product_image.dart';
 import '../design/app_colors.dart';
 import '../design/app_radius.dart';
 import '../design/app_space.dart';
 import '../design/app_type.dart';
-import '../design/haptics.dart';
-import 'audio/mic_capture.dart';
 import 'models/voice_state.dart';
+import 'session/voice_session.dart';
+import 'tools/tool_dispatcher.dart' show VoiceCard;
 import 'widgets/mic_orb.dart';
 
 /// Realtime voice ordering — "Ramu Bhai Live".
 ///
-/// Pushed as its own full-screen route rather than added to the bottom nav:
-/// the shell hardcodes its five tabs across four parallel lists and divides the
-/// bar by `screenWidth / 5`, so a sixth entry means editing all of them. The
-/// existing BolKeOrder tab is left exactly as it was.
-///
-/// Phase 1 scope: the page, the microphone, and the orb reacting to real
-/// loudness. No network, no model, no speech yet.
-class VoiceAgentScreen extends StatefulWidget {
+/// A full-screen route rather than a sixth bottom-nav tab: the shell hardcodes
+/// its five tabs across four parallel lists and divides the bar by
+/// `screenWidth / 5`, so adding one means editing all of them.
+class VoiceAgentScreen extends StatelessWidget {
   const VoiceAgentScreen({super.key});
 
   @override
-  State<VoiceAgentScreen> createState() => _VoiceAgentScreenState();
+  Widget build(BuildContext context) {
+    // Scoped to this route, not to main.dart, so the socket, the microphone and
+    // the audio device are all released when the page is popped.
+    return ChangeNotifierProvider<VoiceSession>(
+      create: (_) => VoiceSession(cart: context.read<CartProvider>()),
+      child: const _VoiceAgentView(),
+    );
+  }
 }
 
-class _VoiceAgentScreenState extends State<VoiceAgentScreen>
-    with WidgetsBindingObserver {
-  final MicCapture _mic = MicCapture();
+class _VoiceAgentView extends StatefulWidget {
+  const _VoiceAgentView();
 
-  VoiceState _state = VoiceState.idle;
-  String? _error;
+  @override
+  State<_VoiceAgentView> createState() => _VoiceAgentViewState();
+}
+
+class _VoiceAgentViewState extends State<_VoiceAgentView>
+    with WidgetsBindingObserver {
+  final TextEditingController _text = TextEditingController();
+  bool _typing = false;
 
   @override
   void initState() {
@@ -45,92 +53,98 @@ class _VoiceAgentScreenState extends State<VoiceAgentScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _mic.dispose();
+    _text.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Never leave a hot microphone behind when the app goes to the background.
-    // A voice feature that keeps listening off-screen is the fastest way to
-    // lose a user's trust permanently.
-    if (state != AppLifecycleState.resumed && _mic.isCapturing) {
-      _stop();
+    // Never leave a hot microphone behind. A voice feature that keeps listening
+    // off-screen loses a user's trust exactly once.
+    if (state != AppLifecycleState.resumed) {
+      context.read<VoiceSession>().stop();
     }
-  }
-
-  Future<void> _toggle() async {
-    if (_state.wantsMic) {
-      await _stop();
-      return;
-    }
-
-    setState(() {
-      _state = VoiceState.connecting;
-      _error = null;
-    });
-
-    final granted = await _mic.hasPermission();
-    if (!mounted) return;
-
-    if (!granted) {
-      // Deliberately no deep-link into system settings: the package that
-      // provides it (`permission_handler`) forces compileSdk 37, which this
-      // project does not build against. Spelling out the path is worth less
-      // than a button, but not worth dragging the whole app's Android SDK
-      // forward for a beta feature.
-      setState(() {
-        _state = VoiceState.failed;
-        _error = 'Mic ki permission chahiye. Phone Settings → Apps → '
-            'DxMart → Permissions se mic on karein.';
-      });
-      AppHaptics.error();
-      return;
-    }
-
-    try {
-      await _mic.start();
-      if (!mounted) return;
-      AppHaptics.tap();
-      setState(() => _state = VoiceState.listening);
-    } catch (e) {
-      if (!mounted) return;
-      AppHaptics.error();
-      setState(() {
-        _state = VoiceState.failed;
-        _error = 'Mic shuru nahi ho paaya. Dobara koshish karein.';
-      });
-    }
-  }
-
-  Future<void> _stop() async {
-    await _mic.stop();
-    if (!mounted) return;
-    AppHaptics.tap();
-    setState(() => _state = VoiceState.idle);
   }
 
   @override
   Widget build(BuildContext context) {
+    final session = context.watch<VoiceSession>();
+
     return Scaffold(
       backgroundColor: AppColors.surfaceDarker,
+      resizeToAvoidBottomInset: true,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              AppColors.surfaceDark,
-              AppColors.surfaceDarker,
-            ],
+            colors: [AppColors.surfaceDark, AppColors.surfaceDarker],
           ),
         ),
         child: SafeArea(
           child: Column(
             children: [
               _TopBar(onClose: () => Navigator.of(context).maybePop()),
-              Expanded(child: _stage()),
-              _BottomEscape(
+              Expanded(
+                child: SingleChildScrollView(
+                  reverse: true,
+                  padding: AppSpace.symmetric(vertical: AppSpace.base),
+                  child: Column(
+                    children: [
+                      MicOrb(
+                        state: session.state,
+                        level: session.level,
+                        size: 190,
+                        onTap: () => session.state.isLive
+                            ? session.stop()
+                            : session.start(),
+                      ),
+                      AppSpace.gapH(AppSpace.lg),
+                      Text(
+                        _statusFor(session.state),
+                        textAlign: TextAlign.center,
+                        style: AppText.h3(color: AppColors.onSurfaceDark),
+                      ),
+                      if (session.error != null) ...[
+                        AppSpace.gapH(AppSpace.sm),
+                        Padding(
+                          padding: AppSpace.page,
+                          child: Text(
+                            session.error!,
+                            textAlign: TextAlign.center,
+                            style: AppText.bodyS(color: AppColors.dangerBorder),
+                          ),
+                        ),
+                      ] else if (session.state == VoiceState.idle) ...[
+                        AppSpace.gapH(AppSpace.sm),
+                        Padding(
+                          padding: AppSpace.page,
+                          child: Text(
+                            'Mic dabaakar boliye — jaise "do kilo aata".',
+                            textAlign: TextAlign.center,
+                            style: AppText.bodyS(
+                                color: AppColors.onSurfaceDarkMuted),
+                          ),
+                        ),
+                      ],
+                      AppSpace.gapH(AppSpace.lg),
+                      _Transcript(turns: session.turns),
+                      if (session.cards.isNotEmpty) ...[
+                        AppSpace.gapH(AppSpace.base),
+                        _Cards(cards: session.cards),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              _Footer(
+                typing: _typing,
+                controller: _text,
+                onToggleTyping: () => setState(() => _typing = !_typing),
+                onSubmit: (v) {
+                  session.sendText(v);
+                  _text.clear();
+                },
                 onBrowse: () => Navigator.of(context).maybePop(),
               ),
             ],
@@ -140,55 +154,9 @@ class _VoiceAgentScreenState extends State<VoiceAgentScreen>
     );
   }
 
-  Widget _stage() {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        MicOrb(
-          state: _state,
-          level: _mic.level,
-          size: 232,
-          onTap: _toggle,
-        ),
-        AppSpace.gapH(AppSpace.xxl),
-        Text(
-          _statusFor(_state),
-          textAlign: TextAlign.center,
-          style: AppText.h3(color: AppColors.onSurfaceDark),
-        ),
-        AppSpace.gapH(AppSpace.sm),
-        Padding(
-          padding: AppSpace.page,
-          child: Text(
-            _error ?? _hintFor(_state),
-            textAlign: TextAlign.center,
-            style: AppText.bodyS(color: AppColors.onSurfaceDarkMuted),
-          ),
-        ),
-        AppSpace.gapH(AppSpace.xl),
-        // Doubles as the Phase 1 proof that real audio is arriving, and as a
-        // quiet signal to the user that they are actually being heard.
-        SizedBox(
-          height: AppSpace.h(36),
-          child: _LevelTrail(level: _mic.level, active: _state.wantsMic),
-        ),
-        if (_state == VoiceState.failed) ...[
-          AppSpace.gapH(AppSpace.lg),
-          TextButton(
-            onPressed: _toggle,
-            child: Text(
-              'Dobara koshish karein',
-              style: AppText.button(color: AppColors.primaryBorder),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-
   static String _statusFor(VoiceState s) => switch (s) {
         VoiceState.idle => 'Boliye, main sun raha hoon',
-        VoiceState.connecting => 'Ek second...',
+        VoiceState.connecting => 'Jud raha hoon...',
         VoiceState.listening => 'Sun raha hoon...',
         VoiceState.thinking => 'Soch raha hoon...',
         VoiceState.speaking => 'Ramu Bhai bol rahe hain',
@@ -197,23 +165,17 @@ class _VoiceAgentScreenState extends State<VoiceAgentScreen>
         VoiceState.placed => 'Order ho gaya!',
         VoiceState.failed => 'Ek dikkat aa gayi',
       };
-
-  static String _hintFor(VoiceState s) => switch (s) {
-        VoiceState.idle => 'Mic dabaakar boliye — jaise "do kilo aata".',
-        VoiceState.listening => 'Rokne ke liye dobara tap karein.',
-        _ => '',
-      };
 }
 
 class _TopBar extends StatelessWidget {
   const _TopBar({required this.onClose});
-
   final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: AppSpace.symmetric(horizontal: AppSpace.sm, vertical: AppSpace.sm),
+      padding:
+          AppSpace.symmetric(horizontal: AppSpace.sm, vertical: AppSpace.xs),
       child: Row(
         children: [
           IconButton(
@@ -226,11 +188,10 @@ class _TopBar extends StatelessWidget {
             children: [
               Text('Ramu Bhai',
                   style: AppText.label(color: AppColors.onSurfaceDark)),
-              // Being upfront that this is automated costs nothing in trust and
-              // is the right default for a voice assistant.
+              // Being upfront that this is automated costs nothing in trust.
               Text('AI assistant',
-                  style: AppText.overline(
-                      color: AppColors.onSurfaceDarkMuted)),
+                  style:
+                      AppText.overline(color: AppColors.onSurfaceDarkMuted)),
             ],
           ),
           const Spacer(),
@@ -242,8 +203,8 @@ class _TopBar extends StatelessWidget {
               color: AppColors.discountSurface.withValues(alpha: 0.16),
               borderRadius: AppRadius.pillAll,
             ),
-            child: Text('BETA',
-                style: AppText.overline(color: AppColors.discount)),
+            child:
+                Text('BETA', style: AppText.overline(color: AppColors.discount)),
           ),
         ],
       ),
@@ -251,112 +212,200 @@ class _TopBar extends StatelessWidget {
   }
 }
 
-/// The always-available way out.
-///
-/// A voice feature must never be the only path to an order — if recognition
-/// fails, or the room is loud, or the user simply cannot speak right now, the
-/// normal shop is one tap away.
-class _BottomEscape extends StatelessWidget {
-  const _BottomEscape({required this.onBrowse});
+/// The conversation, as a ribbon rather than a chat log.
+class _Transcript extends StatelessWidget {
+  const _Transcript({required this.turns});
+  final List<VoiceTurn> turns;
 
+  @override
+  Widget build(BuildContext context) {
+    if (turns.isEmpty) return const SizedBox.shrink();
+    final recent = turns.length > 6 ? turns.sublist(turns.length - 6) : turns;
+
+    return Padding(
+      padding: AppSpace.page,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < recent.length; i++)
+            Padding(
+              padding: EdgeInsets.only(bottom: AppSpace.h(AppSpace.sm)),
+              child: Align(
+                alignment: recent[i].fromUser
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: Opacity(
+                  // Older lines recede instead of scrolling away, so the eye
+                  // stays on what was just said.
+                  opacity: 0.35 + 0.65 * ((i + 1) / recent.length),
+                  child: Text(
+                    recent[i].text,
+                    textAlign:
+                        recent[i].fromUser ? TextAlign.right : TextAlign.left,
+                    style: recent[i].fromUser
+                        ? AppText.bodyS(color: AppColors.onSurfaceDarkMuted)
+                        : AppText.bodyL(color: AppColors.onSurfaceDark),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Products the agent has actually added — one card per confirmed tool call.
+class _Cards extends StatelessWidget {
+  const _Cards({required this.cards});
+  final List<VoiceCard> cards;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = cards.fold<double>(0, (s, c) => s + c.lineTotal);
+    return Padding(
+      padding: AppSpace.page,
+      child: Column(
+        children: [
+          for (final c in cards)
+            Container(
+              margin: EdgeInsets.only(bottom: AppSpace.h(AppSpace.sm)),
+              padding: AppSpace.cardCompact,
+              decoration: BoxDecoration(
+                color: AppColors.onSurfaceDark.withValues(alpha: 0.06),
+                borderRadius: AppRadius.mdAll,
+                border: Border.all(
+                  color: AppColors.onSurfaceDark.withValues(alpha: 0.10),
+                ),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: AppRadius.smAll,
+                    child: Container(
+                      color: Colors.white,
+                      child: ProductImage(
+                        path: c.imagePath,
+                        width: 44.w,
+                        height: 44.w,
+                      ),
+                    ),
+                  ),
+                  AppSpace.gapW(AppSpace.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(c.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.bodyS(
+                                color: AppColors.onSurfaceDark)),
+                        Text('${c.variantName} × ${c.quantity}',
+                            style: AppText.caption(
+                                color: AppColors.onSurfaceDarkMuted)),
+                      ],
+                    ),
+                  ),
+                  Text('₹${c.lineTotal.toStringAsFixed(0)}',
+                      style: AppText.priceM(color: AppColors.onSurfaceDark)),
+                ],
+              ),
+            ),
+          AppSpace.gapH(AppSpace.xs),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('${cards.length} saman',
+                  style: AppText.label(color: AppColors.onSurfaceDarkMuted)),
+              Text('₹${total.toStringAsFixed(0)}',
+                  style: AppText.priceL(color: AppColors.primaryBorder)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The escape hatches. Voice must never be the only way through: if
+/// recognition fails, the room is loud, or the user simply cannot speak right
+/// now, typing and the ordinary shop are both one tap away.
+class _Footer extends StatelessWidget {
+  const _Footer({
+    required this.typing,
+    required this.controller,
+    required this.onToggleTyping,
+    required this.onSubmit,
+    required this.onBrowse,
+  });
+
+  final bool typing;
+  final TextEditingController controller;
+  final VoidCallback onToggleTyping;
+  final ValueChanged<String> onSubmit;
   final VoidCallback onBrowse;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: AppSpace.symmetric(
-          horizontal: AppSpace.gutter, vertical: AppSpace.base),
-      child: TextButton.icon(
-        onPressed: onBrowse,
-        icon: Icon(Icons.grid_view_rounded,
-            size: 18.sp, color: AppColors.onSurfaceDarkMuted),
-        label: Text(
-          'Bina bole order karein',
-          style: AppText.bodyS(color: AppColors.onSurfaceDarkMuted),
-        ),
+          horizontal: AppSpace.gutter, vertical: AppSpace.sm),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (typing)
+            Padding(
+              padding: EdgeInsets.only(bottom: AppSpace.h(AppSpace.sm)),
+              child: TextField(
+                controller: controller,
+                autofocus: true,
+                textInputAction: TextInputAction.send,
+                onSubmitted: onSubmit,
+                style: AppText.bodyM(color: AppColors.onSurfaceDark),
+                decoration: InputDecoration(
+                  hintText: 'Likhiye... jaise "do kilo aata"',
+                  hintStyle:
+                      AppText.bodyS(color: AppColors.onSurfaceDarkMuted),
+                  filled: true,
+                  fillColor: AppColors.onSurfaceDark.withValues(alpha: 0.08),
+                  border: OutlineInputBorder(
+                    borderRadius: AppRadius.pillAll,
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: AppSpace.symmetric(
+                      horizontal: AppSpace.base, vertical: AppSpace.md),
+                  suffixIcon: IconButton(
+                    icon: Icon(Icons.send_rounded,
+                        color: AppColors.primaryBorder, size: 20.sp),
+                    onPressed: () => onSubmit(controller.text),
+                  ),
+                ),
+              ),
+            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              TextButton.icon(
+                onPressed: onToggleTyping,
+                icon: Icon(typing ? Icons.mic_rounded : Icons.keyboard_rounded,
+                    size: 18.sp, color: AppColors.onSurfaceDarkMuted),
+                label: Text(typing ? 'Bolein' : 'Likhein',
+                    style:
+                        AppText.bodyS(color: AppColors.onSurfaceDarkMuted)),
+              ),
+              TextButton.icon(
+                onPressed: onBrowse,
+                icon: Icon(Icons.grid_view_rounded,
+                    size: 18.sp, color: AppColors.onSurfaceDarkMuted),
+                label: Text('Saman dikhao',
+                    style:
+                        AppText.bodyS(color: AppColors.onSurfaceDarkMuted)),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
-}
-
-/// A short rolling history of loudness, drawn as bars.
-class _LevelTrail extends StatefulWidget {
-  const _LevelTrail({required this.level, required this.active});
-
-  final ValueListenable<double> level;
-  final bool active;
-
-  @override
-  State<_LevelTrail> createState() => _LevelTrailState();
-}
-
-class _LevelTrailState extends State<_LevelTrail> {
-  static const int _bars = 32;
-  final List<double> _history = List<double>.filled(_bars, 0);
-
-  @override
-  void initState() {
-    super.initState();
-    widget.level.addListener(_push);
-  }
-
-  @override
-  void dispose() {
-    widget.level.removeListener(_push);
-    super.dispose();
-  }
-
-  void _push() {
-    if (!mounted) return;
-    setState(() {
-      _history.removeAt(0);
-      _history.add(widget.level.value);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(AppSpace.w(220), AppSpace.h(36)),
-      painter: _TrailPainter(
-        history: _history,
-        color: widget.active
-            ? AppColors.primaryBorder
-            : AppColors.onSurfaceDarkMuted.withValues(alpha: 0.35),
-      ),
-    );
-  }
-}
-
-class _TrailPainter extends CustomPainter {
-  _TrailPainter({required this.history, required this.color});
-
-  final List<double> history;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (history.isEmpty) return;
-    final slot = size.width / history.length;
-    final w = slot * 0.42;
-    final paint = Paint()
-      ..color = color
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = w;
-
-    for (var i = 0; i < history.length; i++) {
-      final v = history[i].clamp(0.0, 1.0);
-      // A floor so the trail reads as a resting line rather than vanishing.
-      final h = math.max(size.height * 0.06, size.height * v);
-      final x = slot * i + slot / 2;
-      canvas.drawLine(
-        Offset(x, size.height / 2 - h / 2),
-        Offset(x, size.height / 2 + h / 2),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_TrailPainter old) => true;
 }

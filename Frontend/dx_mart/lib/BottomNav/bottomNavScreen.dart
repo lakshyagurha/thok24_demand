@@ -190,13 +190,13 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
     return (_currentIndex * itemWidth) + (itemWidth / 2) - (indicatorWidth / 2);
   }
 
-  /// Long-press the mic tab to reach the realtime voice agent.
+  /// The mic tab opens the realtime voice agent as a full-screen route.
   ///
-  /// A deliberately small entry point while both voice experiences ship side by
-  /// side. The tab bar hardcodes five tabs across four parallel lists and
-  /// divides its width by five, so adding a sixth tab is a larger change than a
-  /// beta feature warrants — and the existing BolKeOrder tab keeps working
-  /// untouched on a normal tap, which is what makes this reversible.
+  /// It behaves like a centre action button rather than a tab: the new voice
+  /// experience is a conversation, not a scrollable surface to leave parked
+  /// behind an IndexedStack. The tab bar also hardcodes five tabs across four
+  /// parallel lists and divides its width by five, so a sixth entry would mean
+  /// editing all of them.
   void _openVoiceAgent() {
     AppHaptics.tap();
     Navigator.of(context).push(
@@ -204,16 +204,33 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
     );
   }
 
+  /// Long-press still reaches the original BolKeOrder screen.
+  ///
+  /// Kept deliberately: it is the fallback if the live agent misbehaves on a
+  /// real device, and deleting a working path before its replacement has been
+  /// proven on real hardware is how you end up with neither.
+  void _openLegacyVoice() {
+    AppHaptics.selection();
+    setState(() {
+      _visited.add(2);
+      _currentIndex = 2;
+    });
+  }
+
   Widget _buildBottomButton(int index) {
     return Expanded(
       child: GestureDetector(
         onTap: () {
+          if (index == 2) {
+            _openVoiceAgent();
+            return;
+          }
           setState(() {
             _visited.add(index);
             _currentIndex = index;
           });
         },
-        onLongPress: index == 2 ? _openVoiceAgent : null,
+        onLongPress: index == 2 ? _openLegacyVoice : null,
         child: Container(
           padding: EdgeInsets.symmetric(vertical: 4.h), // Clean spacing to fit text labels
           color: Colors.transparent, // Ensures clickable area
