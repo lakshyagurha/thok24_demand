@@ -5,6 +5,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/colors.dart';
 import '../BolKeOrder/bol_ke_order_screen.dart';
+import '../VoiceAgent/voice_agent_screen.dart';
+import '../design/haptics.dart';
 import 'Screens/categoryScreen.dart';
 import 'Screens/homeScreen.dart';
 import 'Screens/order_screen.dart';
@@ -188,6 +190,20 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
     return (_currentIndex * itemWidth) + (itemWidth / 2) - (indicatorWidth / 2);
   }
 
+  /// Long-press the mic tab to reach the realtime voice agent.
+  ///
+  /// A deliberately small entry point while both voice experiences ship side by
+  /// side. The tab bar hardcodes five tabs across four parallel lists and
+  /// divides its width by five, so adding a sixth tab is a larger change than a
+  /// beta feature warrants — and the existing BolKeOrder tab keeps working
+  /// untouched on a normal tap, which is what makes this reversible.
+  void _openVoiceAgent() {
+    AppHaptics.tap();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const VoiceAgentScreen()),
+    );
+  }
+
   Widget _buildBottomButton(int index) {
     return Expanded(
       child: GestureDetector(
@@ -197,6 +213,7 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
             _currentIndex = index;
           });
         },
+        onLongPress: index == 2 ? _openVoiceAgent : null,
         child: Container(
           padding: EdgeInsets.symmetric(vertical: 4.h), // Clean spacing to fit text labels
           color: Colors.transparent, // Ensures clickable area
