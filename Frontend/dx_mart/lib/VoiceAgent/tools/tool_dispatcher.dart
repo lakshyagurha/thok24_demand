@@ -262,7 +262,25 @@ class ToolDispatcher {
 
     _invalidateConfirmation();
     final now = _cart.getQuantity('', '$pid', '${vid ?? 'null'}');
-    cards.removeWhere((c) => c.productId == pid && c.variantId == vid);
+
+    // Only drop the card when the line is actually gone. Removing it on every
+    // update meant "make it three" made the product disappear from the screen
+    // while staying in the cart.
+    final at = cards.indexWhere((c) => c.productId == pid && c.variantId == vid);
+    if (now <= 0) {
+      if (at >= 0) cards.removeAt(at);
+    } else if (at >= 0) {
+      final old = cards[at];
+      cards[at] = VoiceCard(
+        productId: old.productId,
+        variantId: old.variantId,
+        name: old.name,
+        variantName: old.variantName,
+        price: old.price,
+        quantity: now,
+        imagePath: old.imagePath,
+      );
+    }
     onCardsChanged?.call();
     return {'ok': true, 'quantity_now': now, 'cart_count': _cart.getTotalCartItems()};
   }

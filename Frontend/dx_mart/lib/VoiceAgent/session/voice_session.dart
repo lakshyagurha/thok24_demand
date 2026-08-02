@@ -1,64 +1,81 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:livekit_client/livekit_client.dart';
 
 import '../../CustomWidgets/cart_provider.dart';
 import '../../core/supabase.dart';
 import '../../design/haptics.dart';
-import '../audio/mic_capture.dart';
-import '../audio/speech_output.dart';
 import '../models/voice_state.dart';
 import '../tools/tool_dispatcher.dart';
-import 'live_transport.dart';
+import 'rpc_handlers.dart';
 
 /// One line of the conversation ribbon.
 class VoiceTurn {
-  VoiceTurn({required this.fromUser, required this.text});
+  VoiceTurn({required this.fromUser, required this.text, required this.id});
   final bool fromUser;
+  final String id;
   String text;
 }
 
-/// Orchestrates one voice ordering session.
+/// Orchestrates one voice ordering session over LiveKit.
 ///
-/// Scoped to the route rather than the app, so the socket, the microphone and
-/// the audio device are all released when the page closes.
+/// Replaces a hand-rolled PCM-over-WebSocket stack that failed on real
+/// hardware: without a `VOICE_COMMUNICATION` audio route there was no working
+/// acoustic echo cancellation, so the agent heard itself and interrupted its
+/// own reply about 100ms in, every time. WebRTC gives correct audio routing,
+/// an adaptive jitter buffer and packet-loss concealment, none of which is
+/// worth reimplementing.
+///
+/// Scoped to the route, not the app, so the room, the microphone and the audio
+/// device are all released when the page is popped.
 class VoiceSession extends ChangeNotifier {
-  VoiceSession({required CartProvider cart, SpeechOutput? output})
-      : _speech = output ?? PcmSpeechOutput() {
-    _tools = ToolDispatcher(cart: cart, onCardsChanged: notifyListeners);
+  VoiceSession({required CartProvider cart}) {
+    _tools = ToolDispatcher(cart: cart, onCardsChanged: _onToolsChanged);
   }
 
-  final MicCapture _mic = MicCapture();
-  final LiveTransport _transport = LiveTransport();
-  final SpeechOutput _speech;
   late final ToolDispatcher _tools;
 
-  StreamSubscription<Map<String, dynamic>>? _events;
-  StreamSubscription<Uint8List>? _audio;
-  Timer? _silence;
+  Room? _room;
+  EventsListener<RoomEvent>? _listener;
+  Timer? _levelTicker;
+  Timer? _idle;
+  bool _disposed = false;
+  String? _agentIdentity;
 
   VoiceState _state = VoiceState.idle;
   String? _error;
-  String? _resumeHandle;
-  bool _disposed = false;
-
-  /// True once the session has been closed for good and must not reconnect.
-  bool _finished = false;
 
   final List<VoiceTurn> turns = [];
 
+  /// 0..1 energy for the orb: the agent's voice while it speaks, ours otherwise.
+  final ValueNotifier<double> level = ValueNotifier<double>(0);
+
   VoiceState get state => _state;
   String? get error => _error;
-  ValueListenable<double> get level => _mic.level;
   List<VoiceCard> get cards => _tools.cards;
   bool get ordered => _tools.ordered;
 
-  /// Sessions are capped so a phone left face-down in a pocket cannot bill an
-  /// open socket indefinitely.
-  static const Duration _idleTimeout = Duration(seconds: 45);
+  /// A phone left face-down must not hold a billed agent session open.
+  static const Duration _idleTimeout = Duration(minutes: 2);
 
   // ---------------------------------------------------------------------------
+
+  /// Warms DNS, TLS and ICE while the user is still looking at the screen, so
+  /// the tap itself is not paying for connection setup.
+  Future<void> warmUp() async {
+    if (_room != null || !Db.isSignedIn) return;
+    try {
+      final cfg = await _fetchToken();
+      final room = Room();
+      await room.prepareConnection(cfg.url, cfg.token);
+      // Deliberately not retained: the token is short-lived and start() fetches
+      // a fresh one. This call exists only for its DNS/TLS/ICE side effects.
+      await room.dispose();
+    } catch (_) {
+      // Warm-up is best-effort. A failure here must not surface to the user.
+    }
+  }
 
   Future<void> start() async {
     if (_state.isLive) return;
@@ -69,206 +86,210 @@ class VoiceSession extends ChangeNotifier {
       return;
     }
 
-    if (!await _mic.hasPermission()) {
-      _fail('Mic ki permission chahiye. Phone Settings → Apps → DxMart → '
-          'Permissions se mic on karein.');
-      return;
-    }
-
     try {
-      await _speech.start();
-      await _transport.connect(resumeHandle: _resumeHandle);
-      _events = _transport.events.listen(_onEvent, onError: (Object e) {
-        _fail('Connection टूट गया. Dobara koshish karein.');
-      });
+      final cfg = await _fetchToken();
 
-      await _mic.start();
-      _audio = _mic.pcm.listen(_transport.sendAudio);
+      final room = Room(
+        roomOptions: const RoomOptions(
+          // Software AEC/NS/AGC on top of whatever the device provides. This is
+          // the fix for the self-interruption loop.
+          defaultAudioCaptureOptions: AudioCaptureOptions(
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          ),
+        ),
+      );
+      _room = room;
+
+      // Before connect: the agent may issue its first tool call the instant it
+      // joins, and a handler registered afterwards would miss it.
+      registerVoiceRpc(room, _tools);
+
+      _listener = room.createListener();
+      _wireEvents(_listener!);
+
+      await room.connect(cfg.url, cfg.token);
+      await room.localParticipant?.setMicrophoneEnabled(true);
 
       AppHaptics.tap();
       _set(VoiceState.listening);
-      _armIdleTimeout();
+      _startLevelTicker();
+      _armIdle();
+    } on DataException catch (e) {
+      _fail(e.message);
     } catch (e) {
+      debugPrint('VoiceSession.start failed: $e');
       _fail('Voice shuru nahi ho paaya. Dobara koshish karein.');
     }
   }
 
   Future<void> stop() async {
-    _finished = true;
-    _silence?.cancel();
-    await _audio?.cancel();
-    _audio = null;
-    await _mic.stop();
-    await _events?.cancel();
-    _events = null;
-    await _transport.close();
-    await _speech.flush();
-    await _speech.stop();
-    if (_state != VoiceState.placed) _set(VoiceState.idle);
+    _idle?.cancel();
+    _levelTicker?.cancel();
+    _levelTicker = null;
+    await _listener?.dispose();
+    _listener = null;
+    final room = _room;
+    _room = null;
+    _agentIdentity = null;
+    level.value = 0;
+    try {
+      await room?.disconnect();
+      await room?.dispose();
+    } catch (_) {
+      // Already torn down.
+    }
+    if (!_disposed && _state != VoiceState.placed) _set(VoiceState.idle);
   }
 
   /// The typed fallback. Voice must never be the only way through.
-  void sendText(String text) {
+  Future<void> sendText(String text) async {
     final t = text.trim();
-    if (t.isEmpty || !_transport.isOpen) return;
-    turns.add(VoiceTurn(fromUser: true, text: t));
-    _transport.sendText(t);
-    _set(VoiceState.thinking);
+    if (t.isEmpty) return;
+
+    // Typing before the session is open used to be a silent no-op. Start one.
+    if (_room == null) {
+      await start();
+      if (_room == null) return;
+    }
+
+    turns.add(VoiceTurn(fromUser: true, text: t, id: 'typed-${turns.length}'));
+    notifyListeners();
+    _armIdle();
+    try {
+      await _room!.localParticipant?.sendText(
+        t,
+        options: SendTextOptions(topic: 'lk.chat'),
+      );
+    } catch (e) {
+      debugPrint('sendText failed: $e');
+    }
   }
 
   // ---------------------------------------------------------------------------
 
-  void _onEvent(Map<String, dynamic> msg) {
-    if (_disposed) return;
-    _armIdleTimeout();
-
-    if (msg['_closed'] == true) {
-      _onSocketClosed();
-      return;
-    }
-
-    // Keep the latest resumption handle so a server-side drop can be stitched
-    // back together instead of restarting the conversation.
-    final resumption = msg['sessionResumptionUpdate'];
-    if (resumption is Map && resumption['newHandle'] is String) {
-      _resumeHandle = resumption['newHandle'] as String;
-    }
-
-    // The server is about to close. Reconnect before it does, not after.
-    if (msg['goAway'] != null && !_finished) {
-      unawaited(_reconnect());
-      return;
-    }
-
-    final toolCall = msg['toolCall'];
-    if (toolCall is Map && toolCall['functionCalls'] is List) {
-      for (final raw in toolCall['functionCalls'] as List) {
-        if (raw is Map) unawaited(_runTool(raw));
+  void _wireEvents(EventsListener<RoomEvent> l) {
+    // The agent's own state, published by LiveKit as a participant attribute.
+    l.on<ParticipantAttributesChanged>((e) {
+      if (e.participant is! RemoteParticipant) return;
+      _agentIdentity = e.participant.identity;
+      final s = e.attributes['lk.agent.state'];
+      if (s == null) return;
+      // confirming / placing / placed are ours, not LiveKit's — it cannot know
+      // that a cart has been read back or an order is in flight.
+      if (_state == VoiceState.confirming ||
+          _state == VoiceState.placing ||
+          _state == VoiceState.placed) {
+        return;
       }
-    }
-
-    final sc = msg['serverContent'];
-    if (sc is! Map) return;
-
-    // Barge-in. Drop queued speech in the same turn we hear about it.
-    if (sc['interrupted'] == true) {
-      unawaited(_speech.flush());
-      _set(VoiceState.listening);
-    }
-
-    final input = sc['inputTranscription'];
-    if (input is Map && input['text'] is String) {
-      _appendTurn(fromUser: true, text: input['text'] as String);
-    }
-
-    final output = sc['outputTranscription'];
-    if (output is Map && output['text'] is String) {
-      _appendTurn(fromUser: false, text: output['text'] as String);
-      if (_state != VoiceState.speaking) _set(VoiceState.speaking);
-    }
-
-    final modelTurn = sc['modelTurn'];
-    if (modelTurn is Map && modelTurn['parts'] is List) {
-      for (final part in modelTurn['parts'] as List) {
-        if (part is! Map) continue;
-        final inline = part['inlineData'];
-        if (inline is Map && inline['data'] is String) {
-          _speech.enqueue(base64Decode(inline['data'] as String));
-          if (_state != VoiceState.speaking) _set(VoiceState.speaking);
-        }
+      switch (s) {
+        case 'initializing':
+          _set(VoiceState.connecting);
+        case 'listening':
+          _set(VoiceState.listening);
+        case 'thinking':
+          _set(VoiceState.thinking);
+        case 'speaking':
+          _set(VoiceState.speaking);
       }
-    }
+    });
 
-    if (sc['turnComplete'] == true) {
-      _set(_tools.ordered ? VoiceState.placed : VoiceState.listening);
-    }
-  }
+    l.on<ParticipantConnectedEvent>((e) {
+      _agentIdentity ??= e.participant.identity;
+    });
 
-  Future<void> _runTool(Map raw) async {
-    final id = raw['id']?.toString() ?? '';
-    final name = raw['name']?.toString() ?? '';
-    final args = (raw['args'] is Map)
-        ? Map<String, dynamic>.from(raw['args'] as Map)
-        : <String, dynamic>{};
+    l.on<TranscriptionEvent>((e) {
+      final fromUser = e.participant.identity == _room?.localParticipant?.identity;
+      for (final seg in e.segments) {
+        _upsertTurn(id: seg.id, fromUser: fromUser, text: seg.text);
+      }
+      _armIdle();
+      notifyListeners();
+    });
 
-    if (name == 'place_order') _set(VoiceState.placing);
-
-    final result = await _tools.call(name, args);
-    if (_disposed) return;
-
-    if (result['ok'] == true && name == 'add_to_cart') AppHaptics.tap();
-    if (result['ok'] == true && name == 'place_order') AppHaptics.success();
-    if (result['ok'] != true && name == 'place_order') AppHaptics.error();
-
-    _transport.sendToolResponse(id, name, result);
-    notifyListeners();
-  }
-
-  void _onSocketClosed() {
-    if (_finished || _disposed) return;
-    // Edge Functions cap a socket well short of a leisurely grocery order, so a
-    // close mid-conversation is expected rather than exceptional.
-    if (_resumeHandle != null) {
-      unawaited(_reconnect());
-    } else {
+    l.on<RoomDisconnectedEvent>((e) {
+      if (_disposed) return;
+      if (_state == VoiceState.placed) return;
+      debugPrint('room disconnected: ${e.reason}');
       _fail('Connection टूट गया. Dobara shuru karein.');
-    }
+    });
   }
 
-  Future<void> _reconnect() async {
-    if (_finished || _disposed) return;
-    try {
-      await _audio?.cancel();
-      _audio = null;
-      await _events?.cancel();
-      _events = null;
-      await _transport.close();
-
-      await _transport.connect(resumeHandle: _resumeHandle);
-      _events = _transport.events.listen(_onEvent, onError: (Object e) {
-        _fail('Connection टूट गया. Dobara koshish karein.');
-      });
-      _audio = _mic.pcm.listen(_transport.sendAudio);
-      if (!_disposed) _set(VoiceState.listening);
-    } catch (_) {
-      _fail('Connection wapas nahi jud paaya.');
-    }
-  }
-
-  void _appendTurn({required bool fromUser, required String text}) {
+  /// Transcription arrives as revisions of the same segment id, so replace in
+  /// place rather than appending a line per fragment.
+  void _upsertTurn({
+    required String id,
+    required bool fromUser,
+    required String text,
+  }) {
     if (text.isEmpty) return;
-    // Transcription arrives in fragments; append to the open turn rather than
-    // creating a line per syllable.
-    if (turns.isNotEmpty && turns.last.fromUser == fromUser) {
-      turns.last.text += text;
-    } else {
-      turns.add(VoiceTurn(fromUser: fromUser, text: text));
+    for (final t in turns) {
+      if (t.id == id) {
+        t.text = text;
+        return;
+      }
     }
+    turns.add(VoiceTurn(fromUser: fromUser, text: text, id: id));
     if (turns.length > 40) turns.removeRange(0, turns.length - 40);
+  }
+
+  void _onToolsChanged() {
+    if (_disposed) return;
+    // Local states the agent cannot report.
+    if (_tools.ordered) {
+      _set(VoiceState.placed);
+      AppHaptics.success();
+    }
     notifyListeners();
   }
 
-  void _armIdleTimeout() {
-    _silence?.cancel();
-    _silence = Timer(_idleTimeout, () {
+  void _startLevelTicker() {
+    _levelTicker?.cancel();
+    _levelTicker = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      final room = _room;
+      if (room == null) return;
+      double v = 0;
+      if (_state == VoiceState.speaking && _agentIdentity != null) {
+        v = room.remoteParticipants[_agentIdentity]?.audioLevel ?? 0;
+      } else {
+        v = room.localParticipant?.audioLevel ?? 0;
+      }
+      // audioLevel is already 0..1; a little gain makes quiet speech visible.
+      level.value = (v * 3.0).clamp(0.0, 1.0);
+    });
+  }
+
+  void _armIdle() {
+    _idle?.cancel();
+    _idle = Timer(_idleTimeout, () {
       if (_state.isLive) unawaited(stop());
     });
+  }
+
+  Future<_VoiceConnectConfig> _fetchToken() async {
+    try {
+      final res = await Db.client.functions.invoke('voice-token');
+      final data = res.data;
+      if (data is! Map || data['token'] == null || data['url'] == null) {
+        throw DataException('Voice ordering is unavailable right now.');
+      }
+      return _VoiceConnectConfig(
+        url: data['url'] as String,
+        token: data['token'] as String,
+      );
+    } on DataException {
+      rethrow;
+    } catch (e) {
+      rethrowFunctionError(e, 'Voice ordering is unavailable right now.');
+    }
   }
 
   void _fail(String message) {
     _error = message;
     _set(VoiceState.failed);
     AppHaptics.error();
-    unawaited(_teardownQuietly());
-  }
-
-  Future<void> _teardownQuietly() async {
-    _silence?.cancel();
-    await _audio?.cancel();
-    _audio = null;
-    await _mic.stop();
-    await _transport.close();
-    await _speech.flush();
+    unawaited(stop());
   }
 
   void _set(VoiceState s, {String? error}) {
@@ -281,13 +302,24 @@ class VoiceSession extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _finished = true;
-    _silence?.cancel();
-    unawaited(_audio?.cancel());
-    unawaited(_events?.cancel());
-    unawaited(_mic.dispose());
-    unawaited(_transport.dispose());
-    unawaited(_speech.stop());
+    _idle?.cancel();
+    _levelTicker?.cancel();
+    unawaited(_listener?.dispose());
+    final room = _room;
+    _room = null;
+    unawaited(() async {
+      try {
+        await room?.disconnect();
+        await room?.dispose();
+      } catch (_) {}
+    }());
+    level.dispose();
     super.dispose();
   }
+}
+
+class _VoiceConnectConfig {
+  const _VoiceConnectConfig({required this.url, required this.token});
+  final String url;
+  final String token;
 }

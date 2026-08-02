@@ -48,6 +48,11 @@ class _VoiceAgentViewState extends State<_VoiceAgentView>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Warm DNS, TLS and ICE while the user is still reading the screen, so the
+    // tap itself is not paying for connection setup.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<VoiceSession>().warmUp();
+    });
   }
 
   @override

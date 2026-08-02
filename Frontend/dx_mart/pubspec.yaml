@@ -54,11 +54,22 @@ dependencies:
   provider: ^6.1.5+1
   change_app_package_name: ^1.5.0
   supabase_flutter: ^2.16.0
-  geolocator: ^14.0.3
+  # Held at 14.0.2, not 14.0.3: the newer patch pulls geolocator_linux ->
+  # package_info_plus 10 -> win32 ^6, while livekit_client -> device_info_plus
+  # needs win32 ^5. Windows-only transitive constraints, but pub still refuses
+  # to solve, and this app is Android-only.
+  geolocator: ^14.0.2
   geocoding: ^5.0.0
-  record: ^7.1.1
-  web_socket_channel: ^3.0.3
-  flutter_pcm_sound: ^3.3.3
+  # WebRTC transport for the voice agent. Brings real acoustic echo
+  # cancellation, an adaptive jitter buffer and packet-loss concealment — the
+  # things the hand-rolled PCM-over-WebSocket stack could not do.
+  livekit_client: ^2.9.0
+  # Pinned below 13 deliberately. permission_handler 13 forces compileSdk 37,
+  # which Gradle resolves as `android-37`; only `android-37.0` is installed and
+  # the build fails outright. livekit_client does not require this package —
+  # flutter_webrtc handles runtime permissions — we need it only for
+  # BLUETOOTH_CONNECT, so we control the version.
+  permission_handler: ^12.0.1
 flutter_launcher_icons:
   android: "launcher_icon"
   ios: false  # no iOS asset catalog in this checkout; enable when one exists

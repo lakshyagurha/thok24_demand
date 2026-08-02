@@ -5,6 +5,21 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- WebRTC voice session (LiveKit).
+         MODIFY_AUDIO_SETTINGS is the load-bearing one: it lets the stack put the
+         device into communication audio mode, which is what actually engages
+         hardware acoustic echo cancellation. Without AEC the agent hears its own
+         voice through the speaker, its VAD reads that as the user interrupting,
+         and every reply is cut off about 100ms in — which is exactly how the
+         previous hand-rolled audio path failed.
+         The network-state permissions let WebRTC notice a connectivity change and
+         re-negotiate ICE instead of silently stalling mid-conversation. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <!-- So a paired headset can carry the call. Requested at runtime on Android 12+. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
     <!-- For the "use current location" step on first sign-in. COARSE is requested first;
          FINE is only needed if we later want delivery-radius precision, not for the
          display-only district/area name shown today. -->
