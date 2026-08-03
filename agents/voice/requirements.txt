@@ -1,6 +1,10 @@
 # Gemini Live is reached through the google plugin's RealtimeModel, which is a
 # speech-to-speech model: no separate STT, TTS or VAD packages are needed, and
 # adding LiveKit's own turn detector on top would cost 200-400ms for no gain.
-livekit-agents[google]~=1.0
+#
+# Floor is 1.6, not ~=1.0: LiveKit Cloud rejects a deployment declaring
+# anything below 1.2.0, and 1.6.7 is what the code was actually verified
+# against by introspecting the installed package.
+livekit-agents[google]>=1.6,<2
 httpx~=0.27
 python-dotenv~=1.0
