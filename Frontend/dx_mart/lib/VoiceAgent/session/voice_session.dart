@@ -12,10 +12,16 @@ import 'rpc_handlers.dart';
 
 /// One line of the conversation ribbon.
 class VoiceTurn {
-  VoiceTurn({required this.fromUser, required this.text, required this.id});
+  VoiceTurn({
+    required this.fromUser,
+    required this.text,
+    required this.id,
+    this.isFinal = false,
+  });
   final bool fromUser;
-  final String id;
+  String id;
   String text;
+  bool isFinal;
 }
 
 /// Orchestrates one voice ordering session over LiveKit.
@@ -45,6 +51,9 @@ class VoiceSession extends ChangeNotifier {
 
   VoiceState _state = VoiceState.idle;
   String? _error;
+
+  /// Last raw disconnect reason, for diagnosis. Not shown to the customer.
+  String? lastDisconnectReason;
 
   final List<VoiceTurn> turns = [];
 
@@ -140,6 +149,7 @@ class VoiceSession extends ChangeNotifier {
       // Before connect: the agent may issue its first tool call the instant it
       // joins, and a handler registered afterwards would miss it.
       registerVoiceRpc(room, _tools);
+      _registerTranscriptStream(room);
 
       _listener = room.createListener();
       _wireEvents(_listener!);
@@ -204,6 +214,42 @@ class VoiceSession extends ChangeNotifier {
 
   // ---------------------------------------------------------------------------
 
+  /// Subscribes to the transcript.
+  ///
+  /// Transcripts do NOT arrive as `TranscriptionEvent` here — the agent
+  /// publishes them as a text stream on `lk.transcription`, and without a
+  /// handler the SDK logs "ignoring incoming text stream due to no handler for
+  /// topic lk.transcription" and drops them on the floor. That is why the
+  /// screen stayed blank while the agent was talking.
+  ///
+  /// Must be registered before connect, for the same reason as the RPC methods.
+  void _registerTranscriptStream(Room room) {
+    room.registerTextStreamHandler('lk.transcription', (reader, identity) async {
+      try {
+        final attrs = reader.info?.attributes ?? const <String, String>{};
+        // A segment id is stable across revisions of the same utterance, so it
+        // is what keeps a growing sentence on one line instead of spraying a
+        // new line per fragment.
+        final segmentId =
+            attrs['lk.segment_id'] ?? reader.info?.id ?? 'seg-${turns.length}';
+        final finalFlag = attrs['lk.transcription_final'];
+        final text = await reader.readAll();
+        if (_disposed) return;
+
+        _upsertTurn(
+          id: segmentId,
+          fromUser: identity == _room?.localParticipant?.identity,
+          text: text,
+          isFinal: finalFlag == 'true' || finalFlag == '1',
+        );
+        _armIdle();
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[VoiceAgent] transcript stream failed: $e');
+      }
+    });
+  }
+
   void _wireEvents(EventsListener<RoomEvent> l) {
     // The agent's own state, published by LiveKit as a participant attribute.
     l.on<ParticipantAttributesChanged>((e) {
@@ -237,7 +283,12 @@ class VoiceSession extends ChangeNotifier {
     l.on<TranscriptionEvent>((e) {
       final fromUser = e.participant.identity == _room?.localParticipant?.identity;
       for (final seg in e.segments) {
-        _upsertTurn(id: seg.id, fromUser: fromUser, text: seg.text);
+        _upsertTurn(
+          id: seg.id,
+          fromUser: fromUser,
+          text: seg.text,
+          isFinal: seg.isFinal,
+        );
       }
       _armIdle();
       notifyListeners();
@@ -246,26 +297,85 @@ class VoiceSession extends ChangeNotifier {
     l.on<RoomDisconnectedEvent>((e) {
       if (_disposed) return;
       if (_state == VoiceState.placed) return;
-      debugPrint('room disconnected: ${e.reason}');
-      _fail('Connection टूट गया. Dobara shuru karein.');
+      // The reason matters: a generic "connection broke" told neither the user
+      // nor us which side failed. These map to genuinely different problems.
+      debugPrint('[VoiceAgent] room disconnected: ${e.reason}');
+      lastDisconnectReason = e.reason?.toString();
+      _fail(switch (e.reason) {
+        DisconnectReason.roomDeleted ||
+        DisconnectReason.serverShutdown =>
+          'Session poori ho gayi. Dobara shuru karein.',
+        DisconnectReason.participantRemoved =>
+          'Aapko session se hata diya gaya. Dobara shuru karein.',
+        DisconnectReason.joinFailure =>
+          'Session join nahi ho paaya. Internet check karke dobara koshish karein.',
+        DisconnectReason.duplicateIdentity =>
+          'Ek aur session pehle se chal raha hai. Use band karke dobara koshish karein.',
+        DisconnectReason.signalingConnectionFailure ||
+        DisconnectReason.reconnectAttemptsExceeded =>
+          'Network kamzor hai. Behtar signal me dobara koshish karein.',
+        _ => 'Connection टूट गया. Dobara shuru karein.',
+      });
+    });
+
+    // Surfaces whether the agent ever actually arrived. If it never joins, the
+    // problem is dispatch or the worker, not the phone.
+    l.on<ParticipantDisconnectedEvent>((e) {
+      if (e.participant.identity == _agentIdentity) {
+        debugPrint('[VoiceAgent] agent left the room');
+      }
     });
   }
 
-  /// Transcription arrives as revisions of the same segment id, so replace in
-  /// place rather than appending a line per fragment.
+  /// Folds streaming transcription into readable lines.
+  ///
+  /// Matching on segment id alone was not enough. Interim results do not always
+  /// keep the same id between revisions, so each fragment became its own line
+  /// and the screen filled with "Main theekMain theekMain theek hoon. hoon.
+  /// hoon." — the agent said it once; the transcript said it three times.
+  ///
+  /// So: replace by id when we have seen it, otherwise fold into the last line
+  /// from the same speaker if that line is still open, and only start a new
+  /// line once the previous one is final.
   void _upsertTurn({
     required String id,
     required bool fromUser,
     required String text,
+    required bool isFinal,
   }) {
     if (text.isEmpty) return;
+
     for (final t in turns) {
       if (t.id == id) {
         t.text = text;
+        t.isFinal = isFinal;
         return;
       }
     }
-    turns.add(VoiceTurn(fromUser: fromUser, text: text, id: id));
+
+    if (turns.isNotEmpty) {
+      final last = turns.last;
+      if (last.fromUser == fromUser) {
+        // Still being revised — fold into it.
+        if (!last.isFinal) {
+          last.id = id;
+          last.text = text;
+          last.isFinal = isFinal;
+          return;
+        }
+        // Already closed, but the same sentence arrived again under a fresh
+        // segment id. The agent published one line; without this it drew two.
+        if (last.text == text) {
+          last.id = id;
+          last.isFinal = isFinal;
+          return;
+        }
+      }
+    }
+
+    turns.add(
+      VoiceTurn(fromUser: fromUser, text: text, id: id, isFinal: isFinal),
+    );
     if (turns.length > 40) turns.removeRange(0, turns.length - 40);
   }
 

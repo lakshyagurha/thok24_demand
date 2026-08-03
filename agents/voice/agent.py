@@ -218,13 +218,17 @@ async def entrypoint(ctx: JobContext) -> None:
             # are the same spoken language with different scripts, so
             # auto-detection kept rendering the customer's own words in
             # Nastaliq — correct transcription, unreadable to this audience.
+            # language_codes alone. `language_auto` is a LanguageAuto object,
+            # not a bool — passing False raised a pydantic ValidationError that
+            # killed the job the instant the session was constructed, which is
+            # what made the agent join a room and vanish two seconds later.
+            # Supplying explicit codes is what pins the script; there is nothing
+            # to switch off.
             input_audio_transcription=genai_types.AudioTranscriptionConfig(
                 language_codes=["hi-IN"],
-                language_auto=False,
             ),
             output_audio_transcription=genai_types.AudioTranscriptionConfig(
                 language_codes=["hi-IN"],
-                language_auto=False,
             ),
             # The agent leaks into its own microphone on a speakerphone, and
             # the default sensitivity treats that as the customer interrupting,
