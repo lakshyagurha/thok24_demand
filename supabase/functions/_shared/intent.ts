@@ -38,7 +38,12 @@ const UNITS = [
 ];
 
 // Spoken numerals. Hindi-first users say "do kilo", not "2 kilo".
-const NUMBER_WORDS: Record<string, number> = {
+// Null-prototype: `w in NUMBER_WORDS` (see toQuantity) would otherwise answer
+// true for "constructor", "toString" and friends, and the `?? 1` fallback would
+// hand back a *function* as a quantity.
+const NUMBER_WORDS: Record<string, number> = Object.assign(
+  Object.create(null) as Record<string, number>,
+  {
   ek: 1,
   do: 2,
   teen: 3,
@@ -55,10 +60,23 @@ const NUMBER_WORDS: Record<string, number> = {
   nau: 9,
   das: 10,
   dus: 10,
+  // Fractions. These are how people actually buy dal and masala, and every one
+  // of them was missing: "paav bhar haldi" is a quarter kilo, not one packet.
   adha: 0.5,
   aadha: 0.5,
+  aadhaa: 0.5,
+  paav: 0.25,
+  pav: 0.25,
+  pao: 0.25,
+  sawa: 1.25,
+  sava: 1.25,
+  paune: 0.75,
+  pauna: 0.75,
   dhai: 2.5,
+  dhaai: 2.5,
+  adhai: 2.5,
   derh: 1.5,
+  dedh: 1.5, // the commoner spelling; only `derh` existed
   "एक": 1,
   "दो": 2,
   "तीन": 3,
@@ -71,12 +89,24 @@ const NUMBER_WORDS: Record<string, number> = {
   "नौ": 9,
   "दस": 10,
   "आधा": 0.5,
-};
+  "पाव": 0.25,
+  "सवा": 1.25,
+  "पौने": 0.75,
+  "डेढ़": 1.5,
+  "डेढ": 1.5,
+  "ढाई": 2.5,
+  },
+);
 
 const UNIT_RE = UNITS.join("|");
 // Product-name character class: Latin letters, Devanagari block, and spaces.
 const NAME_CHARS = "a-zA-Z\\u0900-\\u097F";
-const QTY = `(\\d+(?:\\.\\d+)?|${Object.keys(NUMBER_WORDS).join("|")})`;
+// Longest-first, so "sawa" is not shadowed by a shorter key that prefixes it,
+// and Devanagari digits are accepted alongside ASCII.
+const NUMBER_WORD_KEYS = Object.keys(NUMBER_WORDS).sort(
+  (a, b) => b.length - a.length,
+);
+const QTY = `([\\d०-९]+(?:[.,][\\d०-९]+)?|${NUMBER_WORD_KEYS.join("|")})`;
 
 // "2 kilo aata" / "do किलो आटा"
 const QTY_UNIT_NAME = new RegExp(
@@ -96,6 +126,19 @@ const QTY_NAME = new RegExp(
 
 /** Words that are never a product name -- filler, verbs, politeness. */
 const STOPWORDS = new Set([
+  // Conversational nouns. Without these, "ek bill dikhao" parses as a request
+  // for one unit of a product called "bill".
+  "bill",
+  "parchi",
+  "hisab",
+  "hisaab",
+  "summary",
+  "cart",
+  "order",
+  "confirm",
+  "पर्ची",
+  "बिल",
+  "हिसाब",
   "bhej",
   "bhejo",
   "bhej do",
@@ -125,10 +168,21 @@ const STOPWORDS = new Set([
   "kuch",
 ]);
 
+/** Devanagari digits ०-९ to ASCII, so "२ किलो" parses like "2 kilo". */
+function westernise(raw: string): string {
+  return raw.replace(
+    /[०-९]/g,
+    (d) => String(d.charCodeAt(0) - 0x0966),
+  );
+}
+
 function toQuantity(raw: string): number {
-  const n = Number(raw);
+  // `\d` is ASCII-only, so a Devanagari numeral never reached Number(). The
+  // existing test suite hid this by rewriting २ to 2 before asserting.
+  const n = Number(westernise(raw));
   if (!Number.isNaN(n)) return n;
-  return NUMBER_WORDS[raw.toLowerCase()] ?? 1;
+  const word = NUMBER_WORDS[raw.toLowerCase()];
+  return typeof word === "number" ? word : 1;
 }
 
 const UNIT_SET = new Set(UNITS);
@@ -189,16 +243,34 @@ export function extractIntents(message: string): Intent[] {
 
 // --- Conversational intents (ported verbatim from process_chat.php) ---------
 
-/** "bill dikhao", "parchi", "hisaab" -> show the running bill. */
+/** "bill dikhao", "parchi", "hisaab" -> show the running bill.
+ *
+ * `\bdikh\b` never matched "dikhao" — the word boundary fails on the trailing
+ * "ao" — so this only ever fired on the word "bill" being present anywhere.
+ * Widened to the real word forms, and the caller must still run extraction
+ * first so "parchi mein 2 kilo aata daal do" adds atta rather than showing a
+ * bill.
+ */
 export function isBillIntent(msg: string): boolean {
-  return /\b(bill|parchi|summary|hisab|hisaab|dikh|show)\b/i.test(msg) ||
+  return /\b(bill|parchi|summary|hisab|hisaab)\b/i.test(msg) ||
+    /\bdikh(a|ao|aiye|aye)?\b/i.test(msg) ||
     /(पर्ची|बिल|हिसाब|दिखा)/.test(msg);
 }
 
-/** "confirm", "book", "pakka" -> proceed to checkout. */
+/** "confirm", "book", "pakka" -> proceed to checkout.
+ *
+ * `chahiye` is deliberately NOT here. It is the commonest ordering verb in the
+ * language ("do kilo aata chahiye") and it is already listed as filler in
+ * STOPWORDS, so treating it as a confirmation checked out an unchanged cart
+ * instead of adding the atta. It is a request, not an agreement.
+ *
+ * Callers must run product extraction FIRST and only consult this when nothing
+ * was extracted — otherwise "parchi mein 2 kilo aata daal do" is read as a
+ * request for the bill and silently adds nothing.
+ */
 export function isConfirmIntent(msg: string): boolean {
-  return /\b(confirm|book|pakka|pikka|chahiye)\b/i.test(msg) ||
-    /(पक्का|कन्फर्म|बुक)/.test(msg);
+  return /\b(confirm|book|pakka|pikka|order kar|place)\b/i.test(msg) ||
+    /(पक्का|कन्फर्म|बुक|ऑर्डर कर)/.test(msg);
 }
 
 /** "regular", "wahi", "pichla" -> re-order the usual. */
