@@ -160,6 +160,11 @@ class VoiceSession extends ChangeNotifier {
 
       await room.connect(cfg.url, cfg.token);
       await room.localParticipant?.setMicrophoneEnabled(true);
+      // Keep the flag in step with reality. Enabling the track here without
+      // recording it left _setMicOpen believing the microphone was shut, so its
+      // idempotence guard skipped the calls that were meant to reopen it and
+      // the session went permanently deaf after the agent's first sentence.
+      _micOpen = true;
 
       AppHaptics.tap();
       _set(VoiceState.listening);

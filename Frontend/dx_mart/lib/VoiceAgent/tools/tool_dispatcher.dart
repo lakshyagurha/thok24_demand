@@ -104,17 +104,18 @@ class ToolDispatcher {
     final q = (args['query'] ?? '').toString().trim();
     if (q.isEmpty) return {'ok': false, 'error': 'Empty query.'};
     final found = await _catalog.search(q);
+    // Capped and short-keyed for the same reason as read_cart: an oversized RPC
+    // response is dropped in transit and surfaces as an unexplained failure.
     return {
       'ok': true,
-      'results': found.take(8).map((p) {
+      'results': found.take(6).map((p) {
         final v = p.defaultVariant;
         return {
-          'product_id': p.id,
-          'name': p.name,
-          'variant_id': v?.id,
-          'variant_name': v?.name,
-          'price': v?.sellingPrice,
-          'in_stock': v?.inStock ?? false,
+          'pid': p.id,
+          'n': p.name.length > 40 ? p.name.substring(0, 40) : p.name,
+          'vid': v?.id,
+          'v': v?.name,
+          'p': v?.sellingPrice,
         };
       }).toList(),
     };
@@ -133,16 +134,15 @@ class ToolDispatcher {
         : p.variants.where((v) => v.id == vid).toList();
     return {
       'ok': true,
-      'product_id': p.id,
-      'name': p.name,
+      'pid': p.id,
+      'n': p.name.length > 40 ? p.name.substring(0, 40) : p.name,
       'variants': variants
+          .take(8)
           .map((v) => {
-                'variant_id': v.id,
-                'variant_name': v.name,
-                'price': v.sellingPrice,
-                'mrp': v.price,
+                'vid': v.id,
+                'v': v.name,
+                'p': v.sellingPrice,
                 'stock': v.stock,
-                'in_stock': v.inStock,
               })
           .toList(),
     };
@@ -315,24 +315,31 @@ class ToolDispatcher {
     _confirmedCartHash = _hashCart(lines);
     _confirmToken = newUuidV4();
 
+    // Deliberately lean. LiveKit caps an RPC response, and the earlier verbose
+    // shape blew that cap: the reply never arrived, the agent reported
+    // "Failed to read RPC v2 response stream: LengthExceeded", and the
+    // customer just heard "kuch technical issue ho gaya".
+    //
+    // So: short keys, no prose, no redundant totals the model can add up
+    // itself, and a bounded number of lines. The instruction about reading the
+    // cart aloud lives in the persona, where it costs nothing per call.
     return {
       'ok': true,
       'confirm_token': _confirmToken,
       'lines': lines
+          .take(25)
           .map((l) => {
-                'name': l.productName,
-                'variant': l.variantName,
-                'quantity': l.quantity,
-                'price': l.sellingPrice,
-                'line_total': l.lineTotal,
+                'n': l.productName.length > 40
+                    ? l.productName.substring(0, 40)
+                    : l.productName,
+                'v': l.variantName,
+                'q': l.quantity,
+                'p': l.sellingPrice,
               })
           .toList(),
       'count': lines.length,
       'subtotal': subtotal,
-      'delivery_address': addresses.first.fullAddress,
-      'note':
-          'Read every line and the subtotal aloud, then ask for confirmation. '
-              'Final charges are computed by the server when the order is placed.',
+      'addr': _shortAddress(addresses.first.fullAddress),
     };
   }
 
@@ -458,6 +465,12 @@ class ToolDispatcher {
   void _invalidateConfirmation() {
     _confirmToken = null;
     _confirmedCartHash = null;
+  }
+
+  /// Enough address for the agent to read back, not the whole postal record.
+  static String _shortAddress(String full) {
+    final one = full.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return one.length > 80 ? '${one.substring(0, 80)}…' : one;
   }
 
   static String _hashCart(List<CartLine> lines) {

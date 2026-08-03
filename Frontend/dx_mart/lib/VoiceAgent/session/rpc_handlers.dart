@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:livekit_client/livekit_client.dart';
 
 import '../tools/tool_dispatcher.dart';
@@ -43,8 +45,23 @@ void registerVoiceRpc(Room room, ToolDispatcher dispatcher) {
         return jsonEncode({'ok': false, 'error': 'Could not read the request.'});
       }
 
-      final result = await dispatcher.call(method, args);
-      return jsonEncode(result);
+      try {
+        final result = await dispatcher.call(method, args);
+        // Logged because a tool failure reaches the customer as a vague spoken
+        // apology ("kuch technical issue ho gaya"), which is unactionable for
+        // them and undiagnosable for us.
+        if (result['ok'] != true) {
+          debugPrint('[VoiceAgent] tool $method -> NOT OK: ${jsonEncode(result)}');
+        } else {
+          debugPrint('[VoiceAgent] tool $method -> ok');
+        }
+        return jsonEncode(result);
+      } catch (e, st) {
+        // An exception here becomes an opaque RpcError on the agent side, so
+        // capture it while it still has a stack trace.
+        debugPrint('[VoiceAgent] tool $method THREW: $e\n$st');
+        return jsonEncode({'ok': false, 'error': 'Wo abhi nahi ho paaya.'});
+      }
     });
   }
 }
