@@ -50,6 +50,8 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
   // Speech to Text
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
+  /// A request is in flight. Gates sending and drives the typing indicator.
+  bool _isSending = false;
   String _listeningTranscript = "";
 
 
@@ -82,8 +84,17 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                 _avatarState = RamuBhaiState.idle;
               }
             });
-            if (_listeningTranscript.trim().isNotEmpty) {
-              _sendMessage(_listeningTranscript);
+            // Consume the transcript before dispatching.
+            //
+            // speech_to_text emits BOTH 'notListening' (audio ended) and
+            // 'done' (session finalised) for a single utterance, and this
+            // handler fires on either. The transcript was only ever cleared in
+            // _startListening, so every stop sent the same sentence twice —
+            // which is why the thread filled with duplicate pairs.
+            final pending = _listeningTranscript.trim();
+            _listeningTranscript = '';
+            if (pending.isNotEmpty) {
+              _sendMessage(pending);
             }
           }
         },
@@ -212,17 +223,27 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     });
   }
 
+  /// Monotonic, so a user message and the bot reply that follows it in the same
+  /// millisecond cannot share an id.
+  int _msgSeq = 0;
+  String _nextId() => '${DateTime.now().microsecondsSinceEpoch}-${_msgSeq++}';
+
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
+    // One request at a time. Nothing stopped a second send while the first was
+    // in flight, so replies could arrive out of order and land under the wrong
+    // question.
+    if (_isSending) return;
 
     final userMsg = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: _nextId(),
       sender: MessageSender.user,
       text: text,
       timestamp: DateTime.now(),
     );
 
     setState(() {
+      _isSending = true;
       _messages.add(userMsg);
       _avatarState = RamuBhaiState.thinking;
       _speechBubbleText = "Hisab laga raha hoon, ek second Didi...";
@@ -237,7 +258,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     final botResponse = await _botService.processMessage(text, '', context);
 
     final botMsg = ChatMessage(
-      id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
+      id: _nextId(),
       sender: MessageSender.bot,
       text: botResponse.replyText,
       timestamp: DateTime.now(),
@@ -256,6 +277,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     }
 
     setState(() {
+      _isSending = false;
       _messages.add(botMsg);
       _avatarState = botResponse.avatarState;
       _speechBubbleText = botResponse.replyText;
@@ -300,15 +322,91 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
   /// Both of these used to have no try/catch at all: a failed write — the likely case on
   /// a patchy connection — threw out of the callback and left Ramu Bhai stuck in the
   /// "thinking" pose forever with nothing shown to the user.
+  /// Adjusts one item straight from its card in the chat.
+  ///
+  /// Goes through CartProvider — the app's single cart writer — so the
+  /// bottom-nav badge and every other open stepper stay in step. The card is
+  /// updated locally rather than by re-asking the server, so the number moves
+  /// under the finger.
+  Future<void> _nudgeItem(Map<String, dynamic> item, int delta) async {
+    final productId = (item['product_id'] as num?)?.toInt();
+    if (productId == null) return;
+    final variantId = (item['variant_id'] as num?)?.toInt();
+    final current = (item['quantity'] as num?)?.toInt() ?? 1;
+    final target = current + delta;
+    if (target < 0) return;
+
+    AppHaptics.selection();
+    final cart = Provider.of<CartProvider>(context, listen: false);
+    final result = await cart.changeQuantity(
+      productId: productId,
+      variantId: variantId,
+      delta: delta,
+      imagePath: (item['image_url'] ?? '').toString(),
+    );
+    if (!mounted || result != CartMutation.ok) return;
+
+    setState(() => item['quantity'] = target);
+    await _refreshBillInPlace();
+  }
+
+  /// Re-reads the cart and rewrites the newest bill/item message in place.
+  ///
+  /// Keeps the transcript honest: adjusting a quantity edits the parchi you are
+  /// looking at instead of pushing another copy of it down the thread.
+  Future<void> _refreshBillInPlace() async {
+    try {
+      final lines = await _cart.items();
+      if (!mounted) return;
+
+      final idx = _messages.lastIndexWhere(
+        (m) =>
+            m.type == MessageType.cartSummary ||
+            (m.sender == MessageSender.bot && m.cartItems.isNotEmpty),
+      );
+      if (idx < 0) return;
+
+      final items = lines.map((l) => l.toCartMap()).toList();
+      final subtotal = lines.fold<double>(
+        0,
+        (sum, l) => sum + l.sellingPrice * l.quantity,
+      );
+
+      setState(() {
+        final old = _messages[idx];
+        _messages[idx] = ChatMessage(
+          id: old.id,
+          sender: old.sender,
+          text: old.text,
+          timestamp: old.timestamp,
+          type: old.type,
+          cartItems: items,
+          subtotal: subtotal,
+          // Charges are the server's to compute; showing a stale total is worse
+          // than showing none, so let the bill widget fall back to the subtotal.
+          finalAmount: old.finalAmount,
+        );
+      });
+    } catch (e) {
+      debugPrint('bill refresh failed: $e');
+    }
+  }
+
+  /// Applies a cart change locally.
+  ///
+  /// This used to finish with `_sendMessage("bill dikhao")`, so every tap on a
+  /// +/- injected a fake *user* message into the transcript and paid for a full
+  /// edge-function round trip before the number moved. The cart is local state;
+  /// changing it is not a thing you say to the shopkeeper.
   Future<void> _mutateCart(Future<void> Function() action) async {
-    setState(() => _avatarState = RamuBhaiState.thinking);
     try {
       await action();
       if (!mounted) return;
       await Provider.of<CartProvider>(context, listen: false).refreshCartData();
       if (!mounted) return;
-      // Re-trigger the bill summary.
-      await _sendMessage("bill dikhao");
+      // Update the bill already on screen in place, rather than appending a new
+      // one for every tap.
+      await _refreshBillInPlace();
     } catch (e) {
       debugPrint('parchi cart update failed: $e');
       if (!mounted) return;
@@ -316,7 +414,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
         _avatarState = RamuBhaiState.idle;
         _messages.add(
           ChatMessage(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            id: _nextId(),
             sender: MessageSender.bot,
             text: 'Maaf karna Bhai, cart update nahi ho paya. Phir se try karein.',
             timestamp: DateTime.now(),
@@ -712,24 +810,18 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                                         ),
                                       ),
                                       
-                                      // Quantity
-                                      Container(
-                                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 3.h),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.primary100,
-                                          borderRadius: BorderRadius.circular(4.r),
-                                        ),
-                                        child: Text(
-                                          "Qty: ${item['quantity']}",
-                                          style: TextStyle(
-                                            fontSize: 10.5.sp,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.primaryColor,
-                                          ),
-                                        ),
+                                      // Quantity, adjustable.
+                                      //
+                                      // This was a read-only "Qty: n" chip, so
+                                      // the only way to correct a misheard
+                                      // amount was to say it again — which
+                                      // adds rather than sets, and made two
+                                      // kilos into four. Tapping is the honest
+                                      // control.
+                                      _InlineQty(
+                                        quantity: (item['quantity'] as num?)?.toInt() ?? 1,
+                                        onChanged: (delta) => _nudgeItem(item, delta),
                                       ),
-                                      SizedBox(width: 6.w),
-                                      Icon(Icons.check_circle, color: Colors.green, size: 15.sp),
                                     ],
                                   ),
                                 ),
@@ -964,6 +1056,65 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Compact +/- for an item card inside the chat.
+///
+/// Deliberately not the shared [QtyStepper]: that one is sized for a product
+/// grid and would dominate a chat bubble. The tap targets are still held to the
+/// 44dp minimum — the parchi's existing steppers are ~26dp, which is below what
+/// a thumb can reliably hit.
+class _InlineQty extends StatelessWidget {
+  const _InlineQty({required this.quantity, required this.onChanged});
+
+  final int quantity;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _btn(Icons.remove_rounded, () => onChanged(-1),
+            semantic: 'Ek kam karein'),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8.w),
+          child: Text(
+            '$quantity',
+            style: TextStyle(
+              fontSize: 12.sp,
+              fontWeight: FontWeight.w700,
+              color: AppColors.primaryColor,
+            ),
+          ),
+        ),
+        _btn(Icons.add_rounded, () => onChanged(1), semantic: 'Ek aur'),
+      ],
+    );
+  }
+
+  Widget _btn(IconData icon, VoidCallback onTap, {required String semantic}) {
+    return Semantics(
+      button: true,
+      label: semantic,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          width: 28.w,
+          height: 28.w,
+          // The visible chip is small, but the hit area is padded out to a
+          // comfortable target.
+          margin: EdgeInsets.all(4.w),
+          decoration: BoxDecoration(
+            color: AppColors.primary100,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 15.sp, color: AppColors.primaryColor),
+        ),
       ),
     );
   }
