@@ -210,7 +210,10 @@ class ToolDispatcher {
     _invalidateConfirmation();
 
     final now = _cart.getQuantity('', '$pid', '$vid');
-    cards.add(VoiceCard(
+    // One card per product+variant, always. Appending on every call produced
+    // two cards for the same moong dal — one showing x2 and one x4 — because a
+    // repeated add is an update to a line that already exists, not a new line.
+    _putCard(VoiceCard(
       productId: pid,
       variantId: vid,
       name: product.name,
@@ -403,6 +406,54 @@ class ToolDispatcher {
   }
 
   // ---------------------------------------------------------------------------
+
+  /// Inserts or replaces the card for one product+variant, keeping its place in
+  /// the list so items do not jump around as quantities change.
+  void _putCard(VoiceCard card) {
+    final at = cards.indexWhere(
+      (c) => c.productId == card.productId && c.variantId == card.variantId,
+    );
+    if (card.quantity <= 0) {
+      if (at >= 0) cards.removeAt(at);
+      return;
+    }
+    if (at >= 0) {
+      cards[at] = card;
+    } else {
+      cards.add(card);
+    }
+  }
+
+  /// Changes a line's quantity from the card's +/- control.
+  ///
+  /// The customer adjusts quantity here rather than by talking, which keeps a
+  /// misheard "do" from silently becoming four of something.
+  Future<void> nudge(VoiceCard card, int delta) async {
+    final result = await _cart.changeQuantity(
+      productId: card.productId,
+      variantId: card.variantId,
+      delta: delta,
+      imagePath: card.imagePath,
+    );
+    if (result != CartMutation.ok) return;
+
+    _invalidateConfirmation();
+    final now = _cart.getQuantity(
+      '',
+      '${card.productId}',
+      '${card.variantId ?? 'null'}',
+    );
+    _putCard(VoiceCard(
+      productId: card.productId,
+      variantId: card.variantId,
+      name: card.name,
+      variantName: card.variantName,
+      price: card.price,
+      quantity: now,
+      imagePath: card.imagePath,
+    ));
+    onCardsChanged?.call();
+  }
 
   void _invalidateConfirmation() {
     _confirmToken = null;

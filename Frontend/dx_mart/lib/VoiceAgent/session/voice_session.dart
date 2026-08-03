@@ -47,6 +47,7 @@ class VoiceSession extends ChangeNotifier {
   Timer? _levelTicker;
   Timer? _idle;
   bool _disposed = false;
+  bool _micOpen = false;
   String? _agentIdentity;
 
   VoiceState _state = VoiceState.idle;
@@ -64,6 +65,9 @@ class VoiceSession extends ChangeNotifier {
   String? get error => _error;
   List<VoiceCard> get cards => _tools.cards;
   bool get ordered => _tools.ordered;
+
+  /// Adjusts a line from the card's own +/- control.
+  Future<void> nudgeCard(VoiceCard card, int delta) => _tools.nudge(card, delta);
 
   /// A phone left face-down must not hold a billed agent session open.
   static const Duration _idleTimeout = Duration(minutes: 2);
@@ -268,10 +272,24 @@ class VoiceSession extends ChangeNotifier {
         case 'initializing':
           _set(VoiceState.connecting);
         case 'listening':
+          _setMicOpen(true);
           _set(VoiceState.listening);
         case 'thinking':
           _set(VoiceState.thinking);
         case 'speaking':
+          // Close the microphone while it talks. Acoustic echo cancellation is
+          // supposed to make this unnecessary, and on this hardware it plainly
+          // does not: the agent's own sentences came back as user transcript
+          // ("कौन सी दाल लक्ष्य भाई..." was its own line), so it answered
+          // itself in a loop and re-ran add_to_cart until the cart held four of
+          // something the customer asked for twice.
+          //
+          // A closed microphone cannot hear anything, which is the one
+          // guarantee AEC could not give. The cost is that speaking over the
+          // agent no longer interrupts it, so the orb becomes a tap-to-
+          // interrupt control instead — a deliberate trade of a feature that
+          // was not working for behaviour that is correct.
+          _setMicOpen(false);
           _set(VoiceState.speaking);
       }
     });
@@ -403,6 +421,31 @@ class VoiceSession extends ChangeNotifier {
       // audioLevel is already 0..1; a little gain makes quiet speech visible.
       level.value = (v * 3.0).clamp(0.0, 1.0);
     });
+  }
+
+  /// Opens or closes the microphone. Guarded so a burst of state updates does
+  /// not thrash the audio track.
+  void _setMicOpen(bool open) {
+    if (_micOpen == open || _room == null) return;
+    _micOpen = open;
+    unawaited(
+      _room!.localParticipant
+          ?.setMicrophoneEnabled(open)
+          .catchError((Object e) {
+        debugPrint('[VoiceAgent] mic toggle failed: $e');
+        return null;
+      }),
+    );
+  }
+
+  /// Cuts the agent off and hands the floor back. Bound to the orb, because
+  /// with the microphone closed during speech there is no longer a voice path
+  /// to interrupt with.
+  Future<void> interrupt() async {
+    if (_state != VoiceState.speaking) return;
+    AppHaptics.tap();
+    _setMicOpen(true);
+    _set(VoiceState.listening);
   }
 
   void _armIdle() {

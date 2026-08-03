@@ -8,6 +8,7 @@ import '../design/app_colors.dart';
 import '../design/app_radius.dart';
 import '../design/app_space.dart';
 import '../design/app_type.dart';
+import '../design/haptics.dart';
 import 'models/voice_state.dart';
 import 'session/voice_session.dart';
 import 'tools/tool_dispatcher.dart' show VoiceCard;
@@ -100,9 +101,17 @@ class _VoiceAgentViewState extends State<_VoiceAgentView>
                         state: session.state,
                         level: session.level,
                         size: 190,
-                        onTap: () => session.state.isLive
-                            ? session.stop()
-                            : session.start(),
+                        onTap: () {
+                          // While it speaks the microphone is closed, so the
+                          // orb is how you take the floor back.
+                          if (session.state == VoiceState.speaking) {
+                            session.interrupt();
+                          } else if (session.state.isLive) {
+                            session.stop();
+                          } else {
+                            session.start();
+                          }
+                        },
                       ),
                       AppSpace.gapH(AppSpace.lg),
                       Text(
@@ -136,7 +145,10 @@ class _VoiceAgentViewState extends State<_VoiceAgentView>
                       _Transcript(turns: session.turns),
                       if (session.cards.isNotEmpty) ...[
                         AppSpace.gapH(AppSpace.base),
-                        _Cards(cards: session.cards),
+                        _Cards(
+                          cards: session.cards,
+                          onNudge: session.nudgeCard,
+                        ),
                       ],
                     ],
                   ),
@@ -164,7 +176,7 @@ class _VoiceAgentViewState extends State<_VoiceAgentView>
         VoiceState.connecting => 'Jud raha hoon...',
         VoiceState.listening => 'Sun raha hoon...',
         VoiceState.thinking => 'Soch raha hoon...',
-        VoiceState.speaking => 'Ramu Bhai bol rahe hain',
+        VoiceState.speaking => 'Ramu Bhai bol rahe hain — rokne ke liye tap karein',
         VoiceState.confirming => 'Order confirm karein?',
         VoiceState.placing => 'Order ja raha hai...',
         VoiceState.placed => 'Order ho gaya!',
@@ -262,8 +274,9 @@ class _Transcript extends StatelessWidget {
 
 /// Products the agent has actually added — one card per confirmed tool call.
 class _Cards extends StatelessWidget {
-  const _Cards({required this.cards});
+  const _Cards({required this.cards, required this.onNudge});
   final List<VoiceCard> cards;
+  final Future<void> Function(VoiceCard card, int delta) onNudge;
 
   @override
   Widget build(BuildContext context) {
@@ -306,9 +319,18 @@ class _Cards extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: AppText.bodyS(
                                 color: AppColors.onSurfaceDark)),
-                        Text('${c.variantName} × ${c.quantity}',
+                        Text(c.variantName,
                             style: AppText.caption(
                                 color: AppColors.onSurfaceDarkMuted)),
+                        AppSpace.gapH(AppSpace.xs),
+                        // Quantity is changed here, by tapping, rather than by
+                        // saying it again. A misheard "do" should never be able
+                        // to quietly become four.
+                        _QtyControl(
+                          quantity: c.quantity,
+                          onMinus: () => onNudge(c, -1),
+                          onPlus: () => onNudge(c, 1),
+                        ),
                       ],
                     ),
                   ),
@@ -331,6 +353,53 @@ class _Cards extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A compact +/- for one card, on the dark canvas.
+class _QtyControl extends StatelessWidget {
+  const _QtyControl({
+    required this.quantity,
+    required this.onMinus,
+    required this.onPlus,
+  });
+
+  final int quantity;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _btn(Icons.remove_rounded, onMinus),
+        Padding(
+          padding: AppSpace.symmetric(horizontal: AppSpace.md),
+          child: Text('$quantity',
+              style: AppText.label(color: AppColors.onSurfaceDark)),
+        ),
+        _btn(Icons.add_rounded, onPlus),
+      ],
+    );
+  }
+
+  Widget _btn(IconData icon, VoidCallback onTap) => InkWell(
+        onTap: () {
+          AppHaptics.selection();
+          onTap();
+        },
+        borderRadius: AppRadius.pillAll,
+        child: Container(
+          // Kept at the minimum tap target even though the glyph is small.
+          width: AppSpace.w(AppSpace.minTapTarget * 0.62),
+          height: AppSpace.h(AppSpace.minTapTarget * 0.62),
+          decoration: BoxDecoration(
+            color: AppColors.onSurfaceDark.withValues(alpha: 0.10),
+            borderRadius: AppRadius.pillAll,
+          ),
+          child: Icon(icon, size: 16.sp, color: AppColors.onSurfaceDark),
+        ),
+      );
 }
 
 /// The escape hatches. Voice must never be the only way through: if
