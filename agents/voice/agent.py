@@ -29,6 +29,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     function_tool,
+    get_job_context,
 )
 from livekit.plugins import google
 
@@ -60,7 +61,12 @@ class RamuBhai(Agent):
         self._phone = phone_identity
 
     async def _call(self, ctx: RunContext, method: str, args: dict) -> dict:
-        return await call_phone(ctx.session.room, self._phone, method, args)
+        # get_job_context().room, NOT ctx.session.room -- AgentSession has no
+        # `room` attribute at all, so the previous form raised AttributeError on
+        # every single tool call. That is why nothing could be added to the cart
+        # and no product card ever appeared: the tools were failing before they
+        # reached the phone.
+        return await call_phone(get_job_context().room, self._phone, method, args)
 
     @function_tool
     async def search_products(self, ctx: RunContext, query: str) -> dict:
@@ -207,8 +213,33 @@ async def entrypoint(ctx: JobContext) -> None:
             # Captions for the on-screen transcript. Without these a
             # speech-to-speech model produces no text at all, which makes the
             # feature unusable to anyone who mishears it or has the phone muted.
-            input_audio_transcription=genai_types.AudioTranscriptionConfig(),
-            output_audio_transcription=genai_types.AudioTranscriptionConfig(),
+            #
+            # The language is pinned rather than auto-detected. Hindi and Urdu
+            # are the same spoken language with different scripts, so
+            # auto-detection kept rendering the customer's own words in
+            # Nastaliq — correct transcription, unreadable to this audience.
+            input_audio_transcription=genai_types.AudioTranscriptionConfig(
+                language_codes=["hi-IN"],
+                language_auto=False,
+            ),
+            output_audio_transcription=genai_types.AudioTranscriptionConfig(
+                language_codes=["hi-IN"],
+                language_auto=False,
+            ),
+            # The agent leaks into its own microphone on a speakerphone, and
+            # the default sensitivity treats that as the customer interrupting,
+            # so it cuts itself off mid-sentence. LOW start-sensitivity demands
+            # stronger evidence before yielding the floor; the padding and
+            # silence window stop it mistaking a mid-sentence breath for the
+            # end of a turn.
+            realtime_input_config=genai_types.RealtimeInputConfig(
+                automatic_activity_detection=genai_types.AutomaticActivityDetection(
+                    start_of_speech_sensitivity=genai_types.StartSensitivity.START_SENSITIVITY_LOW,
+                    end_of_speech_sensitivity=genai_types.EndSensitivity.END_SENSITIVITY_LOW,
+                    prefix_padding_ms=300,
+                    silence_duration_ms=700,
+                ),
+            ),
             # Audio accrues ~25 tokens/sec; without this a long order eventually
             # walks off the end of the context window mid-conversation.
             context_window_compression=genai_types.ContextWindowCompressionConfig(

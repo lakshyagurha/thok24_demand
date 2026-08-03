@@ -59,12 +59,44 @@ class VoiceSession extends ChangeNotifier {
   /// A phone left face-down must not hold a billed agent session open.
   static const Duration _idleTimeout = Duration(minutes: 2);
 
+  static bool _audioConfigured = false;
+
+  /// Puts Android into communication audio mode before WebRTC starts.
+  ///
+  /// This is the fix for the agent hearing itself. Android's hardware acoustic
+  /// echo canceller only engages when the audio session is in
+  /// `inCommunication` mode with voice-communication usage; left on the default
+  /// media route, the speaker feeds straight back into the microphone, the
+  /// model's VAD reads that as the customer interrupting, and the agent cuts
+  /// itself off mid-sentence.
+  ///
+  /// It must run BEFORE WebRTC initialises — the SDK reads these attributes
+  /// when it builds the audio device module, and setting them afterwards is
+  /// silently too late. Idempotent, because a second call after WebRTC is up
+  /// would do nothing useful.
+  static Future<void> _configureAudioSession() async {
+    if (_audioConfigured) return;
+    _audioConfigured = true;
+    try {
+      await LiveKitClient.initialize(
+        initialAudioSessionOptions: const AudioSessionOptions.communication(),
+      );
+      // Grocery ordering happens with the phone in your hand, not at your ear.
+      await AudioManager.instance.setSpeakerOutputPreferred(true);
+    } catch (e) {
+      debugPrint('audio session setup failed: $e');
+    }
+  }
+
   // ---------------------------------------------------------------------------
 
   /// Warms DNS, TLS and ICE while the user is still looking at the screen, so
   /// the tap itself is not paying for connection setup.
   Future<void> warmUp() async {
     if (_room != null || !Db.isSignedIn) return;
+    // Done here rather than at connect time so it lands well before WebRTC is
+    // first touched, which is the only point at which it takes effect.
+    await _configureAudioSession();
     try {
       final cfg = await _fetchToken();
       final room = Room();
@@ -87,6 +119,9 @@ class VoiceSession extends ChangeNotifier {
     }
 
     try {
+      // Safety net: if the screen was opened faster than warmUp() ran, this is
+      // still ahead of the first Room().
+      await _configureAudioSession();
       final cfg = await _fetchToken();
 
       final room = Room(
