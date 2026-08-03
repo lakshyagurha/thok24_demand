@@ -186,12 +186,25 @@ class ToolDispatcher {
     }
 
     final imagePath = product.images.isNotEmpty ? product.images.first : '';
-    final result = await _cart.changeQuantity(
-      productId: pid,
-      variantId: vid,
-      delta: qty,
-      imagePath: imagePath,
-    );
+
+    // CartProvider rejects a write while a previous one for the same line is
+    // still in flight. The agent adds items back to back, so `busy` came up
+    // often — and a refusal there is what produced "add kar diya" with nothing
+    // in the cart: the tool failed, the model narrated success anyway.
+    //
+    // Busy is transient by definition, so wait for the in-flight write instead
+    // of giving up on it.
+    CartMutation result = CartMutation.busy;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      result = await _cart.changeQuantity(
+        productId: pid,
+        variantId: vid,
+        delta: qty,
+        imagePath: imagePath,
+      );
+      if (result != CartMutation.busy) break;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
 
     switch (result) {
       case CartMutation.ok:
@@ -199,12 +212,16 @@ class ToolDispatcher {
       case CartMutation.busy:
         return {
           'ok': false,
-          'error': 'The previous item is still being added. Ask them to repeat.',
+          'error': 'Cart abhi busy hai. Ek second baad phir boliye.',
         };
       case CartMutation.stale:
       case CartMutation.failed:
         return {'ok': false, 'error': 'Could not add that. Please try again.'};
     }
+
+    // Confirm against the cart itself rather than assuming the delta landed.
+    // The card must never show something the cart does not actually hold.
+    await _cart.refreshCartData();
 
     // The cart changed, so any read-back the customer already heard is stale.
     _invalidateConfirmation();

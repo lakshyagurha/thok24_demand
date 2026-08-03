@@ -46,6 +46,7 @@ class VoiceSession extends ChangeNotifier {
   EventsListener<RoomEvent>? _listener;
   Timer? _levelTicker;
   Timer? _idle;
+  Timer? _micWatchdog;
   bool _disposed = false;
   bool _micOpen = false;
   String? _agentIdentity;
@@ -180,6 +181,7 @@ class VoiceSession extends ChangeNotifier {
 
   Future<void> stop() async {
     _idle?.cancel();
+    _micWatchdog?.cancel();
     _levelTicker?.cancel();
     _levelTicker = null;
     await _listener?.dispose();
@@ -282,6 +284,12 @@ class VoiceSession extends ChangeNotifier {
         case 'thinking':
           _set(VoiceState.thinking);
         case 'speaking':
+          // Cosmetic only. The microphone is driven by ActiveSpeakersChanged
+          // instead, because this attribute proved unreliable: the orb sat on
+          // "listening" through entire spoken replies, which meant the mic
+          // close never fired and the echo loop stayed open. Anything
+          // load-bearing must not hang off a signal that can silently not
+          // arrive.
           // Close the microphone while it talks. Acoustic echo cancellation is
           // supposed to make this unnecessary, and on this hardware it plainly
           // does not: the agent's own sentences came back as user transcript
@@ -301,6 +309,27 @@ class VoiceSession extends ChangeNotifier {
 
     l.on<ParticipantConnectedEvent>((e) {
       _agentIdentity ??= e.participant.identity;
+    });
+
+    // The microphone is driven from here, not from lk.agent.state. Active
+    // speakers are computed from real audio energy, so this fires whenever the
+    // agent is actually making sound — which is exactly the condition under
+    // which an open microphone would hear it.
+    l.on<ActiveSpeakersChangedEvent>((e) {
+      // The room is capped at two participants, so any remote speaker is the
+      // agent.
+      final agentTalking = e.speakers.any((p) => p is RemoteParticipant);
+      if (agentTalking) {
+        _setMicOpen(false);
+        _armMicWatchdog();
+        if (_state == VoiceState.listening || _state == VoiceState.thinking) {
+          _set(VoiceState.speaking);
+        }
+      } else {
+        _micWatchdog?.cancel();
+        _setMicOpen(true);
+        if (_state == VoiceState.speaking) _set(VoiceState.listening);
+      }
     });
 
     l.on<TranscriptionEvent>((e) {
@@ -428,6 +457,23 @@ class VoiceSession extends ChangeNotifier {
     });
   }
 
+  /// Force-reopens the microphone if it has been shut too long.
+  ///
+  /// The mic is closed on "agent started speaking" and reopened on "agent
+  /// stopped". If that second event is ever missed the session goes silently
+  /// deaf, which is what "sometimes it listens, sometimes it doesn't" felt
+  /// like. No single dropped event should be able to end a conversation.
+  void _armMicWatchdog() {
+    _micWatchdog?.cancel();
+    _micWatchdog = Timer(const Duration(seconds: 12), () {
+      if (_state.isLive && !_micOpen) {
+        debugPrint('[VoiceAgent] mic watchdog fired — reopening');
+        _setMicOpen(true);
+        if (_state == VoiceState.speaking) _set(VoiceState.listening);
+      }
+    });
+  }
+
   /// Opens or closes the microphone. Guarded so a burst of state updates does
   /// not thrash the audio track.
   void _setMicOpen(bool open) {
@@ -496,6 +542,7 @@ class VoiceSession extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _idle?.cancel();
+    _micWatchdog?.cancel();
     _levelTicker?.cancel();
     unawaited(_listener?.dispose());
     final room = _room;
