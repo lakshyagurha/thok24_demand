@@ -956,7 +956,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
               
               SizedBox(height: 2.h),
               
-              // 5. WhatsApp-Style Input Bar Section
+              // 5. WhatsApp-Style Input Bar Section (Single Clean Pill with + Button)
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -977,7 +977,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Cohesive Input Capsule (WhatsApp Style)
+                    // Single Seamless Input Capsule (No Inner Box!)
                     Expanded(
                       child: Container(
                         constraints: BoxConstraints(minHeight: 46.h, maxHeight: 110.h),
@@ -986,31 +986,45 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                           borderRadius: BorderRadius.circular(24.r),
                           border: Border.all(color: const Color(0xFFD6E4DD), width: 1.0),
                         ),
-                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 4.h),
+                        padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Quick Bill / Ledger Parchi Button inside Pill
+                            // '+' Add Image / Parchi Attachment Button
                             Material(
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: () {
                                   AppHaptics.tap();
-                                  _sendMessage("bill dikhao");
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Row(
+                                        children: [
+                                          Icon(Icons.photo_camera_outlined, color: Colors.white, size: 18.sp),
+                                          SizedBox(width: 8.w),
+                                          Text("Parchi photo option (Coming soon)", style: TextStyle(fontSize: 12.5.sp)),
+                                        ],
+                                      ),
+                                      duration: const Duration(seconds: 2),
+                                      behavior: SnackBarBehavior.floating,
+                                      margin: EdgeInsets.all(16.w),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.r)),
+                                    ),
+                                  );
                                 },
                                 borderRadius: BorderRadius.circular(20.r),
                                 child: Container(
                                   padding: EdgeInsets.all(8.r),
                                   child: Icon(
-                                    Icons.receipt_long_rounded,
+                                    Icons.add_rounded,
                                     color: const Color(0xFF0F4E34),
-                                    size: 20.sp,
+                                    size: 22.sp,
                                   ),
                                 ),
                               ),
                             ),
                             
-                            // Multi-line Text Field
+                            // Multi-line Text Field (100% borderless, no inner box)
                             Expanded(
                               child: TextField(
                                 controller: _inputController,
@@ -1031,8 +1045,15 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                                     color: Colors.grey.shade500,
                                   ),
                                   border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  disabledBorder: InputBorder.none,
+                                  errorBorder: InputBorder.none,
+                                  focusedErrorBorder: InputBorder.none,
+                                  filled: false,
+                                  fillColor: Colors.transparent,
                                   isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 8.h),
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 10.h),
                                 ),
                               ),
                             ),
