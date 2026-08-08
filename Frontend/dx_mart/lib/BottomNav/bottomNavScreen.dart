@@ -5,8 +5,6 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/colors.dart';
 import '../BolKeOrder/bol_ke_order_screen.dart';
-import '../VoiceAgent/voice_agent_screen.dart';
-import '../design/haptics.dart';
 import 'Screens/categoryScreen.dart';
 import 'Screens/homeScreen.dart';
 import 'Screens/order_screen.dart';
@@ -49,15 +47,10 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
   Widget _screenAt(int index) => switch (index) {
         0 => HomeScreen(),
         1 => CategoryScreen(),
-        2 => const BolKeOrderScreen(), // Central Voice tab
+        2 => const BolKeOrderScreen(), // Central Voice/Chat tab
         3 => OrderScreen(),
         _ => WishlistScreen(),
       };
-
-  /// Slot 5 is an action, not a tab: tapping it pushes a route and
-  /// [_currentIndex] never becomes 5, so [_screenAt] and the IndexedStack stay
-  /// at five children.
-  static const int _assistantTab = 5;
 
   final List<String> _iconPaths = [
     'assets/svg/home.svg',
@@ -65,7 +58,6 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
     '', // Custom rendered voice mic icon — Bol Ke Order chat
     'assets/svg/order.svg',
     'assets/svg/wishlist.svg',
-    '', // Custom rendered icon — live AI assistant
   ];
 
   @override
@@ -98,24 +90,6 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
   }
 
   Widget _buildNavIcon(String asset, int index) {
-    if (index == _assistantTab) {
-      // Visually distinct from the chat's mic so the two voice features do not
-      // read as the same button twice. This one never shows an "active" state:
-      // it pushes a route rather than selecting a tab.
-      return Container(
-        padding: EdgeInsets.all(3.r),
-        decoration: BoxDecoration(
-          color: AppColors.secondaryColor,
-          shape: BoxShape.circle,
-        ),
-        child: Icon(
-          Icons.auto_awesome,
-          size: 16.sp,
-          color: AppColors.primaryColor,
-        ),
-      );
-    }
-
     if (index == 2) {
       // Custom microphone widget for Bol Ke Order
       return Container(
@@ -179,7 +153,6 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
                 _buildBottomButton(2),
                 _buildBottomButton(3),
                 _buildBottomButton(4),
-                _buildBottomButton(_assistantTab),
               ],
             ),
           ),
@@ -210,34 +183,15 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
   double _calculateIndicatorPosition() {
     final double screenWidth = MediaQuery.of(context).size.width;
     final double indicatorWidth = 44.w;
-    // Six slots now: five tabs plus the assistant action.
-    final double itemWidth = screenWidth / 6;
+    final double itemWidth = screenWidth / 5;
 
     return (_currentIndex * itemWidth) + (itemWidth / 2) - (indicatorWidth / 2);
-  }
-
-  /// Opens the realtime voice assistant as a full-screen route.
-  ///
-  /// Pushed rather than parked in the IndexedStack because it owns a live
-  /// socket, the microphone and the audio device; a route disposes all three on
-  /// exit, whereas a stack child would keep them resident for the life of the
-  /// app. It still gets its own permanent slot in the bar so it is a feature
-  /// the user can find, not a gesture they have to be told about.
-  void _openVoiceAgent() {
-    AppHaptics.tap();
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const VoiceAgentScreen()),
-    );
   }
 
   Widget _buildBottomButton(int index) {
     return Expanded(
       child: GestureDetector(
         onTap: () {
-          if (index == _assistantTab) {
-            _openVoiceAgent();
-            return;
-          }
           setState(() {
             _visited.add(index);
             _currentIndex = index;
@@ -281,8 +235,6 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
         return 'Orders';
       case 4:
         return 'Wishlist';
-      case _assistantTab:
-        return 'Assistant';
       default:
         return '';
     }
