@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../utils/colors.dart';
 import '../BolKeOrder/bol_ke_order_screen.dart';
+import '../design/haptics.dart';
 import 'Screens/categoryScreen.dart';
 import 'Screens/homeScreen.dart';
 import 'Screens/order_screen.dart';
@@ -47,15 +48,15 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
   Widget _screenAt(int index) => switch (index) {
         0 => HomeScreen(),
         1 => CategoryScreen(),
-        2 => const BolKeOrderScreen(), // Central Voice/Chat tab
         3 => OrderScreen(),
-        _ => WishlistScreen(),
+        4 => WishlistScreen(),
+        _ => const SizedBox.shrink(),
       };
 
   final List<String> _iconPaths = [
     'assets/svg/home.svg',
     'assets/svg/category_aa.svg',
-    '', // Custom rendered voice mic icon — Bol Ke Order chat
+    '', // Custom rendered voice mic icon — Bol Ke Order chat action
     'assets/svg/order.svg',
     'assets/svg/wishlist.svg',
   ];
@@ -77,10 +78,21 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
     final target = BottomNavScreen.openTab.value;
     if (target == null || !mounted) return;
     BottomNavScreen.openTab.value = null; // one-shot
+    if (target == 2) {
+      _openChatScreen();
+      return;
+    }
     setState(() {
       _currentIndex = target;
       _visited.add(target);
     });
+  }
+
+  void _openChatScreen() {
+    AppHaptics.tap();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const BolKeOrderScreen()),
+    );
   }
 
   @override
@@ -91,21 +103,17 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
 
   Widget _buildNavIcon(String asset, int index) {
     if (index == 2) {
-      // Custom microphone widget for Bol Ke Order
+      // Custom microphone action button for Bol Ke Order full-screen chat
       return Container(
-        padding: EdgeInsets.all(3.r),
+        padding: EdgeInsets.all(4.r),
         decoration: BoxDecoration(
-          color: _currentIndex == index 
-              ? AppColors.secondaryColor 
-              : AppColors.primaryColor.withOpacity(0.1),
+          color: AppColors.secondaryColor,
           shape: BoxShape.circle,
         ),
         child: Icon(
           Icons.mic,
-          size: 16.sp,
-          color: _currentIndex == index
-              ? AppColors.primaryColor
-              : Colors.grey.shade700,
+          size: 18.sp,
+          color: AppColors.primaryColor,
         ),
       );
     }
@@ -192,6 +200,10 @@ class _BottomNavScreenState extends State<BottomNavScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: () {
+          if (index == 2) {
+            _openChatScreen();
+            return;
+          }
           setState(() {
             _visited.add(index);
             _currentIndex = index;

@@ -20,6 +20,7 @@ import 'widgets/ramu_bhai_avatar.dart';
 import '../ProductDetailScreen/product_details_screen.dart';
 import '../Checkout/checkout_screen.dart';
 import '../CustomWidgets/product_image.dart';
+import '../BottomNav/bottomNavScreen.dart';
 
 class BolKeOrderScreen extends StatefulWidget {
   const BolKeOrderScreen({Key? key}) : super(key: key);
@@ -613,15 +614,50 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
         backgroundColor: const Color(0xFFD2E5DC), // Calm Eucalyptus/Sage Green
         elevation: 0,
         centerTitle: true,
-        toolbarHeight: 44.h,
-        iconTheme: const IconThemeData(color: Color(0xFF0F4E34)), // Dark forest green icons
-        title: Text(
-          "Bol Ke Order (बोल के ऑर्डर)",
-          style: TextStyle(
-            fontSize: 14.sp,
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF0F4E34), // Dark forest green text
+        toolbarHeight: 48.h,
+        leading: IconButton(
+          icon: Container(
+            padding: EdgeInsets.all(6.r),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.6),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 16.sp,
+              color: const Color(0xFF0F4E34),
+            ),
           ),
+          onPressed: () {
+            AppHaptics.tap();
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              BottomNavScreen.openTab.value = 0;
+            }
+          },
+        ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              "Bol Ke Order",
+              style: TextStyle(
+                fontSize: 15.sp,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF0F4E34),
+              ),
+            ),
+            SizedBox(width: 6.w),
+            Text(
+              "(बोल के ऑर्डर)",
+              style: TextStyle(
+                fontSize: 13.sp,
+                fontWeight: FontWeight.w500,
+                color: const Color(0xFF0F4E34).withValues(alpha: 0.8),
+              ),
+            ),
+          ],
         ),
       ),
       body: Stack(
