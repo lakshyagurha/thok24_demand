@@ -876,8 +876,9 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
               Builder(
                 builder: (context) {
                   final suggestions = _getDynamicSuggestions();
-                  return SizedBox(
-                    height: 36.h,
+                  return Container(
+                    height: 38.h,
+                    margin: EdgeInsets.only(bottom: 4.h),
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       padding: EdgeInsets.symmetric(horizontal: 12.w),
@@ -885,42 +886,66 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                       itemBuilder: (context, index) {
                         final suggestion = suggestions[index];
                         final isHistory = suggestion.contains("bhej do");
-                        return Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4.w),
-                          child: ActionChip(
-                            backgroundColor: isHistory ? Colors.white : AppColors.neutral100,
-                            side: BorderSide(
-                              color: isHistory ? AppColors.primaryColor.withOpacity(0.4) : Colors.grey.shade300,
-                              width: 0.8,
-                            ),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18.r)),
-                            label: isHistory
-                                ? Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.history, size: 13.sp, color: AppColors.primaryColor),
-                                      SizedBox(width: 4.w),
-                                      Text(
-                                        suggestion,
-                                        style: TextStyle(
-                                          fontSize: 12.sp,
-                                          color: AppColors.primaryColor,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : Text(
-                                    suggestion,
-                                    style: TextStyle(
-                                      fontSize: 12.sp,
-                                      color: Colors.black87,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                        final isBill = suggestion.contains("bill");
+                        
+                        return Container(
+                          margin: EdgeInsets.only(right: 6.w),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                AppHaptics.selection();
+                                _sendMessage(suggestion);
+                              },
+                              borderRadius: BorderRadius.circular(18.r),
+                              child: Container(
+                                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 6.h),
+                                decoration: BoxDecoration(
+                                  color: isHistory
+                                      ? const Color(0xFFF0F7F3)
+                                      : (isBill ? const Color(0xFFFFFBEB) : Colors.white),
+                                  border: Border.all(
+                                    color: isHistory
+                                        ? const Color(0xFF2E6F40).withValues(alpha: 0.4)
+                                        : (isBill ? const Color(0xFFD6C885) : Colors.grey.shade300),
+                                    width: 1.0,
                                   ),
-                            onPressed: () {
-                              _sendMessage(suggestion);
-                            },
+                                  borderRadius: BorderRadius.circular(18.r),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.02),
+                                      blurRadius: 2,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      isHistory
+                                          ? Icons.history_rounded
+                                          : (isBill ? Icons.receipt_long_rounded : Icons.auto_awesome_rounded),
+                                      size: 13.sp,
+                                      color: isHistory
+                                          ? const Color(0xFF2E6F40)
+                                          : (isBill ? const Color(0xFF855C08) : Colors.grey.shade700),
+                                    ),
+                                    SizedBox(width: 4.w),
+                                    Text(
+                                      suggestion,
+                                      style: TextStyle(
+                                        fontSize: 12.sp,
+                                        color: isHistory
+                                            ? const Color(0xFF2E6F40)
+                                            : (isBill ? const Color(0xFF855C08) : Colors.black87),
+                                        fontWeight: isHistory ? FontWeight.w600 : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         );
                       },
@@ -929,109 +954,149 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                 }
               ),
               
-              SizedBox(height: 4.h),
+              SizedBox(height: 2.h),
               
-              // 5. Input Bar Section
+              // 5. WhatsApp-Style Input Bar Section
               Container(
-                color: Colors.white,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 6,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
                 padding: EdgeInsets.only(
-                  left: 12.w,
-                  right: 12.w,
-                  top: 6.h,
-                  bottom: 8.h + MediaQuery.of(context).viewPadding.bottom,
+                  left: 8.w,
+                  right: 8.w,
+                  top: 8.h,
+                  bottom: 10.h + MediaQuery.of(context).viewPadding.bottom,
                 ),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    // Ledger Parchi / Bill Summary Button
-                    GestureDetector(
-                      onTap: () => _sendMessage("bill dikhao"),
-                      child: Container(
-                        height: 42.h,
-                        width: 42.w,
-                        margin: EdgeInsets.only(right: 8.w),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFCFBEB),
-                          borderRadius: BorderRadius.circular(24.r),
-                          border: Border.all(color: const Color(0xFFD6C885), width: 1.2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 2,
-                              offset: const Offset(0, 1),
-                            )
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.receipt_long,
-                          color: Color(0xff855C08),
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                    // Text Input
+                    // Cohesive Input Capsule (WhatsApp Style)
                     Expanded(
                       child: Container(
-                        height: 42.h,
+                        constraints: BoxConstraints(minHeight: 46.h, maxHeight: 110.h),
                         decoration: BoxDecoration(
-                          color: AppColors.neutral50,
+                          color: const Color(0xFFF0F4F2), // Calm light sage tint
                           borderRadius: BorderRadius.circular(24.r),
-                          border: Border.all(color: Colors.grey.shade300, width: 1.2),
+                          border: Border.all(color: const Color(0xFFD6E4DD), width: 1.0),
                         ),
-                        padding: EdgeInsets.symmetric(horizontal: 16.w),
-                        child: Center(
-                          child: TextField(
-                            controller: _inputController,
-                            focusNode: _focusNode,
-                            style: TextStyle(fontSize: 14.sp),
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: _sendMessage,
-                            decoration: InputDecoration(
-                              hintText: "likhiye ya boliye... / लिखिए या बोलिए...",
-                              hintStyle: TextStyle(
-                                fontSize: 13.sp,
-                                color: AppColors.hintTextColor,
+                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 4.h),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Quick Bill / Ledger Parchi Button inside Pill
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () {
+                                  AppHaptics.tap();
+                                  _sendMessage("bill dikhao");
+                                },
+                                borderRadius: BorderRadius.circular(20.r),
+                                child: Container(
+                                  padding: EdgeInsets.all(8.r),
+                                  child: Icon(
+                                    Icons.receipt_long_rounded,
+                                    color: const Color(0xFF0F4E34),
+                                    size: 20.sp,
+                                  ),
+                                ),
                               ),
-                              border: InputBorder.none,
-                              isDense: true,
                             ),
-                          ),
+                            
+                            // Multi-line Text Field
+                            Expanded(
+                              child: TextField(
+                                controller: _inputController,
+                                focusNode: _focusNode,
+                                maxLines: 4,
+                                minLines: 1,
+                                style: TextStyle(
+                                  fontSize: 14.sp,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                                textInputAction: TextInputAction.send,
+                                onSubmitted: _sendMessage,
+                                decoration: InputDecoration(
+                                  hintText: "likhiye ya boliye... / लिखिए या बोलिए...",
+                                  hintStyle: TextStyle(
+                                    fontSize: 13.sp,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                  border: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 8.h),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                     
                     SizedBox(width: 8.w),
                     
-                    // Voice Mic or Send Button
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 150),
-                      child: ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: _inputController,
-                        builder: (context, value, child) {
-                          final hasText = value.text.trim().isNotEmpty;
-                          if (hasText) {
-                            return FloatingActionButton(
-                              key: const ValueKey("send_btn"),
-                              mini: true,
-                              backgroundColor: AppColors.primaryColor,
-                              onPressed: () => _sendMessage(_inputController.text),
-                              child: const Icon(Icons.send, color: Colors.white, size: 18),
-                            );
-                          }
-                          
-                          // Microphone button with pulse colors
-                          return FloatingActionButton(
-                            key: const ValueKey("mic_btn"),
-                            mini: true,
-                            backgroundColor: _isListening ? Colors.red : AppColors.secondaryColor,
-                            onPressed: _isListening ? _stopListening : _startListening,
-                            child: Icon(
-                              _isListening ? Icons.mic_off : Icons.mic,
-                              color: _isListening ? Colors.white : Colors.black,
-                              size: 18,
+                    // Circular Action Button (Voice Mic or Send Arrow)
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _inputController,
+                      builder: (context, value, child) {
+                        final hasText = value.text.trim().isNotEmpty;
+                        
+                        return GestureDetector(
+                          onTap: () {
+                            AppHaptics.tap();
+                            if (hasText) {
+                              _sendMessage(_inputController.text);
+                            } else {
+                              if (_isListening) {
+                                _stopListening();
+                              } else {
+                                _startListening();
+                              }
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 46.r,
+                            height: 46.r,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _isListening
+                                  ? Colors.red.shade600
+                                  : (hasText
+                                      ? AppColors.primaryColor
+                                      : const Color(0xFF0F4E34)), // Forest Green for mic
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (_isListening ? Colors.red : const Color(0xFF0F4E34)).withValues(alpha: 0.3),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                          );
-                        },
-                      ),
+                            child: Center(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 150),
+                                child: Icon(
+                                  hasText
+                                      ? Icons.send_rounded
+                                      : (_isListening ? Icons.mic_off_rounded : Icons.mic_rounded),
+                                  key: ValueKey("${hasText}_$_isListening"),
+                                  color: Colors.white,
+                                  size: 21.sp,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
