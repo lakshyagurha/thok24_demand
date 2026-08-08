@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import '../../utils/app_haptics.dart';
+import '../../design/haptics.dart';
 
 /// Interactive candidate brand & variant comparison card deck for BolKeOrder.
 /// Displayed when user query (e.g., "atta") matches multiple brands (e.g., Fortune vs Aashirvaad).

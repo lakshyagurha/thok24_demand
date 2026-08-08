@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import '../../utils/app_haptics.dart';
+import '../../design/haptics.dart';
 
 /// Themed occasion bundle card (e.g., Ganesh Puja, Chai Nashta) in BolKeOrder chat.
 /// Displays itemized list of bundle items with inline quantity adjustment and 1-tap add to cart.
