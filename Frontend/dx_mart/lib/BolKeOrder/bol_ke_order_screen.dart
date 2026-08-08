@@ -17,6 +17,8 @@ import 'services/bot_service.dart';
 import 'services/supabase_bot_service.dart';
 import 'widgets/bahi_khata_bill.dart';
 import 'widgets/ramu_bhai_avatar.dart';
+import 'widgets/candidate_options_card.dart';
+import 'widgets/occasion_bundle_card.dart';
 import '../ProductDetailScreen/product_details_screen.dart';
 import '../Checkout/checkout_screen.dart';
 import '../CustomWidgets/product_image.dart';
@@ -158,15 +160,16 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
   List<String> _getDynamicSuggestions() {
     final List<String> suggestions = [];
     
-    // 1. Add key commands first
+    // 1. Add key commands and occasion shortcuts first
     suggestions.add("bill dikhao");
     suggestions.add("mera regular order");
+    suggestions.add("Ganesh Puja kit");
+    suggestions.add("Chai nashta bhej do");
 
     // 2. Add short names of previously purchased items
     for (var item in _previousPurchases) {
       final String fullName = item['name'] ?? '';
       if (fullName.isNotEmpty) {
-        // Extract first 1-2 words
         final words = fullName.split(',')[0].split(' ');
         final shortName = words.take(2).join(' ');
         final prompt = "$shortName bhej do";
@@ -177,9 +180,10 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
     }
 
     // 3. Add fallbacks if list is small
-    final fallbacks = ["2 kilo aata", "1 litre tel", "chai aur biscuit"];
+    final fallbacks = ["2 kilo aata", "1 litre tel", "monthly ration"];
     for (var fallback in fallbacks) {
-      if (suggestions.length < 8 && !suggestions.contains(fallback)) {
+      if (suggestions.length >= 8) break;
+      if (!suggestions.contains(fallback)) {
         suggestions.add(fallback);
       }
     }
@@ -734,6 +738,20 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                         onItemRemoved: (_) {},
                         onOrderConfirmed: () {},
                         isConfirmedView: true,
+                      );
+                    }
+
+                    if (msg.type == MessageType.optionsChoice || msg.type == MessageType.substituteOffer) {
+                      return CandidateOptionsCard(
+                        candidates: msg.candidateItems,
+                        onSelectOption: _sendMessage,
+                      );
+                    }
+
+                    if (msg.type == MessageType.bundleSummary) {
+                      return OccasionBundleCard(
+                        items: msg.cartItems.isNotEmpty ? msg.cartItems : msg.candidateItems,
+                        onAddBundleToCart: _sendMessage,
                       );
                     }
 

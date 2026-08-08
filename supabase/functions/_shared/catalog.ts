@@ -253,6 +253,23 @@ export function findProduct(index: Index, spoken: string): Product | null {
   return ranked.length > 0 ? ranked[0].product : null;
 }
 
+/** Finds an in-stock alternative for an out-of-stock product based on token overlap. */
+export function findAlternatives(index: Index, outOfStockProduct: Product): Product | null {
+  const tokens = norm(outOfStockProduct.name).split(" ").filter((t) => t.length >= 3);
+  for (const p of index.products) {
+    if (p.id === outOfStockProduct.id) continue;
+    const hasStock = p.variants.some((v) => (v.stock ?? 0) > 0);
+    if (!hasStock) continue;
+
+    const pName = norm(p.name);
+    // Token overlap match (e.g. "oil", "atta", "rice", "dal")
+    if (tokens.some((t) => pName.includes(t) || p.aliases.some((a) => a.includes(t)))) {
+      return p;
+    }
+  }
+  return null;
+}
+
 /** Compact catalog for an LLM prompt: ids, names, aliases, packs, stock. */
 export function renderForPrompt(index: Index): string {
   const lines: string[] = [];
@@ -269,3 +286,4 @@ export function renderForPrompt(index: Index): string {
   }
   return lines.join("\n");
 }
+

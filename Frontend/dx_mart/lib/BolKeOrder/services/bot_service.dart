@@ -13,6 +13,7 @@ class BotResponse {
   final MessageType messageType;
   final RamuBhaiState avatarState;
   final List<Map<String, dynamic>> cartItems;
+  final List<Map<String, dynamic>> candidateItems;
   final double subtotal;
   final double finalAmount;
 
@@ -21,6 +22,7 @@ class BotResponse {
     this.messageType = MessageType.text,
     this.avatarState = RamuBhaiState.idle,
     this.cartItems = const [],
+    this.candidateItems = const [],
     this.subtotal = 0.0,
     this.finalAmount = 0.0,
   });

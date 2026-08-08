@@ -7,7 +7,10 @@ enum MessageType {
   text,
   cartSummary,      // Displayed as Bahi Khata / Parchi
   orderConfirmed,   // Displayed as Order Confirmed Success Card
-  checkout          // Triggers navigation to checkout page
+  checkout,         // Triggers navigation to checkout page
+  optionsChoice,    // Displayed as Interactive Brand Comparison Cards
+  bundleSummary,    // Displayed as Occasion Bundle Parchi (e.g. Ganesh Puja)
+  substituteOffer,  // Displayed as Out-of-Stock Alternative Offer Card
 }
 
 class ChatMessage {
@@ -17,6 +20,7 @@ class ChatMessage {
   final DateTime timestamp;
   final MessageType type;
   final List<Map<String, dynamic>> cartItems;
+  final List<Map<String, dynamic>> candidateItems;
   final double subtotal;
   final double finalAmount;
 
@@ -27,6 +31,7 @@ class ChatMessage {
     required this.timestamp,
     this.type = MessageType.text,
     this.cartItems = const [],
+    this.candidateItems = const [],
     this.subtotal = 0.0,
     this.finalAmount = 0.0,
   });
@@ -38,6 +43,7 @@ class ChatMessage {
     DateTime? timestamp,
     MessageType? type,
     List<Map<String, dynamic>>? cartItems,
+    List<Map<String, dynamic>>? candidateItems,
     double? subtotal,
     double? finalAmount,
   }) {
@@ -48,8 +54,10 @@ class ChatMessage {
       timestamp: timestamp ?? this.timestamp,
       type: type ?? this.type,
       cartItems: cartItems ?? this.cartItems,
+      candidateItems: candidateItems ?? this.candidateItems,
       subtotal: subtotal ?? this.subtotal,
       finalAmount: finalAmount ?? this.finalAmount,
     );
   }
 }
+

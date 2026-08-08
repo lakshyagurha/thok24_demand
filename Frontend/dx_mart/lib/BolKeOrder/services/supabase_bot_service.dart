@@ -48,12 +48,15 @@ class SupabaseBotService implements BotService {
           .map((e) => _normaliseItem(Map<String, dynamic>.from(e as Map)))
           .toList();
 
+      final type = _messageType(data['message_type'] as String?);
+
       return BotResponse(
         replyText: (data['reply'] as String?) ?? 'Maaf karna, kuch error aa gaya.',
-        messageType: _messageType(data['message_type'] as String?),
+        messageType: type,
         avatarState:
             items.isNotEmpty ? RamuBhaiState.thumbsUp : RamuBhaiState.idle,
-        cartItems: items,
+        cartItems: type == MessageType.optionsChoice || type == MessageType.substituteOffer ? const [] : items,
+        candidateItems: type == MessageType.optionsChoice || type == MessageType.substituteOffer ? items : const [],
         subtotal: _toDouble(data['subtotal']),
         finalAmount: _toDouble(data['final_amount']),
       );
@@ -70,6 +73,9 @@ class SupabaseBotService implements BotService {
         'cartSummary' => MessageType.cartSummary,
         'orderConfirmed' => MessageType.orderConfirmed,
         'checkout' => MessageType.checkout,
+        'optionsChoice' => MessageType.optionsChoice,
+        'bundleSummary' => MessageType.bundleSummary,
+        'substituteOffer' => MessageType.substituteOffer,
         _ => MessageType.text,
       };
 
