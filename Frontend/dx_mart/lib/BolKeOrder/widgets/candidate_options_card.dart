@@ -51,107 +51,110 @@ class CandidateOptionsCard extends StatelessWidget {
             ],
           ),
           SizedBox(height: 10.h),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: candidates.length,
-            separatorBuilder: (_, __) => SizedBox(height: 8.h),
-            itemBuilder: (context, index) {
-              final item = candidates[index];
-              final name = item['name'] ?? item['product_name'] ?? '';
-              final variantName = item['variant_name'] ?? '';
-              final price = item['selling_price'] ?? item['price'] ?? 0;
+          Column(
+            children: [
+              for (int index = 0; index < candidates.length; index++) ...[
+                if (index > 0) SizedBox(height: 8.h),
+                Builder(
+                  builder: (context) {
+                    final item = candidates[index];
+                    final name = item['name'] ?? item['product_name'] ?? '';
+                    final variantName = item['variant_name'] ?? '';
+                    final price = item['selling_price'] ?? item['price'] ?? 0;
 
-              return Container(
-                padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12.r),
-                  border: Border.all(color: Colors.grey.shade300, width: 0.8),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 36.r,
-                      height: 36.r,
+                    return Container(
+                      padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFE8F5E9),
-                        borderRadius: BorderRadius.circular(8.r),
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12.r),
+                        border: Border.all(color: Colors.grey.shade300, width: 0.8),
                       ),
-                      child: Center(
-                        child: Icon(
-                          Icons.shopping_bag_outlined,
-                          color: const Color(0xFF2E6F40),
-                          size: 20.sp,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: 10.w),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
-                          Text(
-                            name,
-                            style: TextStyle(
-                              fontSize: 13.sp,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
+                          Container(
+                            width: 36.r,
+                            height: 36.r,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F5E9),
+                              borderRadius: BorderRadius.circular(8.r),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (variantName.isNotEmpty)
-                            Text(
-                              variantName,
-                              style: TextStyle(
-                                fontSize: 11.sp,
-                                color: Colors.grey.shade600,
+                            child: Center(
+                              child: Icon(
+                                Icons.shopping_bag_outlined,
+                                color: const Color(0xFF2E6F40),
+                                size: 20.sp,
                               ),
                             ),
+                          ),
+                          SizedBox(width: 10.w),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: TextStyle(
+                                    fontSize: 13.sp,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (variantName.isNotEmpty)
+                                  Text(
+                                    variantName,
+                                    style: TextStyle(
+                                      fontSize: 11.sp,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          SizedBox(width: 8.w),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                "₹$price",
+                                style: TextStyle(
+                                  fontSize: 13.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: const Color(0xFF0F4E34),
+                                ),
+                              ),
+                              SizedBox(height: 4.h),
+                              InkWell(
+                                onTap: () {
+                                  AppHaptics.tap();
+                                  onSelectOption("1 $name");
+                                },
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF0F4E34),
+                                    borderRadius: BorderRadius.circular(12.r),
+                                  ),
+                                  child: Text(
+                                    "+ Add",
+                                    style: TextStyle(
+                                      fontSize: 11.sp,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
-                    ),
-                    SizedBox(width: 8.w),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          "₹$price",
-                          style: TextStyle(
-                            fontSize: 13.sp,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF0F4E34),
-                          ),
-                        ),
-                        SizedBox(height: 4.h),
-                        InkWell(
-                          onTap: () {
-                            AppHaptics.tap();
-                            onSelectOption("1 $name");
-                          },
-                          child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF0F4E34),
-                              borderRadius: BorderRadius.circular(12.r),
-                            ),
-                            child: Text(
-                              "+ Add",
-                              style: TextStyle(
-                                fontSize: 11.sp,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                    );
+                  },
                 ),
-              );
-            },
+              ],
+            ],
           ),
         ],
       ),

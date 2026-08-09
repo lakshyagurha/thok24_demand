@@ -125,86 +125,89 @@ class _OccasionBundleCardState extends State<OccasionBundleCard> {
             ],
           ),
           Divider(height: 16.h, color: const Color(0xFFEADBBE)),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _bundleItems.length,
-            separatorBuilder: (_, __) => SizedBox(height: 6.h),
-            itemBuilder: (context, index) {
-              final item = _bundleItems[index];
-              final name = item['name'] ?? item['product_name'] ?? '';
-              final variantName = item['variant_name'] ?? '';
-              final price = (item['selling_price'] ?? item['price'] ?? 0) as num;
-              final qty = item['quantity'] ?? 1;
+          Column(
+            children: [
+              for (int index = 0; index < _bundleItems.length; index++) ...[
+                if (index > 0) SizedBox(height: 6.h),
+                Builder(
+                  builder: (context) {
+                    final item = _bundleItems[index];
+                    final name = item['name'] ?? item['product_name'] ?? '';
+                    final variantName = item['variant_name'] ?? '';
+                    final price = (item['selling_price'] ?? item['price'] ?? 0) as num;
+                    final qty = item['quantity'] ?? 1;
 
-              return Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    return Row(
                       children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: TextStyle(
+                                  fontSize: 12.5.sp,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (variantName.toString().isNotEmpty)
+                                Text(
+                                  variantName.toString(),
+                                  style: TextStyle(
+                                    fontSize: 10.5.sp,
+                                    color: Colors.grey.shade600,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
                         Text(
-                          name,
+                          "₹${price * qty}",
                           style: TextStyle(
-                            fontSize: 12.5.sp,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (variantName.toString().isNotEmpty)
-                          Text(
-                            variantName.toString(),
-                            style: TextStyle(
-                              fontSize: 10.5.sp,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    "₹${price * qty}",
-                    style: TextStyle(
-                      fontSize: 12.sp,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF5C3E00),
-                    ),
-                  ),
-                  SizedBox(width: 8.w),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12.r),
-                      border: Border.all(color: const Color(0xFFD6E4DD)),
-                    ),
-                    child: Row(
-                      children: [
-                        InkWell(
-                          onTap: () => _updateQuantity(index, -1),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                            child: Icon(Icons.remove, size: 14.sp, color: Colors.red.shade700),
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF5C3E00),
                           ),
                         ),
-                        Text(
-                          "$qty",
-                          style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold),
-                        ),
-                        InkWell(
-                          onTap: () => _updateQuantity(index, 1),
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
-                            child: Icon(Icons.add, size: 14.sp, color: const Color(0xFF0F4E34)),
+                        SizedBox(width: 8.w),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12.r),
+                            border: Border.all(color: const Color(0xFFD6E4DD)),
+                          ),
+                          child: Row(
+                            children: [
+                              InkWell(
+                                onTap: () => _updateQuantity(index, -1),
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                                  child: Icon(Icons.remove, size: 14.sp, color: Colors.red.shade700),
+                                ),
+                              ),
+                              Text(
+                                "$qty",
+                                style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.bold),
+                              ),
+                              InkWell(
+                                onTap: () => _updateQuantity(index, 1),
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                                  child: Icon(Icons.add, size: 14.sp, color: const Color(0xFF0F4E34)),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                ],
-              );
-            },
+                    );
+                  },
+                ),
+              ],
+            ],
           ),
           SizedBox(height: 12.h),
           Row(
