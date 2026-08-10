@@ -9,14 +9,19 @@ import {
   type Variant,
 } from "../_shared/catalog.ts";
 import {
+  matchOccasionBundle,
+  resolveBundle,
+} from "../_shared/bundles.ts";
+import {
   extractIntents,
   type Intent,
   isBillIntent,
   isConfirmIntent,
+  isRegularIntent,
 } from "../_shared/intent.ts";
 import type { SupabaseClient } from "jsr:@supabase/supabase-js@2";
 
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-1.5-flash";
 
 type CartLine = {
   id: number;
@@ -118,6 +123,10 @@ async function saveMessage(
   if (error) console.error("chat_messages insert failed:", error.message);
 }
 
+function isGreetingIntent(msg: string): boolean {
+  return /\b(halo|hello|hi|namaste|नमस्ते|हेलो|हाय|hlo|helo|hey|kya hal)\b/i.test(msg.trim());
+}
+
 async function geminiAnalyze(
   message: string,
   catalogPrompt: string,
@@ -133,9 +142,9 @@ async function geminiAnalyze(
     `YOUR TASK:\n` +
     `Analyze the customer's message against CATALOG, REGULAR ORDERS, and CART.\n` +
     `Select the INTENT_TYPE:\n` +
-    `- "ORDER": Customer wants specific item(s) (e.g., "2 kilo aata", "oil and sugar").\n` +
+    `- "ORDER": Customer wants specific item(s) (e.g., "2 kilo aata", "oil and sugar", "chai").\n` +
     `- "BUNDLE": Customer asks for occasion/festival/meal kits (e.g., "Ganesh Puja", "Diwali pooja kit", "Chai Nashta", "Monthly Ration", "biryani items"). Select matching product_ids from CATALOG.\n` +
-    `- "RECALL_REGULAR": Customer asks for past purchases (e.g., "jo pichhle baar mangwaya tha", "wahi regular", "pichla order", "wahi bhej do"). Select item product_ids from REGULAR ORDERS.\n` +
+    `- "RECALL_REGULAR": Customer asks for past purchases (e.g., "jo pichhle baar mangwaya tha", "wahi regular", "mera regular order", "pichla order", "wahi bhej do"). Select item product_ids from REGULAR ORDERS.\n` +
     `- "GREETING": Customer says hello, hi, namaste, casual greeting, or asks how Ramu Bhai is doing.\n` +
     `- "SHOW_BILL": Customer asks to see bill/parchi/hisaab.\n` +
     `- "CHECKOUT": Customer wants to confirm/place/checkout order.\n` +
@@ -160,10 +169,13 @@ async function geminiAnalyze(
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
         body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }] }] }),
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(10_000),
       },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error("Gemini HTTP error:", res.status);
+      return null;
+    }
     const body = await res.json();
     const text: string | undefined = body?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) return null;
@@ -171,7 +183,7 @@ async function geminiAnalyze(
     const cleaned = text.replaceAll("```json", "").replaceAll("```", "").trim();
     return JSON.parse(cleaned) as GeminiAnalysis;
   } catch (e) {
-    console.error("geminiAnalyze failed:", e);
+    console.error("geminiAnalyze error:", e);
     return null;
   }
 }
@@ -286,7 +298,6 @@ Deno.serve(async (req) => {
 
     const index = await loadIndex(db);
 
-    // Fetch user regulars for prompt context
     type RegularRow = {
       product_id: number;
       variant_id: number;
@@ -309,7 +320,7 @@ Deno.serve(async (req) => {
       .map((i) => `P${i.product_id} "${i.product_name}" x ${i.quantity}`)
       .join("\n");
 
-    // Primary AI Reasoning Core via Gemini
+    // 1. Primary Intelligence: Try Gemini AI
     const aiAnalysis = await geminiAnalyze(
       message,
       renderForPrompt(index),
@@ -320,14 +331,12 @@ Deno.serve(async (req) => {
     if (aiAnalysis) {
       const type = aiAnalysis.intent_type;
 
-      // 1. OFF_TOPIC Guardrail
       if (type === "OFF_TOPIC") {
         const reply = aiAnalysis.reply || "Didi/Bhaiya, main toh aapka Ramu Bhai hoon, ration aur kirana dukandar! Aaj ghar ke liye kya mangvana hai?";
         await saveMessage(db, userId, "bot", reply);
         return json({ success: true, reply, items: [], message_type: "text" }, 200, req);
       }
 
-      // 2. GREETING
       if (type === "GREETING") {
         const reply = aiAnalysis.reply || "Namaste Didi! 🙏 Ramu Bhai hazir hai. Aaj ghar ke liye kya mangvana hai?";
         const items = (regulars ?? []).slice(0, 3).map((r) => ({
@@ -351,7 +360,6 @@ Deno.serve(async (req) => {
         }, 200, req);
       }
 
-      // 3. SHOW_BILL
       if (type === "SHOW_BILL") {
         if (cart.items.length === 0) {
           const reply = "Didi, abhi aapki parchi khali hai. Kuch mangvana ho toh boliye! 🛍️";
@@ -371,7 +379,6 @@ Deno.serve(async (req) => {
         }, 200, req);
       }
 
-      // 4. CHECKOUT
       if (type === "CHECKOUT") {
         if (cart.items.length === 0) {
           const reply = "Didi, abhi aapki parchi khali hai. Kuch add karne ko boliye! 😊";
@@ -391,7 +398,6 @@ Deno.serve(async (req) => {
         }, 200, req);
       }
 
-      // 5. BUNDLE (Ganesh Puja, Chai Nashta, etc.)
       if (type === "BUNDLE" && aiAnalysis.items && aiAnalysis.items.length > 0) {
         const bundleItems: any[] = [];
         for (const item of aiAnalysis.items) {
@@ -423,7 +429,6 @@ Deno.serve(async (req) => {
         }, 200, req);
       }
 
-      // 6. RECALL_REGULAR ("jo pichhle baar mangwaya tha")
       if (type === "RECALL_REGULAR") {
         const added: CartLine[] = [];
         for (const r of regulars ?? []) {
@@ -452,10 +457,8 @@ Deno.serve(async (req) => {
         return json({ success: true, reply, items: added, message_type: "text" }, 200, req);
       }
 
-      // 7. ORDER (Items extracted by Gemini)
       if (type === "ORDER" && aiAnalysis.items && aiAnalysis.items.length > 0) {
         const added: CartLine[] = [];
-        const notes: string[] = [];
         for (const item of aiAnalysis.items) {
           const product = index.products.find((p) => p.id === item.product_id);
           if (!product) continue;
@@ -479,30 +482,93 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fallback if LLM failed or missed
-    const earlyIntents = extractIntents(message);
-    const added: CartLine[] = [];
-    for (const intent of earlyIntents) {
-      const resolved = matchOne(index, intent.product_name);
-      if (resolved.kind === "one") {
-        const line = resolveLine({
-          product_id: resolved.product.id,
-          product_name: resolved.product.name,
-          variants: resolved.product.variants,
-          image_url: resolved.product.image_url,
-        }, intent.quantity, intent.unit);
-        if (line && line.stock > 0) {
-          added.push(await addToCart(db, userId, line, Math.min(line.packs, line.stock)));
-        }
+    // 2. Comprehensive Deterministic Fallback (Guarantees no failure even if LLM fails)
+    if (isGreetingIntent(message)) {
+      const reply = "Namaste Didi! 🙏 Ramu Bhai hazir hai. Aaj ghar ke liye kya mangvana hai?";
+      await saveMessage(db, userId, "bot", reply);
+      return json({ success: true, reply, items: [], message_type: "text" }, 200, req);
+    }
+
+    if (isRegularIntent(message)) {
+      const added: CartLine[] = [];
+      for (const r of regulars ?? []) {
+        const { data: image } = await db
+          .from("product_images").select("image_url").eq("product_id", r.product_id).limit(1).maybeSingle();
+        added.push(
+          await addToCart(db, userId, {
+            product_id: r.product_id,
+            product_name: r.products?.name ?? "",
+            variant_id: r.variant_id,
+            variant_name: r.product_variants?.name ?? "",
+            price: Number(r.product_variants?.price ?? 0),
+            selling_price: Number(r.product_variants?.selling_price ?? 0),
+            image_url: image?.image_url ?? "",
+            packs: 1,
+            note: undefined,
+            stock: r.product_variants?.stock ?? 0,
+          }, 1),
+        );
+      }
+      const reply = added.length > 0
+        ? "Aapka regular order cart mein add kar diya gaya hai. Kuch aur chahiye?"
+        : "Didi, abhi tak koi regular order nahi mila. Pehli baar kya mangvana hai?";
+      await saveMessage(db, userId, "bot", reply);
+      return json({ success: true, reply, items: added, message_type: "text" }, 200, req);
+    }
+
+    const occasionBundle = matchOccasionBundle(message);
+    if (occasionBundle) {
+      const bundleItems = resolveBundle(index, occasionBundle);
+      const reply = `Ji Didi! Ye raha aapka ${occasionBundle.titles.en} (${occasionBundle.titles.hi}). Aap items check karke cart mein add kar sakti hain:`;
+      await saveMessage(db, userId, "bot", reply);
+      return json({ success: true, reply, items: bundleItems, message_type: "bundleSummary" }, 200, req);
+    }
+
+    if (isBillIntent(message)) {
+      if (cart.items.length === 0) {
+        const reply = "Didi, abhi aapki parchi khali hai. Kuch mangvana ho toh boliye! 🛍️";
+        await saveMessage(db, userId, "bot", reply);
+        return json({ success: true, reply, items: [], message_type: "text" }, 200, req);
+      }
+      const c = await charges(db, cart.subtotal);
+      const reply = "Ji Didi, ye raha aapka bill/parchi. Sab sahi hai na?";
+      await saveMessage(db, userId, "bot", reply);
+      return json({ success: true, reply, items: cart.items, message_type: "cartSummary", subtotal: cart.subtotal, final_amount: c.final }, 200, req);
+    }
+
+    if (isConfirmIntent(message)) {
+      if (cart.items.length === 0) {
+        const reply = "Didi, abhi aapki parchi khali hai. Kuch add karne ko boliye! 😊";
+        await saveMessage(db, userId, "bot", reply);
+        return json({ success: true, reply, items: [], message_type: "text" }, 200, req);
+      }
+      const c = await charges(db, cart.subtotal);
+      const reply = "Didi, maine checkout page khol diya hai. Apni details verify karke order place kar lijiye! 🛍️";
+      await saveMessage(db, userId, "bot", reply);
+      return json({ success: true, reply, items: cart.items, message_type: "checkout", subtotal: cart.subtotal, final_amount: c.final }, 200, req);
+    }
+
+    // Try single product match (e.g., "chai", "atta", "tel")
+    const resolvedProduct = matchOne(index, message);
+    if (resolvedProduct.kind === "one") {
+      const line = resolveLine({
+        product_id: resolvedProduct.product.id,
+        product_name: resolvedProduct.product.name,
+        variants: resolvedProduct.product.variants,
+        image_url: resolvedProduct.product.image_url,
+      }, 1, null);
+      if (line && line.stock > 0) {
+        const addedLine = await addToCart(db, userId, line, Math.min(line.packs, line.stock));
+        const reply = `Ji Didi, maine 1 x ${addedLine.name} cart me add kar diya hai!`;
+        await saveMessage(db, userId, "bot", reply);
+        return json({ success: true, reply, items: [addedLine], message_type: "text" }, 200, req);
       }
     }
 
-    const reply = added.length > 0
-      ? `Ji Didi, maine cart me add kar diya: ${added.map((a) => a.name).join(", ")}.`
-      : "Maaf karna Didi, main samajh nahi paya. Kripya product ka naam aur quantity bataiye.";
-
+    // Ultimate polite guidance fallback
+    const reply = "Ji Didi, main samajh nahi paya. Kripya product ka naam aur quantity bataiye, jaise '2 kilo aata' ya '1 packet chai'.";
     await saveMessage(db, userId, "bot", reply);
-    return json({ success: true, reply, items: added, message_type: "text" }, 200, req);
+    return json({ success: true, reply, items: [], message_type: "text" }, 200, req);
   } catch (e) {
     console.error("process-chat failed:", e instanceof Error ? e.message : e);
     return json({ success: false, message: "Something went wrong" }, 500, req);
