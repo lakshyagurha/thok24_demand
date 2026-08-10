@@ -128,10 +128,6 @@ class _OccasionBundleCardState extends State<OccasionBundleCard> {
                         color: const Color(0xFF5C3E00),
                       ),
                     ),
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF5C3E00),
-                      ),
-                    ),
                     Text(
                       "Aap yahan quantity kam ya zyada kar sakte hain",
                       style: TextStyle(
