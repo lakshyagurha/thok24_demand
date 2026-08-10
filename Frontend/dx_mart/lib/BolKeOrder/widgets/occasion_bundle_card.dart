@@ -6,11 +6,13 @@ import '../../design/haptics.dart';
 /// Displays itemized list of bundle items with inline quantity adjustment and 1-tap add to cart.
 class OccasionBundleCard extends StatefulWidget {
   final List<Map<String, dynamic>> items;
+  final String? headerTitle;
   final Function(String message) onAddBundleToCart;
 
   const OccasionBundleCard({
     super.key,
     required this.items,
+    this.headerTitle,
     required this.onAddBundleToCart,
   });
 
@@ -23,7 +25,7 @@ class _OccasionBundleCardState extends State<OccasionBundleCard> {
 
   @override
   void initState() {
-    super.initState() ;
+    super.initState();
     _bundleItems = List<Map<String, dynamic>>.from(widget.items);
   }
 
@@ -65,7 +67,21 @@ class _OccasionBundleCardState extends State<OccasionBundleCard> {
 
   @override
   Widget build(BuildContext context) {
-    if (_bundleItems.isEmpty) return const SizedBox.shrink();
+    if (_bundleItems.isEmpty) {
+      return Container(
+        margin: EdgeInsets.symmetric(vertical: 8.h),
+        padding: EdgeInsets.all(14.r),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16.r),
+          border: Border.all(color: const Color(0xFFE0E0E0)),
+        ),
+        child: Text(
+          widget.headerTitle ?? "Didi, is bundle ke items abhi mil nahi rahe. Kripya product ka naam bataiye.",
+          style: TextStyle(fontSize: 13.sp, color: Colors.black87),
+        ),
+      );
+    }
 
     return Container(
       margin: EdgeInsets.symmetric(vertical: 8.h),
@@ -89,8 +105,8 @@ class _OccasionBundleCardState extends State<OccasionBundleCard> {
             children: [
               Container(
                 padding: EdgeInsets.all(6.r),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFF3CD),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFF3CD),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -105,9 +121,13 @@ class _OccasionBundleCardState extends State<OccasionBundleCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      "Pooja / Occasion Samagri List 🪔",
+                      widget.headerTitle ?? "Pooja / Occasion Samagri List 🪔",
                       style: TextStyle(
-                        fontSize: 13.5.sp,
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF5C3E00),
+                      ),
+                    ),
                         fontWeight: FontWeight.bold,
                         color: const Color(0xFF5C3E00),
                       ),

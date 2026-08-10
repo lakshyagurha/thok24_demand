@@ -751,6 +751,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                     if (msg.type == MessageType.bundleSummary) {
                       return OccasionBundleCard(
                         items: msg.cartItems.isNotEmpty ? msg.cartItems : msg.candidateItems,
+                        headerTitle: msg.text,
                         onAddBundleToCart: _sendMessage,
                       );
                     }

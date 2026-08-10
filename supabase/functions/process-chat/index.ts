@@ -398,24 +398,53 @@ Deno.serve(async (req) => {
         }, 200, req);
       }
 
-      if (type === "BUNDLE" && aiAnalysis.items && aiAnalysis.items.length > 0) {
+      if (type === "BUNDLE") {
         const bundleItems: any[] = [];
-        for (const item of aiAnalysis.items) {
-          const p = index.products.find((prod) => prod.id === item.product_id);
-          if (p && p.variants.length > 0) {
-            const v = p.variants.find((varnt) => (varnt.stock ?? 0) > 0) ?? p.variants[0];
-            bundleItems.push({
-              product_id: p.id,
-              product_name: p.name,
-              name: p.name,
-              variant_id: v.id,
-              variant_name: v.name ?? "",
-              price: v.price,
-              selling_price: v.selling_price,
-              quantity: item.quantity ?? 1,
-              image_url: p.image_url,
-              stock: v.stock,
-            });
+        if (aiAnalysis.items && aiAnalysis.items.length > 0) {
+          for (const item of aiAnalysis.items) {
+            const p = index.products.find((prod) => prod.id === item.product_id);
+            if (p && p.variants.length > 0) {
+              const v = p.variants.find((varnt) => (varnt.stock ?? 0) > 0) ?? p.variants[0];
+              bundleItems.push({
+                product_id: p.id,
+                product_name: p.name,
+                name: p.name,
+                variant_id: v.id,
+                variant_name: v.name ?? "",
+                price: v.price,
+                selling_price: v.selling_price,
+                quantity: item.quantity ?? 1,
+                image_url: p.image_url,
+                stock: v.stock,
+              });
+            }
+          }
+        }
+
+        // If Gemini items were empty, fallback to catalog bundle resolver
+        if (bundleItems.length === 0) {
+          const occ = matchOccasionBundle(message);
+          if (occ) {
+            bundleItems.push(...resolveBundle(index, occ));
+          } else {
+            // General catalog product match
+            for (const prod of index.products.slice(0, 4)) {
+              const v = prod.variants.find((varnt) => (varnt.stock ?? 0) > 0) ?? prod.variants[0];
+              if (v) {
+                bundleItems.push({
+                  product_id: prod.id,
+                  product_name: prod.name,
+                  name: prod.name,
+                  variant_id: v.id,
+                  variant_name: v.name ?? "",
+                  price: v.price,
+                  selling_price: v.selling_price,
+                  quantity: 1,
+                  image_url: prod.image_url,
+                  stock: v.stock,
+                });
+              }
+            }
           }
         }
 
