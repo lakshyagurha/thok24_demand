@@ -142,7 +142,7 @@ async function geminiAnalyze(
     `YOUR TASK:\n` +
     `Analyze the customer's message against CATALOG, REGULAR ORDERS, and CART.\n` +
     `Select the INTENT_TYPE:\n` +
-    `- "ORDER": Customer wants specific item(s) (e.g., "2 kilo aata", "oil and sugar", "chai").\n` +
+    `- "ORDER": Customer wants specific item(s) (e.g., "2 kg aata", "2 kilo aata", "1 litre tel", "oil and sugar", "chai"). Match to product_ids from CATALOG.\n` +
     `- "BUNDLE": Customer asks for occasion/festival/meal kits (e.g., "Ganesh Puja", "Diwali pooja kit", "Chai Nashta", "Monthly Ration", "biryani items"). Select matching product_ids from CATALOG.\n` +
     `- "RECALL_REGULAR": Customer asks for past purchases (e.g., "jo pichhle baar mangwaya tha", "wahi regular", "mera regular order", "pichla order", "wahi bhej do"). Select item product_ids from REGULAR ORDERS.\n` +
     `- "GREETING": Customer says hello, hi, namaste, casual greeting, or asks how Ramu Bhai is doing.\n` +
@@ -421,13 +421,11 @@ Deno.serve(async (req) => {
           }
         }
 
-        // If Gemini items were empty, fallback to catalog bundle resolver
         if (bundleItems.length === 0) {
           const occ = matchOccasionBundle(message);
           if (occ) {
             bundleItems.push(...resolveBundle(index, occ));
           } else {
-            // General catalog product match
             for (const prod of index.products.slice(0, 4)) {
               const v = prod.variants.find((varnt) => (varnt.stock ?? 0) > 0) ?? prod.variants[0];
               if (v) {
@@ -577,21 +575,47 @@ Deno.serve(async (req) => {
       return json({ success: true, reply, items: cart.items, message_type: "checkout", subtotal: cart.subtotal, final_amount: c.final }, 200, req);
     }
 
-    // Try single product match (e.g., "chai", "atta", "tel")
-    const resolvedProduct = matchOne(index, message);
-    if (resolvedProduct.kind === "one") {
-      const line = resolveLine({
-        product_id: resolvedProduct.product.id,
-        product_name: resolvedProduct.product.name,
-        variants: resolvedProduct.product.variants,
-        image_url: resolvedProduct.product.image_url,
-      }, 1, null);
-      if (line && line.stock > 0) {
-        const addedLine = await addToCart(db, userId, line, Math.min(line.packs, line.stock));
-        const reply = `Ji Didi, maine 1 x ${addedLine.name} cart me add kar diya hai!`;
-        await saveMessage(db, userId, "bot", reply);
-        return json({ success: true, reply, items: [addedLine], message_type: "text" }, 200, req);
+    // Parse quantity + unit + product_name (e.g. "2 kg aata", "2 kilo aata", "1 litre tel", "500g sugar", "1 packet chai")
+    const intents = extractIntents(message);
+    const added: CartLine[] = [];
+
+    if (intents.length > 0) {
+      for (const intent of intents) {
+        const resolved = matchOne(index, intent.product_name);
+        if (resolved.kind === "one") {
+          const line = resolveLine({
+            product_id: resolved.product.id,
+            product_name: resolved.product.name,
+            variants: resolved.product.variants,
+            image_url: resolved.product.image_url,
+          }, intent.quantity, intent.unit);
+          if (line && line.stock > 0) {
+            added.push(await addToCart(db, userId, line, Math.min(line.packs, line.stock)));
+          }
+        }
       }
+    }
+
+    if (added.length === 0) {
+      // Try direct product name match (e.g. "aata", "chai", "tel")
+      const resolvedProduct = matchOne(index, message);
+      if (resolvedProduct.kind === "one") {
+        const line = resolveLine({
+          product_id: resolvedProduct.product.id,
+          product_name: resolvedProduct.product.name,
+          variants: resolvedProduct.product.variants,
+          image_url: resolvedProduct.product.image_url,
+        }, 1, null);
+        if (line && line.stock > 0) {
+          added.push(await addToCart(db, userId, line, Math.min(line.packs, line.stock)));
+        }
+      }
+    }
+
+    if (added.length > 0) {
+      const reply = `Ji Didi, maine ${added.map((a) => `${a.quantity}x ${a.name}`).join(", ")} cart me add kar diya hai!`;
+      await saveMessage(db, userId, "bot", reply);
+      return json({ success: true, reply, items: added, message_type: "text" }, 200, req);
     }
 
     // Ultimate polite guidance fallback

@@ -749,10 +749,13 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                     }
 
                     if (msg.type == MessageType.bundleSummary) {
-                      return OccasionBundleCard(
-                        items: msg.cartItems.isNotEmpty ? msg.cartItems : msg.candidateItems,
-                        headerTitle: msg.text,
-                        onAddBundleToCart: _sendMessage,
+                      return KeyedSubtree(
+                        key: ValueKey("bundle_${msg.id}_${msg.cartItems.length}"),
+                        child: OccasionBundleCard(
+                          items: msg.cartItems.isNotEmpty ? msg.cartItems : msg.candidateItems,
+                          headerTitle: msg.text,
+                          onAddBundleToCart: _sendMessage,
+                        ),
                       );
                     }
 
