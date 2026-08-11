@@ -132,6 +132,7 @@ async function geminiAnalyze(
   catalogPrompt: string,
   regularsPrompt: string,
   cartPrompt: string,
+  chatHistoryPrompt: string,
 ): Promise<GeminiAnalysis | null> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return null;
@@ -140,16 +141,18 @@ async function geminiAnalyze(
     `You are "Ramu Bhai", the warm, helpful local Kirana shop owner at DxMart.\n` +
     `You speak respectfully ("Didi", "Bhaiya", "Ji bilkul"). You understand Hindi, Hinglish, Devanagari, and English.\n\n` +
     `YOUR TASK:\n` +
-    `Analyze the customer's message against CATALOG, REGULAR ORDERS, and CART.\n` +
+    `Analyze the customer's message using RECENT CHAT HISTORY, CATALOG, REGULAR ORDERS, and CART.\n` +
     `Select the INTENT_TYPE:\n` +
-    `- "ORDER": Customer wants specific item(s) (e.g., "2 kg aata", "2 kilo aata", "1 litre tel", "oil and sugar", "chai"). Match to product_ids from CATALOG.\n` +
+    `- "DISAMBIGUATE": Customer asks for a generic product name without quantity or brand (e.g., "aata", "tel", "sabun", "chawal", "chai") OR asks for brand choices. Return "candidate_product_ids" with 2 to 4 matching product_ids from CATALOG.\n` +
+    `- "ORDER": Customer wants specific item(s) (e.g., "2 kg aata", "2 kilo aata", "1 litre tel", "500g sugar", "1 packet chai", "pehla wala"). Match to product_ids from CATALOG.\n` +
     `- "BUNDLE": Customer asks for occasion/festival/meal kits (e.g., "Ganesh Puja", "Diwali pooja kit", "Chai Nashta", "Monthly Ration", "biryani items"). Select matching product_ids from CATALOG.\n` +
     `- "RECALL_REGULAR": Customer asks for past purchases (e.g., "jo pichhle baar mangwaya tha", "wahi regular", "mera regular order", "pichla order", "wahi bhej do"). Select item product_ids from REGULAR ORDERS.\n` +
     `- "GREETING": Customer says hello, hi, namaste, casual greeting, or asks how Ramu Bhai is doing.\n` +
     `- "SHOW_BILL": Customer asks to see bill/parchi/hisaab.\n` +
     `- "CHECKOUT": Customer wants to confirm/place/checkout order.\n` +
-    `- "OFF_TOPIC": Customer asks about non-grocery topics (sports, politics, trivia, coding, weather). Politely steer back to kirana shopping in character ("Didi/Bhaiya, main toh aapka Ramu Bhai hoon, ration aur kirana dukandar! Aaj ghar ke liye kya mangvana hai?").\n` +
-    `- "DISAMBIGUATE": Customer asks for a broad product (e.g., "atta" or "tel") with multiple brand choices. Return candidate_product_ids.\n\n` +
+    `- "OFF_TOPIC": Customer asks about non-grocery topics (sports, politics, trivia, coding, weather). Politely steer back to kirana shopping in character ("Didi/Bhaiya, main toh aapka Ramu Bhai hoon, ration aur kirana dukandar! Aaj ghar ke liye kya mangvana hai?").\n\n` +
+    `CRITICAL RULE FOR DISAMBIGUATION:\n` +
+    `If the customer says just "aata" or "tel" or "soap" without specifying weight/kg/brand, ALWAYS use "DISAMBIGUATE" and provide candidate_product_ids so interactive option cards appear!\n\n` +
     `Reply strictly with a valid JSON object only. Format:\n` +
     `{\n` +
     `  "intent_type": "ORDER|BUNDLE|GREETING|RECALL_REGULAR|SHOW_BILL|CHECKOUT|OFF_TOPIC|DISAMBIGUATE",\n` +
@@ -157,6 +160,7 @@ async function geminiAnalyze(
     `  "items": [{"product_id": <number>, "quantity": <number>, "unit": "<string>"}],\n` +
     `  "candidate_product_ids": [<number>]\n` +
     `}\n\n` +
+    `RECENT CONVERSATION HISTORY:\n${chatHistoryPrompt || "First message"}\n\n` +
     `CATALOG:\n${catalogPrompt}\n\n` +
     `REGULAR ORDERS:\n${regularsPrompt}\n\n` +
     `CART:\n${cartPrompt}\n\n` +
@@ -298,6 +302,21 @@ Deno.serve(async (req) => {
 
     const index = await loadIndex(db);
 
+    // Fetch last 6 messages for short-term conversational context memory
+    type ChatLog = { role: string; message: string };
+    const { data: recentLogs } = await db
+      .from("chat_messages")
+      .select("role, message")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(6)
+      .returns<ChatLog[]>();
+
+    const chatHistoryPrompt = (recentLogs ?? [])
+      .reverse()
+      .map((m) => `${m.role === "user" ? "Customer" : "RamuBhai"}: "${m.message}"`)
+      .join("\n");
+
     type RegularRow = {
       product_id: number;
       variant_id: number;
@@ -320,12 +339,13 @@ Deno.serve(async (req) => {
       .map((i) => `P${i.product_id} "${i.product_name}" x ${i.quantity}`)
       .join("\n");
 
-    // 1. Primary Intelligence: Try Gemini AI
+    // 1. Primary Intelligence: Try Gemini AI with Chat Context Memory
     const aiAnalysis = await geminiAnalyze(
       message,
       renderForPrompt(index),
       regularsPrompt || "No past purchases yet",
       cartPrompt || "Cart is empty",
+      chatHistoryPrompt,
     );
 
     if (aiAnalysis) {
@@ -395,6 +415,63 @@ Deno.serve(async (req) => {
           message_type: "checkout",
           subtotal: cart.subtotal,
           final_amount: c.final,
+        }, 200, req);
+      }
+
+      if (type === "DISAMBIGUATE") {
+        const candidateItems: any[] = [];
+        const ids = aiAnalysis.candidate_product_ids ?? [];
+
+        for (const pid of ids) {
+          const p = index.products.find((prod) => prod.id === pid);
+          if (p && p.variants.length > 0) {
+            const v = p.variants.find((varnt) => (varnt.stock ?? 0) > 0) ?? p.variants[0];
+            candidateItems.push({
+              product_id: p.id,
+              product_name: p.name,
+              name: p.name,
+              variant_id: v.id,
+              variant_name: v.name ?? "",
+              price: v.price,
+              selling_price: v.selling_price,
+              image_url: p.image_url,
+              stock: v.stock,
+            });
+          }
+        }
+
+        if (candidateItems.length === 0) {
+          const lowerMsg = message.toLowerCase();
+          for (const p of index.products) {
+            if (candidateItems.length >= 4) break;
+            const nameMatch = p.name.toLowerCase().includes(lowerMsg);
+            const aliasMatch = p.aliases?.some((a) => a.toLowerCase().includes(lowerMsg));
+            if (nameMatch || aliasMatch) {
+              const v = p.variants.find((varnt) => (varnt.stock ?? 0) > 0) ?? p.variants[0];
+              if (v) {
+                candidateItems.push({
+                  product_id: p.id,
+                  product_name: p.name,
+                  name: p.name,
+                  variant_id: v.id,
+                  variant_name: v.name ?? "",
+                  price: v.price,
+                  selling_price: v.selling_price,
+                  image_url: p.image_url,
+                  stock: v.stock,
+                });
+              }
+            }
+          }
+        }
+
+        const reply = aiAnalysis.reply || "Ji Didi! Ye rahe aapke options. Kaunsa brand aur kitne KG chahiye?";
+        await saveMessage(db, userId, "bot", reply);
+        return json({
+          success: true,
+          reply,
+          items: candidateItems,
+          message_type: "optionsChoice",
         }, 200, req);
       }
 
@@ -597,14 +674,46 @@ Deno.serve(async (req) => {
     }
 
     if (added.length === 0) {
-      // Try direct product name match (e.g. "aata", "chai", "tel")
-      const resolvedProduct = matchOne(index, message);
-      if (resolvedProduct.kind === "one") {
+      // Direct word match for "aata", "chai", "tel"
+      const lower = message.toLowerCase().trim();
+      const candidates: any[] = [];
+      for (const p of index.products) {
+        if (candidates.length >= 4) break;
+        const nameMatch = p.name.toLowerCase().includes(lower);
+        const aliasMatch = p.aliases?.some((a) => a.toLowerCase().includes(lower));
+        if (nameMatch || aliasMatch) {
+          const v = p.variants.find((varnt) => (varnt.stock ?? 0) > 0) ?? p.variants[0];
+          if (v) {
+            candidates.push({
+              product_id: p.id,
+              product_name: p.name,
+              name: p.name,
+              variant_id: v.id,
+              variant_name: v.name ?? "",
+              price: v.price,
+              selling_price: v.selling_price,
+              image_url: p.image_url,
+              stock: v.stock,
+            });
+          }
+        }
+      }
+
+      if (candidates.length > 1) {
+        const reply = "Ji Didi! Aapko konsa brand ya pack size chahiye? Yahan se chun sakte hain:";
+        await saveMessage(db, userId, "bot", reply);
+        return json({
+          success: true,
+          reply,
+          items: candidates,
+          message_type: "optionsChoice",
+        }, 200, req);
+      } else if (candidates.length === 1) {
         const line = resolveLine({
-          product_id: resolvedProduct.product.id,
-          product_name: resolvedProduct.product.name,
-          variants: resolvedProduct.product.variants,
-          image_url: resolvedProduct.product.image_url,
+          product_id: candidates[0].product_id,
+          product_name: candidates[0].name,
+          variants: index.products.find((p) => p.id === candidates[0].product_id)?.variants ?? [],
+          image_url: candidates[0].image_url,
         }, 1, null);
         if (line && line.stock > 0) {
           added.push(await addToCart(db, userId, line, Math.min(line.packs, line.stock)));
