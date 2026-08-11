@@ -61,6 +61,7 @@ class CandidateOptionsCard extends StatelessWidget {
                     final name = item['name'] ?? item['product_name'] ?? '';
                     final variantName = item['variant_name'] ?? '';
                     final price = item['selling_price'] ?? item['price'] ?? 0;
+                    final priceDisplay = (price is num) ? price.toStringAsFixed(0) : '$price';
 
                     return Container(
                       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 8.h),
@@ -117,7 +118,7 @@ class CandidateOptionsCard extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                "₹$price",
+                                "₹$priceDisplay",
                                 style: TextStyle(
                                   fontSize: 13.sp,
                                   fontWeight: FontWeight.bold,

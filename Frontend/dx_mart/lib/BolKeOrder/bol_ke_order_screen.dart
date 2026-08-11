@@ -269,6 +269,7 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
       timestamp: DateTime.now(),
       type: botResponse.messageType,
       cartItems: botResponse.cartItems,
+      candidateItems: botResponse.candidateItems,
       subtotal: botResponse.subtotal,
       finalAmount: botResponse.finalAmount,
     );
@@ -742,15 +743,43 @@ class _BolKeOrderScreenState extends State<BolKeOrderScreen> {
                     }
 
                     if (msg.type == MessageType.optionsChoice || msg.type == MessageType.substituteOffer) {
-                      return CandidateOptionsCard(
-                        candidates: msg.candidateItems,
-                        onSelectOption: _sendMessage,
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (msg.text.isNotEmpty)
+                            Container(
+                              margin: EdgeInsets.only(right: 40.w, bottom: 6.h),
+                              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 10.h),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: Radius.circular(16.r),
+                                  topRight: Radius.circular(16.r),
+                                  bottomRight: Radius.circular(16.r),
+                                ),
+                                border: Border.all(color: AppColors.borderColor, width: 1),
+                              ),
+                              child: Text(
+                                msg.text,
+                                style: TextStyle(
+                                  fontSize: 14.sp,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ),
+                          CandidateOptionsCard(
+                            candidates: msg.candidateItems,
+                            onSelectOption: _sendMessage,
+                          ),
+                        ],
                       );
                     }
 
                     if (msg.type == MessageType.bundleSummary) {
                       return KeyedSubtree(
-                        key: ValueKey("bundle_${msg.id}_${msg.cartItems.length}"),
+                        key: ValueKey("bundle_${msg.id}"),
                         child: OccasionBundleCard(
                           items: msg.cartItems.isNotEmpty ? msg.cartItems : msg.candidateItems,
                           headerTitle: msg.text,

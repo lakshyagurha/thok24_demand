@@ -26,7 +26,7 @@ class _OccasionBundleCardState extends State<OccasionBundleCard> {
   @override
   void initState() {
     super.initState();
-    _bundleItems = List<Map<String, dynamic>>.from(widget.items);
+    _bundleItems = widget.items.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   double get _bundleSubtotal {
